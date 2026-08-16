@@ -19,6 +19,7 @@ export interface ServerToClientEvents {
   'order:dispatch_update': (data: { orderId: string; phase: 'searching' | 'broadcast' | 'no_riders' }) => void
   'rider:order_ready': (data: { orderId: string }) => void // rider app — food is packed, go pick it up
   'notification:new': (data: { message: string; type: string }) => void
+  'order:rider_assigned': (data: { orderId: string; riderId: string }) => void
 }
 
 export interface ClientToServerEvents {
