@@ -2,7 +2,7 @@
 .env
 .env.*
 .env.local
-!.env.example
+.env.example
 
 # Build output
 .next/
