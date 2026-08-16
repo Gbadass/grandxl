@@ -187,7 +187,7 @@ export default function RestaurantAnalyticsPage() {
       order.items.forEach((item) => {
         if (!counts[item.menuItemId]) counts[item.menuItemId] = { name: item.name, count: 0, revenue: 0 }
         counts[item.menuItemId].count   += item.quantity
-        counts[item.menuItemId].revenue += item.price * item.quantity
+        counts[item.menuItemId].revenue += item.basePrice * item.quantity
       })
     })
     return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 8)

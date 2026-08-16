@@ -14,4 +14,5 @@ export const socket = io(socketUrl, {
   transports: ['websocket'],
 })
 
-export type TypedSocket = ReturnType<typeof io<ServerToClientEvents, ClientToServerEvents>>
+import type { Socket } from 'socket.io-client'
+export type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>

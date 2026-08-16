@@ -74,7 +74,7 @@ export default function EditMenuItemPage() {
       menuManagementApi.updateItem(restaurantId!, id, {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
-        basePrice: Math.round(parseFloat(form.price) * 100),
+        price: Math.round(parseFloat(form.price) * 100),
         categoryId: form.categoryId,
         isAvailable: form.isAvailable,
         allergens: form.allergens
