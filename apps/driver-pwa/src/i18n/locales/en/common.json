@@ -1,0 +1,12 @@
+{
+  "app_name": "GrandXL Rider",
+  "loading": "Loading…",
+  "error": "Something went wrong",
+  "retry": "Try again",
+  "save": "Save",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "back": "Back",
+  "offline": "You're offline. Some features may not work.",
+  "online_restored": "Back online"
+}

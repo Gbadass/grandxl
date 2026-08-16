@@ -1,0 +1,15 @@
+export const ROUTES = {
+  LOGIN: '/login',
+  OTP_VERIFY: '/otp-verify',
+  REGISTER_RIDER: '/register-rider',
+  KYC_UPLOAD: '/kyc-upload',
+  PENDING_VERIFICATION: '/pending-verification',
+  HOME: '/',
+  AVAILABLE_JOBS: '/jobs',
+  JOB_DETAIL: '/jobs/:orderId',
+  ACTIVE_DELIVERY: '/delivery/:orderId',
+  EARNINGS: '/earnings',
+  PAYOUTS: '/payouts',
+  PROFILE: '/profile',
+  UNAUTHORIZED: '/unauthorized',
+} as const

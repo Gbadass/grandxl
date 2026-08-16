@@ -1,0 +1,16 @@
+{
+  "title": "My profile",
+  "editProfile": "Edit profile",
+  "addresses": "Saved addresses",
+  "addAddress": "Add new address",
+  "defaultAddress": "Default",
+  "setDefault": "Set as default",
+  "deleteAddress": "Delete address",
+  "wallet": "GrandXL Wallet",
+  "walletBalance": "Balance",
+  "topUp": "Top up",
+  "orderHistory": "Order history",
+  "logout": "Sign out",
+  "deleteAccount": "Delete account",
+  "saved": "Profile updated"
+}

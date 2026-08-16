@@ -1,0 +1,50 @@
+import { Injectable, NotFoundException } from '@nestjs/common'
+import { InjectModel } from '@nestjs/mongoose'
+import { Model } from 'mongoose'
+import { SurgeRuleDocument } from './schemas/surge-rule.schema'
+import { CreateSurgeRuleDto, UpdateSurgeRuleDto } from './dto/surge-rule.dto'
+
+@Injectable()
+export class SurgePricingService {
+  constructor(
+    @InjectModel(SurgeRuleDocument.name)
+    private readonly ruleModel: Model<SurgeRuleDocument>,
+  ) {}
+
+  async listAll(): Promise<SurgeRuleDocument[]> {
+    return this.ruleModel.find().sort({ multiplier: -1, name: 1 }).lean() as unknown as SurgeRuleDocument[]
+  }
+
+  async create(dto: CreateSurgeRuleDto): Promise<SurgeRuleDocument> {
+    return this.ruleModel.create({ ...dto, isActive: dto.isActive ?? true })
+  }
+
+  async update(id: string, dto: UpdateSurgeRuleDto): Promise<SurgeRuleDocument> {
+    const rule = await this.ruleModel.findByIdAndUpdate(id, { $set: dto }, { new: true })
+    if (!rule) throw new NotFoundException('Surge rule not found')
+    return rule
+  }
+
+  async delete(id: string): Promise<void> {
+    const rule = await this.ruleModel.findByIdAndDelete(id)
+    if (!rule) throw new NotFoundException('Surge rule not found')
+  }
+
+  // Returns the highest active multiplier matching `at`. If nothing matches, 1.0.
+  // Uses UTC for tests + deterministic behaviour; server timezone must be set to
+  // WAT (Africa/Lagos = UTC+1) via TZ env for the local-time contract to hold.
+  async getMultiplierAt(at: Date = new Date()): Promise<number> {
+    const day    = at.getDay()  // 0..6
+    const minute = at.getHours() * 60 + at.getMinutes()
+
+    const rules = await this.ruleModel.find({
+      isActive:     true,
+      daysOfWeek:   day,
+      startMinutes: { $lte: minute },
+      endMinutes:   { $gte: minute },
+    }).lean() as Array<{ multiplier: number }>
+
+    if (rules.length === 0) return 1.0
+    return Math.max(...rules.map((r) => r.multiplier))
+  }
+}

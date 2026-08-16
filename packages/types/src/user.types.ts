@@ -1,0 +1,49 @@
+import type { UserRole } from './enums'
+
+export interface GeoJSONPoint {
+  type: 'Point'
+  coordinates: [number, number] // [longitude, latitude]
+}
+
+export interface Address {
+  _id: string
+  label: string
+  street: string
+  city: string
+  state: string
+  country: string
+  coordinates: GeoJSONPoint
+  instructions: string | null
+}
+
+export interface User {
+  _id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  roles: UserRole[]
+  isVerified: boolean
+  isActive: boolean
+  avatar: string | null
+  expoPushToken: string | null
+  addresses: Address[]
+  defaultAddressId: string | null
+  country: string
+  currency: string
+  locale: string
+  consentGiven: boolean
+  consentDate: Date | null
+  lastLoginAt: Date | null
+  deletedAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface JwtPayload {
+  sub: string
+  roles: UserRole[]
+  country: string
+  iat?: number
+  exp?: number
+}

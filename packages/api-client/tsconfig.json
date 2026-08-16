@@ -1,0 +1,9 @@
+{
+  "extends": "@grandxl/config/tsconfig",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src/**/*"]
+}

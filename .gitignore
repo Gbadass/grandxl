@@ -1,0 +1,86 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Turbo
+.turbo/
+
+# Environment variables (NEVER commit these)
+.env
+.env.*
+.env.example
+.env.production.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+coverage/
+.nyc_output/
+
+# Expo / React Native
+.expo/
+android/
+ios/
+
+# Firebase / FCM credentials — never commit
+google-services.json
+GoogleService-Info.plist
+*-firebase-adminsdk-*.json
+
+# SSL certificates and private keys — never commit
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+nginx/ssl/
+
+# Secrets and credentials
+*.secret
+secrets/
+credentials/
+
+# Claude Code — personal AI tool config, never project code
+.claude/
+
+# Stray docker folder (prod compose is at root)
+docker/
+
+# Design system docs — internal planning, not for repo
+design-system/
+
+# Misc
+*.tsbuildinfo
+
+# Private follow-up notes — personal roadmap, not for repo
+FOLLOWUPS.md
+
+# Claude Code project instructions — internal, not for repo
+CLAUDE.md

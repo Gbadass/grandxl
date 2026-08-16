@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary:      #E84B3A;
+  --color-primary-dark: #C73E2F;
+  --color-secondary:    #FFC107;
+  --color-success:      #22C55E;
+  --color-error:        #EF4444;
+  --color-warning:      #F59E0B;
+  --color-info:         #3B82F6;
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    @apply font-sans text-gray-900 antialiased;
+  }
+  h1, h2, h3, h4 { @apply font-display; }
+}

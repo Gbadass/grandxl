@@ -1,0 +1,15 @@
+{
+  "title": "Notifications",
+  "markAllRead": "Mark all read",
+  "unreadCount": "{{count}} unread",
+  "refresh": "Refresh",
+  "empty": "No notifications yet",
+  "emptySubtitle": "We'll let you know when something important happens",
+  "loadMore": "Load more",
+  "justNow": "Just now",
+  "minAgo": "{{count}} min ago",
+  "hoursAgo": "{{count}} hours ago",
+  "oneHourAgo": "1 hour ago",
+  "yesterday": "Yesterday",
+  "daysAgo": "{{count}} days ago"
+}

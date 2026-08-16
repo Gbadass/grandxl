@@ -1,0 +1,17 @@
+{
+  "nearby": "Restaurants near you",
+  "all": "All restaurants",
+  "search": "Search restaurants and food",
+  "filters": {
+    "cuisine": "Cuisine",
+    "rating": "Rating",
+    "deliveryTime": "Delivery time",
+    "priceRange": "Price range"
+  },
+  "closed": "Closed",
+  "open": "Open",
+  "deliveryFee": "Delivery fee",
+  "minOrder": "Min. order",
+  "estimatedTime": "{{minutes}} mins",
+  "rating": "{{rating}} ({{count}} reviews)"
+}

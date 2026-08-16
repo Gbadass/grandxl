@@ -1,0 +1,415 @@
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { MapPin, Clock, Bike, Zap, TrendingUp, ChevronRight } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import toast from 'react-hot-toast'
+import { ridersApi } from '@grandxl/api-client'
+import type { Order } from '@grandxl/types'
+import { formatMoney } from '@grandxl/utils'
+import { useRiderStore } from '../store/rider.store'
+
+const POLL_MS = 20_000
+const JOB_EXPIRE_SECONDS = 45
+
+// ── Online toggle ─────────────────────────────────────────────────────────────
+
+function OnlineMegaToggle() {
+  const { isOnline, setOnline, rider } = useRiderStore()
+  const qc = useQueryClient()
+  const [toggling, setToggling] = useState(false)
+
+  async function toggle() {
+    if (toggling) return
+    setToggling(true)
+    try {
+      await ridersApi.toggleOnline(!isOnline)
+      setOnline(!isOnline)
+      void qc.invalidateQueries({ queryKey: ['available-jobs'] })
+      toast.success(isOnline ? 'You are now offline' : 'You are online — jobs incoming!')
+    } catch {
+      toast.error('Could not update status')
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-3xl bg-zinc-900 border border-zinc-800 p-5">
+      {/* Background glow when online */}
+      <AnimatePresence>
+        {isOnline && (
+          <motion.div
+            key="glow"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-gradient-to-br from-green-500/8 via-transparent to-transparent pointer-events-none"
+          />
+        )}
+      </AnimatePresence>
+
+      <div className="relative flex items-center gap-4">
+        {/* Status icon */}
+        <div className="relative">
+          <motion.div
+            className={`h-14 w-14 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
+              isOnline ? 'bg-green-500/20' : 'bg-zinc-800'
+            }`}
+            animate={isOnline ? { scale: [1, 1.04, 1] } : {}}
+            transition={{ duration: 2.5, repeat: Infinity }}
+          >
+            <Bike size={26} className={isOnline ? 'text-green-400' : 'text-zinc-600'} />
+          </motion.div>
+          {isOnline && (
+            <motion.div
+              className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full border-2 border-zinc-900 bg-green-400"
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <p className={`font-display text-lg font-bold leading-tight transition-colors ${isOnline ? 'text-green-400' : 'text-zinc-400'}`}>
+            {isOnline ? 'You\'re Online' : 'You\'re Offline'}
+          </p>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {isOnline ? 'Receiving delivery requests' : 'Tap to start receiving jobs'}
+          </p>
+          {rider && (
+            <p className="text-xs text-zinc-600 mt-1">
+              ⭐ {rider.rating.toFixed(1)} rating · {rider.totalDeliveries} deliveries
+            </p>
+          )}
+        </div>
+
+        {/* Toggle switch */}
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => void toggle()}
+          disabled={toggling}
+          className={`relative h-8 w-14 rounded-full transition-colors duration-300 cursor-pointer disabled:opacity-60 shrink-0 ${
+            isOnline ? 'bg-green-500' : 'bg-zinc-700'
+          }`}
+          style={{ touchAction: 'manipulation' }}
+          aria-label={isOnline ? 'Go offline' : 'Go online'}
+        >
+          {toggling ? (
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+            </span>
+          ) : (
+            <motion.span
+              layout
+              transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+              className="absolute top-1 h-6 w-6 rounded-full bg-white shadow-md"
+              style={{ left: isOnline ? '30px' : '4px' }}
+            />
+          )}
+        </motion.button>
+      </div>
+    </div>
+  )
+}
+
+// ── Job card with expiry countdown ───────────────────────────────────────────
+
+function JobCard({ order, onAccepted }: { order: Order; onAccepted: (o: Order) => void }) {
+  const { removePendingJob } = useRiderStore()
+  const fee = order.pricing.deliveryFee + (order.pricing.tip ?? 0)
+  const [acting, setActing] = useState<'accept' | 'decline' | null>(null)
+  const [timeLeft, setTimeLeft] = useState(JOB_EXPIRE_SECONDS)
+
+  // Countdown timer — job expires if not acted on
+  useEffect(() => {
+    if (timeLeft <= 0) {
+      removePendingJob(order._id)
+      return
+    }
+    const id = setInterval(() => setTimeLeft((t) => t - 1), 1000)
+    return () => clearInterval(id)
+  }, [timeLeft, order._id, removePendingJob])
+
+  const urgency = timeLeft <= 10
+
+  const { mutate: acceptJob } = useMutation({
+    mutationFn: () => ridersApi.acceptJob(order._id),
+    onMutate: () => setActing('accept'),
+    onSuccess: () => {
+      removePendingJob(order._id)
+      onAccepted(order)
+      toast.success('Job accepted! Head to the restaurant.')
+    },
+    onError: () => {
+      toast.error('Job already taken — keep looking!')
+      removePendingJob(order._id)
+    },
+    onSettled: () => setActing(null),
+  })
+
+  function decline() {
+    setActing('decline')
+    setTimeout(() => removePendingJob(order._id), 150)
+  }
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 28, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.94 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+      className={`rounded-3xl border bg-zinc-900 overflow-hidden ${urgency ? 'border-red-500/40' : 'border-zinc-800'}`}
+    >
+      {/* Earnings + timer header */}
+      <div className={`flex items-center justify-between px-4 py-3 border-b ${urgency ? 'border-red-500/20 bg-red-500/5' : 'border-zinc-800 bg-zinc-900'}`}>
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-xl bg-primary/15 flex items-center justify-center">
+            <Zap size={16} className="text-primary" />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Your earnings</p>
+            <p className="font-display text-xl font-bold text-primary leading-tight">
+              {formatMoney(fee, order.currency)}
+            </p>
+          </div>
+        </div>
+        {/* Countdown ring */}
+        <div className={`flex flex-col items-center ${urgency ? 'text-red-400' : 'text-zinc-500'}`}>
+          <div className="relative h-10 w-10">
+            <svg className="h-10 w-10 -rotate-90" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" r="15.5" fill="none" strokeWidth="3" className="stroke-zinc-800" />
+              <motion.circle
+                cx="18" cy="18" r="15.5"
+                fill="none" strokeWidth="3"
+                strokeDasharray={`${2 * Math.PI * 15.5}`}
+                strokeDashoffset={`${2 * Math.PI * 15.5 * (1 - timeLeft / JOB_EXPIRE_SECONDS)}`}
+                strokeLinecap="round"
+                className={urgency ? 'stroke-red-500' : 'stroke-primary'}
+                animate={{ strokeDashoffset: `${2 * Math.PI * 15.5 * (1 - timeLeft / JOB_EXPIRE_SECONDS)}` }}
+                transition={{ duration: 0.5 }}
+              />
+            </svg>
+            <span className={`absolute inset-0 flex items-center justify-center text-xs font-bold ${urgency ? 'text-red-400' : 'text-zinc-300'}`}>
+              {timeLeft}s
+            </span>
+          </div>
+          <p className="text-[9px] mt-0.5 font-medium">expires</p>
+        </div>
+      </div>
+
+      {/* Route */}
+      <div className="px-4 py-3.5 space-y-2.5">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 h-6 w-6 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
+            <MapPin size={12} className="text-green-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">Pick up</p>
+            <p className="text-sm text-zinc-300 leading-snug">Restaurant pickup point</p>
+          </div>
+        </div>
+
+        {/* Connector */}
+        <div className="ml-3 flex items-center gap-1">
+          <div className="w-px h-4 bg-zinc-700 ml-[9px]" />
+        </div>
+
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 h-6 w-6 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+            <MapPin size={12} className="text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">Deliver to</p>
+            <p className="text-sm text-zinc-300 leading-snug truncate">
+              {order.deliveryAddress.street}, {order.deliveryAddress.city}
+            </p>
+          </div>
+        </div>
+
+        {/* Order meta */}
+        <div className="flex items-center gap-3 pt-0.5 border-t border-zinc-800/60">
+          <span className="text-xs text-zinc-600 font-mono">{order.orderNumber}</span>
+          <span className="text-zinc-800">·</span>
+          <span className="text-xs text-zinc-600">
+            {order.items.length} item{order.items.length !== 1 ? 's' : ''}
+          </span>
+          <span className="text-zinc-800">·</span>
+          <span className="text-xs text-zinc-600">{formatMoney(order.pricing.subtotal, order.currency)} order</span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-3 px-4 pb-4">
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={decline}
+          disabled={acting !== null}
+          className="flex-1 rounded-2xl border border-zinc-700 py-3.5 text-sm font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-40 cursor-pointer"
+          style={{ minHeight: '52px', touchAction: 'manipulation' }}
+        >
+          {acting === 'decline' ? '…' : 'Decline'}
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={() => acceptJob()}
+          disabled={acting !== null}
+          className="flex-[2] flex items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition-opacity hover:opacity-90 disabled:opacity-60 cursor-pointer"
+          style={{ minHeight: '52px', touchAction: 'manipulation' }}
+        >
+          {acting === 'accept' && (
+            <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+          )}
+          {acting === 'accept' ? 'Accepting…' : 'Accept job'}
+        </motion.button>
+      </div>
+    </motion.div>
+  )
+}
+
+// ── Today's earnings strip ────────────────────────────────────────────────────
+
+function TodayStrip() {
+  const { rider } = useRiderStore()
+  const todayKobo = rider?.earnings.pendingKobo ?? 0
+  const currency = 'NGN'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3.5 flex items-center justify-between"
+    >
+      <div className="flex items-center gap-3">
+        <div className="h-9 w-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+          <TrendingUp size={17} className="text-primary" />
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">Today's earnings</p>
+          <p className="font-display text-lg font-bold text-zinc-100">{formatMoney(todayKobo, currency)}</p>
+        </div>
+      </div>
+      <button
+        className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+        style={{ touchAction: 'manipulation' }}
+      >
+        Details <ChevronRight size={13} />
+      </button>
+    </motion.div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+export default function AvailableJobsPage() {
+  const navigate = useNavigate()
+  const { pendingJobs, isOnline, addPendingJob, setActiveOrder, activeOrder } = useRiderStore()
+
+  // If there's already an active delivery (restored after refresh), go straight to it
+  useEffect(() => {
+    if (activeOrder) {
+      void navigate(`/delivery/${activeOrder._id}`, { replace: true })
+    }
+  }, [activeOrder, navigate])
+
+  // Recovery poll: check for an in-progress job every 10 s even when there's no activeOrder in
+  // the store. This handles cases where AuthInit's getActiveJob call failed or the rider
+  // accepted a job but the app was killed before the in-memory store was saved.
+  useQuery({
+    queryKey: ['active-job-recovery'],
+    queryFn: async () => {
+      const res = await ridersApi.getActiveJob()
+      const order = res.data.data
+      if (order) {
+        setActiveOrder(order)
+        void navigate(`/delivery/${order._id}`, { replace: true })
+      }
+      return order
+    },
+    enabled: !activeOrder,
+    refetchInterval: 10_000,
+    staleTime: 0,
+    retry: false,
+  })
+
+  useQuery({
+    queryKey: ['available-jobs'],
+    queryFn: async () => {
+      const res = await ridersApi.getAvailableJobs()
+      const jobs = res.data.data
+      jobs.forEach((job) => {
+        if (!pendingJobs.find((p) => p._id === job._id)) addPendingJob(job)
+      })
+      return jobs
+    },
+    enabled: isOnline,
+    refetchInterval: POLL_MS,
+    staleTime: POLL_MS / 2,
+  })
+
+  function handleJobAccepted(order: Order) {
+    setActiveOrder(order)
+    void navigate(`/delivery/${order._id}`)
+  }
+
+  return (
+    <div className="min-h-full px-4 py-4 space-y-3">
+      {/* Today's earnings */}
+      <TodayStrip />
+
+      {/* Online mega toggle */}
+      <OnlineMegaToggle />
+
+      {/* Jobs list / empty states */}
+      <AnimatePresence mode="popLayout">
+        {!isOnline && (
+          <motion.div
+            key="offline-state"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col items-center gap-4 rounded-3xl border border-zinc-800/60 bg-zinc-900/40 py-14"
+          >
+            <div className="h-16 w-16 rounded-2xl bg-zinc-800 flex items-center justify-center">
+              <Bike size={30} className="text-zinc-600" />
+            </div>
+            <div className="text-center px-4">
+              <p className="text-sm font-semibold text-zinc-400">You're offline</p>
+              <p className="text-xs text-zinc-600 mt-1">Toggle online above to start receiving delivery jobs</p>
+            </div>
+          </motion.div>
+        )}
+
+        {isOnline && pendingJobs.length === 0 && (
+          <motion.div
+            key="waiting-state"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col items-center gap-4 rounded-3xl border border-zinc-800/60 bg-zinc-900/40 py-14"
+          >
+            <div className="relative h-16 w-16">
+              <motion.div
+                className="absolute inset-0 rounded-2xl bg-primary/10"
+                animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0, 0.5] }}
+                transition={{ duration: 2.5, repeat: Infinity }}
+              />
+              <div className="h-16 w-16 rounded-2xl bg-zinc-800 flex items-center justify-center">
+                <Clock size={30} className="text-zinc-500" />
+              </div>
+            </div>
+            <div className="text-center px-4">
+              <p className="text-sm font-semibold text-zinc-400">Looking for orders…</p>
+              <p className="text-xs text-zinc-600 mt-1">Jobs will appear here instantly when available</p>
+            </div>
+          </motion.div>
+        )}
+
+        {isOnline && pendingJobs.map((order) => (
+          <JobCard key={order._id} order={order} onAccepted={handleJobAccepted} />
+        ))}
+      </AnimatePresence>
+    </div>
+  )
+}

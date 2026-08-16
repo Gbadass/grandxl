@@ -1,0 +1,19 @@
+{
+  "title": "My orders",
+  "empty": "No orders yet",
+  "emptySubtitle": "Your order history will appear here",
+  "status": {
+    "pending": "Pending",
+    "confirmed": "Confirmed",
+    "preparing": "Preparing",
+    "ready": "Ready for pickup",
+    "picked_up": "On the way",
+    "delivered": "Delivered",
+    "cancelled": "Cancelled"
+  },
+  "track": "Track order",
+  "reorder": "Reorder",
+  "review": "Leave a review",
+  "placed_success": "Order placed successfully!",
+  "cancelled_success": "Order cancelled"
+}

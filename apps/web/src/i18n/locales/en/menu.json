@@ -1,0 +1,13 @@
+{
+  "popular": "Popular",
+  "unavailable": "Unavailable",
+  "addToCart": "Add to cart",
+  "customize": "Customize",
+  "variants": "Choose your options",
+  "addOns": "Add extras",
+  "required": "Required",
+  "optional": "Optional",
+  "itemAdded": "Added to cart",
+  "note": "Special instructions",
+  "notePlaceholder": "E.g. no onions, extra sauce..."
+}

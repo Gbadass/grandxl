@@ -1,0 +1,23 @@
+// All route path constants — never hardcode route strings in components
+export const ROUTES = {
+  HOME: '/',
+  LOGIN: '/login',
+  REGISTER: '/register',
+  FORGOT_PASSWORD: '/forgot-password',
+  RESET_PASSWORD: '/reset-password',
+  VERIFY_OTP: '/verify-otp',
+  RESTAURANTS: '/restaurants',
+  RESTAURANT: (id: string) => `/restaurants/${id}`,
+  MENU: (restaurantId: string) => `/restaurants/${restaurantId}/menu`,
+  CART: '/cart',
+  CHECKOUT: '/checkout',
+  ORDERS: '/orders',
+  ORDER: (id: string) => `/orders/${id}`,
+  ORDER_TRACKING: (id: string) => `/orders/${id}/tracking`,
+  PROFILE: '/profile',
+  UNAUTHORIZED: '/unauthorized',
+  WALLET: '/wallet',
+  NOTIFICATIONS: '/notifications',
+  ADDRESSES: '/profile/addresses',
+  PAYMENT_CALLBACK: '/payment/callback',
+} as const

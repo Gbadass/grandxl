@@ -1,0 +1,27 @@
+{
+  "name": "@grandxl/ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Design tokens for GrandXL — colors, typography, spacing. Shared across web, admin, and mobile.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./src/index.ts"
+    },
+    "./tailwind": "./tailwind.config.base.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@grandxl/config": "workspace:*",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3"
+  }
+}

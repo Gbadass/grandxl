@@ -1,0 +1,8 @@
+{
+  "extends": "@grandxl/config/tsconfig",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"]
+}

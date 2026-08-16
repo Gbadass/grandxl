@@ -1,0 +1,16 @@
+# Environment — never commit real .env files
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+
+# Logs
+*.log
+logs/
+
+# SSL / keys
+*.pem
+*.key
+*.cert

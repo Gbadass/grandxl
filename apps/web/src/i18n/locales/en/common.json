@@ -1,0 +1,28 @@
+{
+  "loading": "Loading...",
+  "error": "Something went wrong. Please try again.",
+  "retry": "Retry",
+  "save": "Save",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "edit": "Edit",
+  "back": "Back",
+  "confirm": "Confirm",
+  "close": "Close",
+  "submit": "Submit",
+  "search": "Search",
+  "noResults": "No results found",
+  "currency": "₦",
+  "nav": {
+    "home": "Home",
+    "browse": "Browse",
+    "orders": "Orders",
+    "profile": "Profile",
+    "mainNavigation": "Main navigation",
+    "searchPlaceholder": "Search restaurants or dishes...",
+    "myLocation": "My location",
+    "notifications": "Notifications",
+    "cart": "Cart",
+    "signIn": "Sign In"
+  }
+}

@@ -1,0 +1,67 @@
+version: '3.9'
+
+# LOCAL DEVELOPMENT ONLY
+# The API itself runs locally via `pnpm dev` for fast hot-reload.
+# Only infrastructure services (MongoDB, Redis) run in Docker.
+#
+# FIRST TIME SETUP — run this once after `docker-compose up -d`:
+#   docker exec -it grandxl-mongo mongosh --eval "rs.initiate()"
+# Required for MongoDB transactions (wallet payments, order+coupon atomicity).
+# The replica set persists in the volume — only needed once.
+#
+# Access:
+#   MongoDB:         mongodb://localhost:27017/grandxl
+#   Redis:           localhost:6379
+#   Mongo Express:   http://localhost:8081  (admin / grandxl123)
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: grandxl-mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: grandxl
+    # --replSet rs0 is REQUIRED for multi-document transactions
+    command: --replSet rs0
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: grandxl-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: grandxl-mongo-ui
+    restart: unless-stopped
+    ports:
+      - '8081:8081'
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: grandxl123
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+  redis_data:

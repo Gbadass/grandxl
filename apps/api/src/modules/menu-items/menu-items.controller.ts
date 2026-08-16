@@ -1,0 +1,138 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common'
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiOkResponse,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+} from '@nestjs/swagger'
+import { MenuItemsService } from './menu-items.service'
+import { CreateMenuCategoryDto, UpdateMenuCategoryDto } from './dto/menu-category.dto'
+import { CreateMenuItemDto, UpdateMenuItemDto } from './dto/menu-item.dto'
+import { Public } from '../../common/decorators/public.decorator'
+import { Roles } from '../../common/decorators/roles.decorator'
+import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
+import { UserRole } from '@grandxl/types'
+
+@ApiTags('Menu')
+@Controller()
+export class MenuItemsController {
+  constructor(private readonly menuItemsService: MenuItemsService) {}
+
+  // ── Public — read-only menu endpoints ───────────────────────────
+
+  @Get('restaurants/:restaurantId/menu')
+  @Public()
+  @ApiOperation({ summary: 'Get full menu (categories + items) for a restaurant' })
+  @ApiOkResponse({ description: 'Categories and items' })
+  async getMenu(@Param('restaurantId', ParseObjectIdPipe) restaurantId: string) {
+    return this.menuItemsService.getMenuByRestaurant(restaurantId)
+  }
+
+  @Get('restaurants/:restaurantId/categories')
+  @Public()
+  @ApiOperation({ summary: 'List active categories for a restaurant' })
+  @ApiOkResponse({ description: 'Array of categories' })
+  async getCategories(@Param('restaurantId', ParseObjectIdPipe) restaurantId: string) {
+    return this.menuItemsService.getCategories(restaurantId)
+  }
+
+  @Get('menu-items/:id')
+  @Public()
+  @ApiOperation({ summary: 'Get a single menu item by ID' })
+  @ApiOkResponse({ description: 'Menu item details' })
+  async getItem(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.menuItemsService.getItemById(id)
+  }
+
+  // ── Restaurant owner — manage categories ─────────────────────────
+
+  @Post('restaurants/:restaurantId/categories')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a menu category (owner)' })
+  @ApiCreatedResponse({ description: 'Category created' })
+  async createCategory(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Body() dto: CreateMenuCategoryDto,
+  ) {
+    return this.menuItemsService.createCategory(restaurantId, dto)
+  }
+
+  @Patch('restaurants/:restaurantId/categories/:id')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a menu category (owner)' })
+  @ApiOkResponse({ description: 'Category updated' })
+  async updateCategory(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateMenuCategoryDto,
+  ) {
+    return this.menuItemsService.updateCategory(id, restaurantId, dto)
+  }
+
+  @Delete('restaurants/:restaurantId/categories/:id')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a menu category (owner) — blocked if items exist' })
+  @ApiNoContentResponse({ description: 'Category deleted' })
+  async deleteCategory(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
+    await this.menuItemsService.deleteCategory(id, restaurantId)
+  }
+
+  // ── Restaurant owner — manage items ──────────────────────────────
+
+  @Post('restaurants/:restaurantId/menu-items')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a menu item (owner)' })
+  @ApiCreatedResponse({ description: 'Menu item created' })
+  async createItem(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Body() dto: CreateMenuItemDto,
+  ) {
+    return this.menuItemsService.createItem(restaurantId, dto)
+  }
+
+  @Patch('restaurants/:restaurantId/menu-items/:id')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a menu item (owner)' })
+  @ApiOkResponse({ description: 'Menu item updated' })
+  async updateItem(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateMenuItemDto,
+  ) {
+    return this.menuItemsService.updateItem(id, restaurantId, dto)
+  }
+
+  @Delete('restaurants/:restaurantId/menu-items/:id')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a menu item (owner)' })
+  @ApiNoContentResponse({ description: 'Menu item deleted' })
+  async deleteItem(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
+    await this.menuItemsService.deleteItem(id, restaurantId)
+  }
+}

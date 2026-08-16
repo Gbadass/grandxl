@@ -1,0 +1,19 @@
+{
+  "title": "Your cart",
+  "empty": "Your cart is empty",
+  "emptySubtitle": "Add items from a restaurant to get started",
+  "clearCart": "Clear cart",
+  "clearCartConfirm": "This will remove all items. Continue?",
+  "switchRestaurant": "Switch restaurant?",
+  "switchRestaurantMessage": "Your cart has items from {{restaurant}}. Adding from {{newRestaurant}} will clear your cart.",
+  "checkout": "Checkout",
+  "subtotal": "Subtotal",
+  "deliveryFee": "Delivery fee",
+  "serviceFee": "Service fee",
+  "discount": "Discount",
+  "total": "Total",
+  "coupon": "Promo code",
+  "applyCoupon": "Apply",
+  "couponApplied": "Promo code applied",
+  "invalidCoupon": "Invalid or expired promo code"
+}
