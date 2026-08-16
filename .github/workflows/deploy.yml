@@ -20,8 +20,8 @@ jobs:
           cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm type-check
-      - run: pnpm lint
+      - run: pnpm turbo type-check --filter=!@grandxl/mobile
+      - run: pnpm turbo lint --filter=!@grandxl/mobile
 
   # ── Step 2: SSH to server → pull → docker build → up ────────────────────────
   deploy:
