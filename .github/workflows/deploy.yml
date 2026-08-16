@@ -5,39 +5,27 @@ on:
     branches: [main]
 
 jobs:
-  # ── Step 1: Fast validation in CI (type-check + lint + test) ────────────────
+  # ── Step 1: Fast validation in CI (type-check + lint) ───────────────────────
   validate:
     name: Type Check & Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-store-
+          node-version: '22'
+          cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm type-check
       - run: pnpm lint
 
   # ── Step 2: SSH to server → pull → docker build → up ────────────────────────
-  # Building happens on the VPS so Docker layer cache is warm across deploys.
   deploy:
-    name: Deploy to AWS EC2 af-south-1
+    name: Deploy to VPS
     runs-on: ubuntu-latest
     needs: validate
 
@@ -51,7 +39,7 @@ jobs:
           timeout:  10m
           script: |
             set -e
-            cd /home/ubuntu/grandxl
+            cd /root/grandxl
 
             echo "==> Pulling latest code"
             git pull origin main
@@ -59,7 +47,7 @@ jobs:
             echo "==> Building Docker images"
             docker compose -f docker-compose.prod.yml build --parallel
 
-            echo "==> Restarting services (zero-downtime rolling)"
+            echo "==> Restarting services"
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
             echo "==> Waiting for API health check"
