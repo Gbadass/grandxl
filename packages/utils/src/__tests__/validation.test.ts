@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { isValidObjectId, maskPhone, maskEmail } from '../validation'
+import { isValidObjectId, maskEmail } from '../validation'
+import { maskPhone } from '../phone'
 
 describe('isValidObjectId', () => {
   it('accepts valid 24-char hex', () => {
