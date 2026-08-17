@@ -18,4 +18,4 @@ ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
 WORKDIR /app/apps/admin
-CMD ["node", ".next/standalone/apps/admin/server.js"]
+CMD ["node", "server.js"]
