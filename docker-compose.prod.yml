@@ -16,7 +16,7 @@ services:
     healthcheck:
       # Initialises the replica set on first boot, no-ops on subsequent boots
       test: >
-        mongosh --quiet --eval
+        mongo --quiet --eval
         "try { rs.status().ok } catch(e) { rs.initiate().ok }"
       interval: 15s
       timeout: 10s
