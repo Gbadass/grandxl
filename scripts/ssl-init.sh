@@ -11,13 +11,12 @@
 # =============================================================================
 set -euo pipefail
 
-APP_DIR="/home/ubuntu/grandxl"
+APP_DIR="/root/grandxl"
 SSL_DIR="$APP_DIR/nginx/ssl"
 EMAIL="admin@grandxl.com"    # ← change to your email
 DOMAINS=(
   "grandxl.com"
   "www.grandxl.com"
-  "app.grandxl.com"
   "api.grandxl.com"
   "admin.grandxl.com"
 )

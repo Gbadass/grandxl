@@ -10,8 +10,8 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/gbadass/grandxl.git"   # ← update if different
-APP_DIR="/home/ubuntu/grandxl"
-DEPLOY_USER="ubuntu"
+APP_DIR="/root/grandxl"
+DEPLOY_USER="root"
 
 echo "========================================"
 echo "  GrandXL — Server Setup"
