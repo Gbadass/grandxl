@@ -15,9 +15,8 @@ RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages ./packages
 COPY . .
+COPY --from=deps /app/node_modules ./node_modules
 RUN pnpm --filter @grandxl/types build
 RUN pnpm --filter @grandxl/validators build
 RUN pnpm --filter @grandxl/utils build
