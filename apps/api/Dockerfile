@@ -1,6 +1,6 @@
 # Multi-stage build: builder compiles TypeScript, runner is the lean production image
 
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Install pnpm
@@ -21,7 +21,7 @@ RUN pnpm --filter @grandxl/validators build
 RUN pnpm --filter @grandxl/api build
 
 # ── Production runner ────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 RUN npm install -g pnpm
