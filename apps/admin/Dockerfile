@@ -17,5 +17,5 @@ RUN pnpm --filter @grandxl/admin build
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
-WORKDIR /app/apps/admin
-CMD ["node", "server.js"]
+WORKDIR /app/apps/admin/.next/standalone
+CMD ["node", "apps/admin/server.js"]
