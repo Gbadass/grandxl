@@ -1,8 +1,7 @@
-FROM node:22-alpine AS base
+FROM node:22-alpine AS builder
 RUN corepack enable && corepack prepare pnpm@10.34.1 --activate
-
-FROM base AS deps
 WORKDIR /app
+
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/types/package.json ./packages/types/
 COPY packages/validators/package.json ./packages/validators/
@@ -13,10 +12,7 @@ COPY packages/config/package.json ./packages/config/
 COPY apps/web/package.json ./apps/web/
 RUN pnpm install --frozen-lockfile
 
-FROM base AS builder
-WORKDIR /app
 COPY . .
-COPY --from=deps /app/node_modules ./node_modules
 RUN pnpm --filter @grandxl/types build
 RUN pnpm --filter @grandxl/validators build
 RUN pnpm --filter @grandxl/utils build
