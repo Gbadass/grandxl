@@ -4,7 +4,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN corepack enable && corepack prepare pnpm@10.34.1 --activate
 
 # Copy workspace files
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
@@ -24,7 +24,7 @@ RUN pnpm --filter @grandxl/api build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
-RUN npm install -g pnpm
+RUN corepack enable && corepack prepare pnpm@10.34.1 --activate
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
