@@ -93,7 +93,7 @@ export function OnboardSlideOver({ open, onClose }: Props) {
     lookupTimer.current = setTimeout(async () => {
       try {
         const res = await adminUsersApi.list({ search: phone, limit: 1 })
-        const users = res.data.data
+        const users = res.data.data.data
         if (users.length > 0 && (users[0].phone === phone || users[0].email === phone)) {
           setOwnerLookup({ status: 'found', user: users[0] })
         } else {
