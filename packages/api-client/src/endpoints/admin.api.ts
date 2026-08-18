@@ -93,6 +93,24 @@ export const adminRestaurantsApi = {
 
 // ── Admin — Riders ───────────────────────────────────────────────────────────
 
+export interface AdminOnboardRiderDto {
+  riderPhone: string
+  riderFirstName?: string
+  riderLastName?: string
+  riderEmail?: string
+  riderPassword?: string
+  vehicleType: 'motorcycle' | 'bicycle' | 'car'
+  vehiclePlate?: string
+}
+
+export interface SuspendRiderDto {
+  reason: string
+}
+
+export interface TerminateRiderDto {
+  reason: string
+}
+
 export const adminRidersApi = {
   list: (params?: { page?: number; limit?: number }) =>
     getClient().get<PaginatedResponse<Rider>>('/admin/riders', { params }),
@@ -100,8 +118,20 @@ export const adminRidersApi = {
   getById: (id: string) =>
     getClient().get<ApiResponse<Rider>>(`/admin/riders/${id}`),
 
+  onboard: (dto: AdminOnboardRiderDto) =>
+    getClient().post<ApiResponse<Rider>>('/admin/riders', dto),
+
   verify: (id: string) =>
     getClient().post<ApiResponse<Rider>>(`/admin/riders/${id}/verify`),
+
+  suspend: (id: string, dto: SuspendRiderDto) =>
+    getClient().patch<ApiResponse<Rider>>(`/admin/riders/${id}/suspend`, dto),
+
+  reinstate: (id: string) =>
+    getClient().patch<ApiResponse<Rider>>(`/admin/riders/${id}/reinstate`),
+
+  terminate: (id: string, dto: TerminateRiderDto) =>
+    getClient().patch<ApiResponse<Rider>>(`/admin/riders/${id}/terminate`, dto),
 
   assignToOrder: (riderId: string, orderId: string) =>
     getClient().post<ApiResponse<{ assigned: boolean }>>(

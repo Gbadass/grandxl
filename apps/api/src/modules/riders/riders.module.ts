@@ -6,6 +6,8 @@ import { RidersController } from './riders.controller'
 import { AdminRidersController } from './admin-riders.controller'
 import { OrdersModule } from '../orders/orders.module'
 import { UsersModule } from '../users/users.module'
+import { AuthModule } from '../auth/auth.module'
+import { EmailModule } from '../email/email.module'
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { UsersModule } from '../users/users.module'
     ]),
     OrdersModule,
     UsersModule,
+    AuthModule,
+    EmailModule,
   ],
   controllers: [RidersController, AdminRidersController],
   providers: [RidersService],

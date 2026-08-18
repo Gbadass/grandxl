@@ -11,7 +11,10 @@ import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { PageHeader } from '../../../../src/components/ui/PageHeader'
 import { StatusBadge } from '../../../../src/components/ui/StatusBadge'
+import { ConfirmDialog } from '../../../../src/components/ui/ConfirmDialog'
 import '../../../../src/lib/axios'
+
+type Action = 'verify' | 'suspend' | 'reinstate' | 'terminate' | null
 
 export default function RiderDetailPage() {
   const router = useRouter()
@@ -19,6 +22,8 @@ export default function RiderDetailPage() {
   const qc = useQueryClient()
   const { isAuthenticated, isInitializing, user } = useAuthStore()
   const [lightbox, setLightbox] = useState<string | null>(null)
+  const [action, setAction] = useState<Action>(null)
+  const [reason, setReason] = useState('')
 
   useEffect(() => {
     if (isInitializing) return
@@ -36,14 +41,22 @@ export default function RiderDetailPage() {
     rider?.userId && typeof rider.userId === 'object' ? rider.userId as RiderUser : null
   const riderName = riderUser ? `${riderUser.firstName} ${riderUser.lastName}` : 'Rider'
 
-  const verifyMutation = useMutation({
-    mutationFn: () => adminRidersApi.verify(id),
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (action === 'verify')    return adminRidersApi.verify(id)
+      if (action === 'reinstate') return adminRidersApi.reinstate(id)
+      if (action === 'suspend')   return adminRidersApi.suspend(id, { reason })
+      if (action === 'terminate') return adminRidersApi.terminate(id, { reason })
+      throw new Error('Unknown action')
+    },
     onSuccess: () => {
-      toast.success('Rider verified — they will be notified')
+      toast.success('Action completed')
       void qc.invalidateQueries({ queryKey: ['admin', 'rider', id] })
       void qc.invalidateQueries({ queryKey: ['admin', 'riders'] })
+      setAction(null)
+      setReason('')
     },
-    onError: () => toast.error('Verification failed'),
+    onError: () => toast.error('Action failed — please try again'),
   })
 
   if (isInitializing || isLoading) {
@@ -57,6 +70,10 @@ export default function RiderDetailPage() {
   }
 
   if (!rider) return <p className="text-gray-500">Rider not found.</p>
+
+  const isTerminated = !!rider.terminatedAt
+  const isSuspended  = rider.isSuspended && !isTerminated
+  const needsReason  = action === 'suspend' || action === 'terminate'
 
   const docs = [
     { label: 'Government ID',    key: 'idCard',        url: rider.documents.idCard        },
@@ -90,26 +107,76 @@ export default function RiderDetailPage() {
         title={riderName}
         subtitle={`${rider.vehicleType}${rider.vehiclePlate ? ` · ${rider.vehiclePlate}` : ''} · ID: ${rider._id}`}
         action={
-          <div className="flex gap-3">
-            <button
-              onClick={() => router.back()}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-            >
-              ← Back
-            </button>
-            {!rider.isVerified && (
-              <button
-                onClick={() => verifyMutation.mutate()}
-                disabled={verifyMutation.isPending || !allDocsUploaded}
-                title={!allDocsUploaded ? 'Rider must upload all 3 documents first' : ''}
-                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {verifyMutation.isPending ? 'Verifying…' : 'Verify Rider'}
-              </button>
-            )}
-          </div>
+          <button
+            onClick={() => router.back()}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+          >
+            ← Back
+          </button>
         }
       />
+
+      {/* Status + Actions bar */}
+      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex items-center gap-2">
+          {isTerminated ? (
+            <StatusBadge label="Terminated" variant="red" />
+          ) : isSuspended ? (
+            <StatusBadge label="Suspended" variant="red" />
+          ) : rider.isVerified ? (
+            <StatusBadge label="Verified" variant="green" />
+          ) : (
+            <StatusBadge label="Pending KYC" variant="yellow" />
+          )}
+          <StatusBadge
+            label={rider.isOnline ? 'Online' : 'Offline'}
+            variant={rider.isOnline ? 'green' : 'gray'}
+          />
+        </div>
+        <div className="flex-1" />
+
+        {/* Verify — only when unverified, not suspended/terminated */}
+        {!rider.isVerified && !isSuspended && !isTerminated && (
+          <button
+            onClick={() => setAction('verify')}
+            disabled={!allDocsUploaded}
+            title={!allDocsUploaded ? 'Rider must upload all 3 documents first' : ''}
+            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Verify Rider
+          </button>
+        )}
+
+        {/* Suspend — only active, non-terminated riders */}
+        {!isSuspended && !isTerminated && (
+          <button
+            onClick={() => setAction('suspend')}
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+          >
+            Suspend
+          </button>
+        )}
+
+        {/* Reinstate — only suspended */}
+        {isSuspended && (
+          <button
+            onClick={() => setAction('reinstate')}
+            className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
+          >
+            Reinstate
+          </button>
+        )}
+
+        {/* Terminate — permanent, always show unless already terminated */}
+        {!isTerminated && (
+          <button
+            onClick={() => setAction('terminate')}
+            className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+          >
+            Terminate
+          </button>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Contact */}
@@ -140,10 +207,9 @@ export default function RiderDetailPage() {
           <dl className="space-y-3 text-sm">
             <InfoRow label="Vehicle type"     value={rider.vehicleType} />
             <InfoRow label="Vehicle plate"    value={rider.vehiclePlate ?? '—'} />
-            <InfoRow label="Verified"         value={<StatusBadge label={rider.isVerified ? 'Verified' : 'Not verified'} variant={rider.isVerified ? 'green' : 'yellow'} />} />
-            <InfoRow label="Status"           value={<StatusBadge label={rider.isOnline ? 'Online' : 'Offline'} variant={rider.isOnline ? 'green' : 'gray'} />} />
             <InfoRow label="Total deliveries" value={String(rider.totalDeliveries)} />
             <InfoRow label="Rating"           value={rider.ratingCount > 0 ? `${rider.rating.toFixed(1)} (${rider.ratingCount})` : '—'} />
+            <InfoRow label="Member since"     value={new Date(rider.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} />
           </dl>
         </div>
 
@@ -152,9 +218,32 @@ export default function RiderDetailPage() {
           <h2 className="mb-4 font-semibold text-gray-900">Earnings</h2>
           <dl className="space-y-3 text-sm">
             <InfoRow label="Total earned"    value={formatMoney(rider.earnings.totalKobo, 'NGN')} />
-            <InfoRow label="Pending payout"  value={formatMoney(rider.earnings.pendingKobo, 'NGN')} />
+            <InfoRow label="Pending payout"  value={formatMoney(Math.max(0, rider.earnings.pendingKobo), 'NGN')} />
           </dl>
         </div>
+
+        {/* Suspension note */}
+        {isSuspended && rider.suspensionReason && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-6">
+            <h2 className="mb-2 font-semibold text-amber-800">Suspension Note</h2>
+            <p className="text-sm text-amber-700">{rider.suspensionReason}</p>
+          </div>
+        )}
+
+        {/* Termination details — full width */}
+        {isTerminated && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-6 lg:col-span-2">
+            <h2 className="mb-3 font-semibold text-red-800">Termination Details</h2>
+            <dl className="space-y-3 text-sm">
+              {rider.terminatedAt && (
+                <InfoRow label="Terminated on" value={new Date(rider.terminatedAt).toLocaleString()} />
+              )}
+              {rider.terminationReason && (
+                <InfoRow label="Reason" value={rider.terminationReason} />
+              )}
+            </dl>
+          </div>
+        )}
 
         {/* Documents — full width */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 lg:col-span-2">
@@ -212,7 +301,7 @@ export default function RiderDetailPage() {
             ))}
           </div>
 
-          {!rider.isVerified && (
+          {!rider.isVerified && !isTerminated && (
             <div className={`mt-4 rounded-lg p-3 text-sm ${
               allDocsUploaded
                 ? 'bg-green-50 text-green-800'
@@ -225,6 +314,36 @@ export default function RiderDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={action !== null}
+        title={
+          action === 'verify'    ? 'Verify Rider' :
+          action === 'suspend'   ? 'Suspend Rider' :
+          action === 'reinstate' ? 'Reinstate Rider' :
+          'Terminate Rider'
+        }
+        confirmLabel={
+          action === 'verify' || action === 'reinstate' ? 'Confirm' :
+          action === 'terminate' ? 'Terminate' :
+          'Suspend'
+        }
+        confirmVariant={action === 'suspend' || action === 'terminate' ? 'danger' : 'primary'}
+        loading={mutation.isPending}
+        onConfirm={() => mutation.mutate()}
+        onCancel={() => { setAction(null); setReason('') }}
+      >
+        {needsReason && (
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason…"
+            rows={3}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100"
+          />
+        )}
+      </ConfirmDialog>
     </div>
   )
 }

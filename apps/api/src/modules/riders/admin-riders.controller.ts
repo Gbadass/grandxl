@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Body,
   Param,
   Query,
   Req,
@@ -13,10 +15,14 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiOkResponse,
+  ApiCreatedResponse,
 } from '@nestjs/swagger'
 import type { Request } from 'express'
 import { RidersService } from './riders.service'
 import { AuditService } from '../audit/audit.service'
+import { AdminOnboardRiderDto } from './dto/admin-onboard-rider.dto'
+import { SuspendRiderDto } from './dto/suspend-rider.dto'
+import { TerminateRiderDto } from './dto/terminate-rider.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
@@ -39,6 +45,26 @@ export class AdminRidersController {
       ipAddress: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip,
       userAgent: req.headers['user-agent'],
     }
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Admin onboards a rider directly — creates pre-verified account on behalf of existing or new user' })
+  @ApiCreatedResponse({ description: 'Rider created and verified' })
+  async onboard(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: AdminOnboardRiderDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.ridersService.adminOnboard(dto, user.sub)
+    void this.audit.log({
+      ...this.auditMeta(req, user),
+      action:     'rider.admin_onboard',
+      targetType: 'rider',
+      targetId:   String(result._id),
+      metadata:   { phone: dto.riderPhone, vehicleType: dto.vehicleType },
+    })
+    return result
   }
 
   @Get()
@@ -72,6 +98,50 @@ export class AdminRidersController {
   ) {
     const result = await this.ridersService.verifyRider(id)
     void this.audit.log({ ...this.auditMeta(req, user), action: 'rider.verify', targetType: 'rider', targetId: id })
+    return result
+  }
+
+  @Patch(':id/suspend')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Suspend a rider — blocks them from accepting jobs' })
+  @ApiOkResponse({ description: 'Rider suspended' })
+  async suspendRider(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: SuspendRiderDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.ridersService.suspendRider(id, dto)
+    void this.audit.log({ ...this.auditMeta(req, user), action: 'rider.suspend', targetType: 'rider', targetId: id, metadata: { reason: dto.reason } })
+    return result
+  }
+
+  @Patch(':id/reinstate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reinstate a suspended rider' })
+  @ApiOkResponse({ description: 'Rider reinstated' })
+  async reinstateRider(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: Request,
+  ) {
+    const result = await this.ridersService.reinstateRider(id)
+    void this.audit.log({ ...this.auditMeta(req, user), action: 'rider.reinstate', targetType: 'rider', targetId: id })
+    return result
+  }
+
+  @Patch(':id/terminate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Permanently terminate a rider account' })
+  @ApiOkResponse({ description: 'Rider terminated' })
+  async terminateRider(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: TerminateRiderDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.ridersService.terminateRider(id, dto)
+    void this.audit.log({ ...this.auditMeta(req, user), action: 'rider.terminate', targetType: 'rider', targetId: id, metadata: { reason: dto.reason } })
     return result
   }
 

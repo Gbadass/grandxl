@@ -40,6 +40,10 @@ export interface Rider {
   totalDeliveries: number
   earnings: RiderEarnings
   documents: RiderDocuments
+  isSuspended: boolean
+  suspensionReason: string | null
+  terminatedAt: Date | null
+  terminationReason: string | null
   createdAt: Date
   updatedAt: Date
 }

@@ -7,14 +7,20 @@ import {
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
+import * as bcrypt from 'bcryptjs'
 import { RiderDocument } from './schemas/rider.schema'
 import { OrdersService } from '../orders/orders.service'
 import { UsersService } from '../users/users.service'
+import { TermiiProvider } from '../auth/providers/termii.provider'
+import { EmailProvider } from '../email/email.provider'
 import { OrderStatus, UserRole } from '@grandxl/types'
 import type { RegisterRiderDto } from './dto/register-rider.dto'
 import type { UpdateLocationDto } from './dto/update-location.dto'
 import type { UpdateAvailabilityDto } from './dto/update-availability.dto'
 import type { UpdateDocumentsDto } from './dto/update-documents.dto'
+import type { AdminOnboardRiderDto } from './dto/admin-onboard-rider.dto'
+import type { SuspendRiderDto } from './dto/suspend-rider.dto'
+import type { TerminateRiderDto } from './dto/terminate-rider.dto'
 
 @Injectable()
 export class RidersService {
@@ -23,6 +29,8 @@ export class RidersService {
     private readonly riderModel: Model<RiderDocument>,
     private readonly ordersService: OrdersService,
     private readonly usersService: UsersService,
+    private readonly termii: TermiiProvider,
+    private readonly email: EmailProvider,
   ) {}
 
   // ── Profile ──────────────────────────────────────────────────────
@@ -200,6 +208,71 @@ export class RidersService {
 
   // ── Admin ────────────────────────────────────────────────────────
 
+  async adminOnboard(dto: AdminOnboardRiderDto, adminId: string): Promise<RiderDocument> {
+    let existingUser = await this.usersService.findByPhone(dto.riderPhone)
+
+    if (!existingUser) {
+      if (!dto.riderFirstName || !dto.riderLastName || !dto.riderPassword) {
+        throw new BadRequestException(
+          'riderFirstName, riderLastName and riderPassword are required when the phone is not yet registered',
+        )
+      }
+      const passwordHash = await bcrypt.hash(dto.riderPassword, 12)
+      existingUser = await this.usersService.create({
+        phone:        dto.riderPhone,
+        firstName:    dto.riderFirstName,
+        lastName:     dto.riderLastName,
+        email:        dto.riderEmail,
+        passwordHash,
+        roles:        [UserRole.CUSTOMER, UserRole.RIDER],
+        consentGiven: true,
+        consentDate:  new Date(),
+      })
+
+      // Fire-and-forget: SMS welcome
+      void this.termii.sendTransactional(
+        dto.riderPhone,
+        `Welcome to GrandXL Riders, ${dto.riderFirstName}! Your account has been created by our team. Login with your phone number and the password provided to you. Download the GrandXL Rider app to get started.`,
+      ).catch(() => undefined)
+
+      // Fire-and-forget: email welcome if provided
+      if (dto.riderEmail) {
+        void this.email.sendOwnerWelcomeCredentials(
+          dto.riderEmail,
+          dto.riderFirstName,
+          'GrandXL Rider',
+          dto.riderPhone,
+          dto.riderPassword,
+        ).catch(() => undefined)
+      }
+    } else {
+      await this.usersService.addRole(existingUser._id.toString(), UserRole.RIDER)
+    }
+
+    const userId = existingUser._id as Types.ObjectId
+
+    const existing = await this.riderModel.findOne({ userId })
+    if (existing) {
+      if (existing.terminatedAt) {
+        throw new ForbiddenException(
+          'This rider account has been terminated. Use the Reinstate action on their profile to re-activate.',
+        )
+      }
+      return this.riderModel.findOneAndUpdate(
+        { userId },
+        { $set: { vehicleType: dto.vehicleType, vehiclePlate: dto.vehiclePlate ?? null, isVerified: true } },
+        { new: true },
+      ) as Promise<RiderDocument>
+    }
+
+    return this.riderModel.create({
+      userId,
+      vehicleType:  dto.vehicleType,
+      vehiclePlate: dto.vehiclePlate ?? null,
+      isVerified:   true,
+    })
+  }
+
   async verifyRider(riderId: string): Promise<RiderDocument> {
     const rider = await this.riderModel.findByIdAndUpdate(
       riderId,
@@ -208,6 +281,49 @@ export class RidersService {
     )
     if (!rider) throw new NotFoundException('Rider not found')
     return rider
+  }
+
+  async suspendRider(riderId: string, dto: SuspendRiderDto): Promise<RiderDocument> {
+    const rider = await this.riderModel.findById(riderId)
+    if (!rider) throw new NotFoundException('Rider not found')
+    if (rider.terminatedAt) throw new BadRequestException('Cannot suspend a terminated rider')
+    return this.riderModel.findByIdAndUpdate(
+      riderId,
+      { $set: { isSuspended: true, suspensionReason: dto.reason, isOnline: false, isAvailable: false } },
+      { new: true },
+    ) as Promise<RiderDocument>
+  }
+
+  async reinstateRider(riderId: string): Promise<RiderDocument> {
+    const rider = await this.riderModel.findById(riderId)
+    if (!rider) throw new NotFoundException('Rider not found')
+    if (rider.terminatedAt) throw new BadRequestException('Cannot reinstate a terminated rider')
+    return this.riderModel.findByIdAndUpdate(
+      riderId,
+      { $set: { isSuspended: false, suspensionReason: null } },
+      { new: true },
+    ) as Promise<RiderDocument>
+  }
+
+  async terminateRider(riderId: string, dto: TerminateRiderDto): Promise<RiderDocument> {
+    const rider = await this.riderModel.findById(riderId)
+    if (!rider) throw new NotFoundException('Rider not found')
+    if (rider.terminatedAt) throw new BadRequestException('Rider is already terminated')
+    return this.riderModel.findByIdAndUpdate(
+      riderId,
+      {
+        $set: {
+          terminatedAt:      new Date(),
+          terminationReason: dto.reason,
+          isSuspended:       false,
+          suspensionReason:  null,
+          isVerified:        false,
+          isOnline:          false,
+          isAvailable:       false,
+        },
+      },
+      { new: true },
+    ) as Promise<RiderDocument>
   }
 
   async listRiders(page = 1, limit = 20) {

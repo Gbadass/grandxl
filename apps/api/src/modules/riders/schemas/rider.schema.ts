@@ -117,6 +117,19 @@ export class RiderDocument extends Document {
   })
   bankAccount!: BankAccountSubdoc
 
+  // ── Admin moderation ──────────────────────────────────────────────
+  @Prop({ default: false })
+  isSuspended!: boolean
+
+  @Prop({ type: String, default: null })
+  suspensionReason!: string | null
+
+  @Prop({ type: Date, default: null })
+  terminatedAt!: Date | null
+
+  @Prop({ type: String, default: null })
+  terminationReason!: string | null
+
   createdAt!: Date
   updatedAt!: Date
 }
