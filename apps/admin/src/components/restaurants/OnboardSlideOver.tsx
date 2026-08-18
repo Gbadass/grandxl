@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { adminRestaurantsApi } from '@grandxl/api-client'
+import { adminRestaurantsApi, adminUsersApi, foodCategoriesApi } from '@grandxl/api-client'
+import type { User } from '@grandxl/types'
 
 interface Props {
   open: boolean
@@ -18,10 +19,11 @@ const NIGERIAN_STATES = [
   'Yobe','Zamfara',
 ]
 
-const CUISINE_SUGGESTIONS = [
-  'Nigerian','African','Continental','Chinese','Indian','Italian','Pizza',
-  'Grill','Seafood','Fast Food','Burgers','Rice','Chicken','Vegetarian',
-  'Local','Soup','Peri Peri','Shawarma','Snacks','Pastry',
+// Matches DEFAULT_CATEGORIES in FoodCategoriesService — same list as register page fallback
+const FALLBACK_CUISINE_SUGGESTIONS = [
+  'Rice','Chicken','Burgers','Swallow','Soups & Stews','Pizza','Shawarma',
+  'Seafood','Desserts','Grills & Suya','Fast Food','Snacks','Breakfast',
+  'Continental','Chinese','Drinks & Smoothies','Wraps & Sandwiches','Healthy',
 ]
 
 const defaultForm = {
@@ -48,15 +50,60 @@ export function OnboardSlideOver({ open, onClose }: Props) {
   const [form, setForm] = useState(defaultForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [cuisineOpen, setCuisineOpen] = useState(false)
+  const [cuisineSuggestions, setCuisineSuggestions] = useState<string[]>(FALLBACK_CUISINE_SUGGESTIONS)
+
+  // Owner phone lookup state
+  const [ownerLookup, setOwnerLookup] = useState<{
+    status: 'idle' | 'loading' | 'found' | 'not_found'
+    user: User | null
+  }>({ status: 'idle', user: null })
+
   const firstInput = useRef<HTMLInputElement>(null)
+  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (open) {
       setForm(defaultForm)
       setErrors({})
+      setOwnerLookup({ status: 'idle', user: null })
       setTimeout(() => firstInput.current?.focus(), 100)
     }
   }, [open])
+
+  // Load real categories from API on mount
+  useEffect(() => {
+    foodCategoriesApi.getAll()
+      .then((res) => {
+        const data = res.data.data
+        if (Array.isArray(data) && data.length > 0) {
+          setCuisineSuggestions(data.map((c) => c.name))
+        }
+      })
+      .catch(() => { /* fallback list already set */ })
+  }, [])
+
+  // Debounced owner phone lookup
+  const lookupOwner = useCallback((phone: string) => {
+    if (lookupTimer.current) clearTimeout(lookupTimer.current)
+    if (!phone.match(/^\+[1-9]\d{7,14}$/)) {
+      setOwnerLookup({ status: 'idle', user: null })
+      return
+    }
+    setOwnerLookup({ status: 'loading', user: null })
+    lookupTimer.current = setTimeout(async () => {
+      try {
+        const res = await adminUsersApi.list({ search: phone, limit: 1 })
+        const users = res.data.data
+        if (users.length > 0 && (users[0].phone === phone || users[0].email === phone)) {
+          setOwnerLookup({ status: 'found', user: users[0] })
+        } else {
+          setOwnerLookup({ status: 'not_found', user: null })
+        }
+      } catch {
+        setOwnerLookup({ status: 'idle', user: null })
+      }
+    }, 600)
+  }, [])
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -94,6 +141,7 @@ export function OnboardSlideOver({ open, onClose }: Props) {
   function validate() {
     const e: Record<string, string> = {}
     if (!form.ownerPhone.match(/^\+[1-9]\d{7,14}$/)) e.ownerPhone = 'E.164 format required (+2348012345678)'
+    if (ownerLookup.status === 'not_found') e.ownerPhone = 'No GrandXL account found for this number'
     if (form.name.trim().length < 2) e.name = 'Name is required'
     if (!form.phone.match(/^\+[1-9]\d{7,14}$/)) e.phone = 'E.164 format required (+2348012345678)'
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email'
@@ -124,6 +172,10 @@ export function OnboardSlideOver({ open, onClose }: Props) {
   }
 
   if (!open) return null
+
+  const filteredSuggestions = cuisineSuggestions.filter(
+    s => s.toLowerCase().includes(form.cuisineInput.toLowerCase()) && !form.cuisine.includes(s)
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -162,11 +214,48 @@ export function OnboardSlideOver({ open, onClose }: Props) {
                   ref={firstInput}
                   type="tel"
                   value={form.ownerPhone}
-                  onChange={e => set('ownerPhone', e.target.value)}
+                  onChange={e => {
+                    set('ownerPhone', e.target.value)
+                    lookupOwner(e.target.value)
+                  }}
                   placeholder="+2348012345678"
                   className={input(errors.ownerPhone)}
                 />
                 <p className="mt-1.5 text-xs text-gray-400">Must be an existing GrandXL user account</p>
+
+                {/* Owner lookup feedback */}
+                {ownerLookup.status === 'loading' && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+                    <svg className="h-3.5 w-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Looking up account…
+                  </div>
+                )}
+                {ownerLookup.status === 'found' && ownerLookup.user && (
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-green-800">
+                        {ownerLookup.user.firstName} {ownerLookup.user.lastName}
+                      </p>
+                      {ownerLookup.user.email && (
+                        <p className="truncate text-xs text-green-600">{ownerLookup.user.email}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {ownerLookup.status === 'not_found' && (
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                    </svg>
+                    <p className="text-xs text-red-700">No GrandXL account found for this number</p>
+                  </div>
+                )}
               </Field>
             </Section>
 
@@ -233,26 +322,38 @@ export function OnboardSlideOver({ open, onClose }: Props) {
                       placeholder={form.cuisine.length === 0 ? 'Type or pick cuisine…' : ''}
                       className="w-full min-w-[100px] bg-transparent text-sm outline-none placeholder:text-gray-400"
                     />
-                    {cuisineOpen && (
-                      <div className="absolute left-0 top-full z-10 mt-1 max-h-40 w-52 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                        {CUISINE_SUGGESTIONS
-                          .filter(s => s.toLowerCase().includes(form.cuisineInput.toLowerCase()) && !form.cuisine.includes(s))
-                          .map(s => (
-                            <button
-                              key={s}
-                              type="button"
-                              onMouseDown={() => addCuisine(s)}
-                              className="block w-full cursor-pointer px-3 py-2 text-left text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-700"
-                            >
-                              {s}
-                            </button>
-                          ))
-                        }
+                    {cuisineOpen && filteredSuggestions.length > 0 && (
+                      <div className="absolute left-0 top-full z-10 mt-1 max-h-48 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                        {filteredSuggestions.map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onMouseDown={() => addCuisine(s)}
+                            className="block w-full cursor-pointer px-3 py-2 text-left text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-700"
+                          >
+                            {s}
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
                 </div>
                 {errors.cuisine && <p className="mt-1 text-xs text-red-500">{errors.cuisine}</p>}
+                {/* Quick-pick chips */}
+                {form.cuisine.length === 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {cuisineSuggestions.slice(0, 8).map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => addCuisine(s)}
+                        className="cursor-pointer rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </Field>
             </Section>
 
