@@ -38,6 +38,7 @@ const RESTAURANT_STATUS_VARIANT: Record<RestaurantApprovalStatus, BadgeVariant> 
   [RestaurantApprovalStatus.APPROVED]:       'green',
   [RestaurantApprovalStatus.REJECTED]:       'red',
   [RestaurantApprovalStatus.SUSPENDED]:      'gray',
+  [RestaurantApprovalStatus.TERMINATED]:     'red',
 }
 
 const PAYMENT_STATUS_VARIANT: Record<PaymentStatus, BadgeVariant> = {
