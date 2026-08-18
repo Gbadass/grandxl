@@ -131,6 +131,15 @@ export class RestaurantDocument extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', default: null })
   approvedBy!: Types.ObjectId | null
 
+  @Prop({ type: Date, default: null })
+  terminatedAt!: Date | null
+
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  terminatedBy!: Types.ObjectId | null
+
+  @Prop({ type: String, default: null })
+  terminationReason!: string | null
+
   @Prop({ default: 0 })
   rating!: number
 

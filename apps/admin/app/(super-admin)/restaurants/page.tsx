@@ -17,6 +17,7 @@ const STATUS_TABS: { label: string; value: RestaurantApprovalStatus | undefined;
   { label: 'Approved', value: RestaurantApprovalStatus.APPROVED, color: 'text-green-600 border-green-600' },
   { label: 'Rejected', value: RestaurantApprovalStatus.REJECTED, color: 'text-red-600 border-red-600' },
   { label: 'Suspended', value: RestaurantApprovalStatus.SUSPENDED, color: 'text-gray-500 border-gray-500' },
+  { label: 'Terminated', value: RestaurantApprovalStatus.TERMINATED, color: 'text-red-900 border-red-900' },
 ]
 
 export default function RestaurantsPage() {

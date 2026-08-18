@@ -12,7 +12,8 @@ import { StatusBadge } from '../../../../src/components/ui/StatusBadge'
 import { ConfirmDialog } from '../../../../src/components/ui/ConfirmDialog'
 import '../../../../src/lib/axios'
 
-type Action = 'approve' | 'reject' | 'suspend' | 'reinstate' | 'request-info' | null
+type Action = 'approve' | 'reject' | 'suspend' | 'reinstate' | 'request-info' | 'terminate' | null
+
 
 export default function RestaurantDetailPage() {
   const router = useRouter()
@@ -42,6 +43,7 @@ export default function RestaurantDetailPage() {
       if (action === 'reject') return adminRestaurantsApi.reject(id, { reason })
       if (action === 'suspend') return adminRestaurantsApi.suspend(id, { reason })
       if (action === 'request-info') return adminRestaurantsApi.requestInfo(id, { message: reason })
+      if (action === 'terminate') return adminRestaurantsApi.terminate(id, { reason })
       throw new Error('Unknown action')
     },
     onSuccess: () => {
@@ -73,9 +75,10 @@ export default function RestaurantDetailPage() {
   const isApproved = approvalStatus === RestaurantApprovalStatus.APPROVED
   const isSuspended = approvalStatus === RestaurantApprovalStatus.SUSPENDED
   const isRejected = approvalStatus === RestaurantApprovalStatus.REJECTED
+  const isTerminated = approvalStatus === RestaurantApprovalStatus.TERMINATED
 
   const needsReason =
-    action === 'reject' || action === 'suspend' || action === 'request-info'
+    action === 'reject' || action === 'suspend' || action === 'request-info' || action === 'terminate'
 
   return (
     <div>
@@ -137,6 +140,14 @@ export default function RestaurantDetailPage() {
             Reinstate
           </button>
         )}
+        {!isTerminated && (
+          <button
+            onClick={() => setAction('terminate')}
+            className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+          >
+            Terminate
+          </button>
+        )}
       </div>
 
       {/* Info Grid */}
@@ -169,6 +180,20 @@ export default function RestaurantDetailPage() {
             <p className="text-sm text-yellow-700">{restaurant.approvalNote}</p>
           </div>
         )}
+
+        {isTerminated && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-6 lg:col-span-2">
+            <h2 className="mb-3 font-semibold text-red-800">Termination Details</h2>
+            <dl className="space-y-3 text-sm">
+              {restaurant.terminatedAt && (
+                <InfoRow label="Terminated on" value={new Date(restaurant.terminatedAt).toLocaleString()} />
+              )}
+              {restaurant.terminationReason && (
+                <InfoRow label="Reason" value={restaurant.terminationReason} />
+              )}
+            </dl>
+          </div>
+        )}
       </div>
 
       {/* Confirm Dialog */}
@@ -183,10 +208,20 @@ export default function RestaurantDetailPage() {
             ? 'Suspend Restaurant'
             : action === 'reinstate'
             ? 'Reinstate Restaurant'
+            : action === 'terminate'
+            ? 'Terminate Restaurant'
             : 'Request More Information'
         }
-        confirmLabel={action === 'approve' || action === 'reinstate' ? 'Confirm' : action === 'reject' || action === 'suspend' ? action.charAt(0).toUpperCase() + action.slice(1) : 'Send Request'}
-        confirmVariant={action === 'reject' || action === 'suspend' ? 'danger' : 'primary'}
+        confirmLabel={
+          action === 'approve' || action === 'reinstate'
+            ? 'Confirm'
+            : action === 'terminate'
+            ? 'Terminate'
+            : action === 'reject' || action === 'suspend'
+            ? action.charAt(0).toUpperCase() + action.slice(1)
+            : 'Send Request'
+        }
+        confirmVariant={action === 'reject' || action === 'suspend' || action === 'terminate' ? 'danger' : 'primary'}
         loading={mutation.isPending}
         onConfirm={() => mutation.mutate()}
         onCancel={() => { setAction(null); setReason('') }}

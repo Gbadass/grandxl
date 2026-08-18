@@ -39,6 +39,14 @@ export class RequestMoreInfoDto {
   message!: string
 }
 
+export class TerminateRestaurantDto {
+  @ApiProperty({ example: 'Repeated food safety violations despite two prior suspensions.' })
+  @IsString()
+  @MinLength(10)
+  @MaxLength(1000)
+  reason!: string
+}
+
 class OnboardAddressDto {
   @ApiProperty({ example: '15 Adeola Odeku Street' })
   @IsString() @MinLength(1) @MaxLength(200)
@@ -66,10 +74,26 @@ class OnboardAddressDto {
 }
 
 export class AdminOnboardRestaurantDto {
-  @ApiProperty({ example: '+2348012345678', description: 'Existing platform user phone — will become the restaurant owner' })
+  @ApiProperty({ example: '+2348012345678', description: 'Owner phone — existing GrandXL account or new account if ownerFirstName/ownerLastName are provided' })
   @IsString()
   @Matches(/^\+[1-9]\d{7,14}$/, { message: 'Phone must be E.164 format (+2348012345678)' })
   ownerPhone!: string
+
+  @ApiPropertyOptional({ example: 'Amaka', description: 'Required only when creating a new owner account (phone not yet registered)' })
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(50)
+  ownerFirstName?: string
+
+  @ApiPropertyOptional({ example: 'Okonkwo', description: 'Required only when creating a new owner account' })
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(50)
+  ownerLastName?: string
+
+  @ApiPropertyOptional({ example: 'amaka@restaurant.com', description: 'Owner email — used to send welcome credentials when creating a new account' })
+  @IsOptional() @IsEmail()
+  ownerEmail?: string
+
+  @ApiPropertyOptional({ description: 'Password for the new owner account — required when ownerPhone is not yet registered' })
+  @IsOptional() @IsString() @MinLength(8)
+  ownerPassword?: string
 
   @ApiProperty({ example: 'Amaka\'s Kitchen' })
   @IsString() @MinLength(2) @MaxLength(100)

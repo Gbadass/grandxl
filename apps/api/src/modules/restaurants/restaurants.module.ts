@@ -6,6 +6,7 @@ import { RestaurantsController } from './restaurants.controller'
 import { AdminRestaurantsController } from './admin-restaurants.controller'
 import { UsersModule } from '../users/users.module'
 import { EmailModule } from '../email/email.module'
+import { AuthModule } from '../auth/auth.module'
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { EmailModule } from '../email/email.module'
     ]),
     UsersModule,
     EmailModule,
+    AuthModule,
   ],
   controllers: [RestaurantsController, AdminRestaurantsController],
   providers: [RestaurantsService],

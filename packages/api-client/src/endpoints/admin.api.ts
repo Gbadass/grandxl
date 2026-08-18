@@ -29,12 +29,20 @@ export interface SuspendRestaurantDto {
   reason: string
 }
 
+export interface TerminateRestaurantDto {
+  reason: string
+}
+
 export interface RequestMoreInfoDto {
   message: string
 }
 
 export interface AdminOnboardRestaurantDto {
   ownerPhone: string
+  ownerFirstName?: string
+  ownerLastName?: string
+  ownerEmail?: string
+  ownerPassword?: string
   name: string
   phone: string
   email?: string
@@ -78,6 +86,9 @@ export const adminRestaurantsApi = {
 
   reinstate: (id: string) =>
     getClient().patch<ApiResponse<Restaurant>>(`/admin/restaurants/${id}/reinstate`),
+
+  terminate: (id: string, dto: TerminateRestaurantDto) =>
+    getClient().patch<ApiResponse<Restaurant>>(`/admin/restaurants/${id}/terminate`, dto),
 }
 
 // ── Admin — Riders ───────────────────────────────────────────────────────────
@@ -268,10 +279,11 @@ export interface CreateCategoryDto {
 export interface CreateMenuItemDto {
   name: string
   description?: string
-  price: number
+  basePrice: number
   categoryId: string
   isAvailable?: boolean
-  preparationTime?: number
+  isPopular?: boolean
+  sortOrder?: number
   allergens?: string[]
   prepTimeMinutes?: number
   stockCount?: number

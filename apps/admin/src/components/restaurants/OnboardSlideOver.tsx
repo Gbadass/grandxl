@@ -6,6 +6,139 @@ import toast from 'react-hot-toast'
 import { adminRestaurantsApi, adminUsersApi, foodCategoriesApi } from '@grandxl/api-client'
 import type { User } from '@grandxl/types'
 
+// ── Address autocomplete (same logic as self-onboarding Step3Form) ─────────────
+
+type ACSuggestion = { description: string; place_id: string }
+
+function AddressAutocomplete({
+  onFill,
+}: {
+  onFill: (data: { street: string; city: string; state: string }) => void
+}) {
+  const [query, setQuery]         = useState('')
+  const [suggestions, setSug]     = useState<ACSuggestion[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchErr, setSearchErr] = useState('')
+  const [open, setOpen]           = useState(false)
+  const debounceRef               = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wrapperRef                = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const q = query.trim()
+    if (q.length < 3) { setSug([]); setOpen(false); setSearchErr(''); return }
+
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true)
+      setSearchErr('')
+      try {
+        const res  = await fetch(`/api/places?q=${encodeURIComponent(q)}`)
+        const data = await res.json() as { suggestions?: ACSuggestion[]; status?: string }
+        if (data.status && data.status !== 'OK') {
+          setSearchErr(`Maps: ${data.status}`)
+          setSug([]); setOpen(false)
+        } else {
+          setSug(data.suggestions ?? [])
+          setOpen((data.suggestions?.length ?? 0) > 0)
+        }
+      } catch {
+        setSearchErr('Search failed — check connection')
+        setSug([]); setOpen(false)
+      } finally {
+        setSearching(false)
+      }
+    }, 400)
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [query])
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [])
+
+  async function handleSelect(s: ACSuggestion) {
+    setQuery(s.description.split(',').slice(0, 2).join(',').trim())
+    setSug([]); setOpen(false)
+    try {
+      const res  = await fetch(`/api/places/details?placeId=${encodeURIComponent(s.place_id)}`)
+      const data = await res.json() as {
+        result?: { address_components?: Array<{ long_name: string; types: string[] }> }
+      }
+      const comps = data.result?.address_components ?? []
+      let num = '', road = '', sub = '', city = '', state = ''
+      for (const c of comps) {
+        if (c.types.includes('street_number'))               num   = c.long_name
+        if (c.types.includes('route'))                       road  = c.long_name
+        if (c.types.includes('sublocality_level_1'))         sub   = c.long_name
+        if (c.types.includes('locality'))                    city  = c.long_name
+        if (c.types.includes('administrative_area_level_2')) city  = city || c.long_name
+        if (c.types.includes('administrative_area_level_1')) state = c.long_name
+      }
+      const street = [num, road].filter(Boolean).join(' ') || sub || s.description.split(',')[0]?.trim() || ''
+      onFill({ street, city, state })
+    } catch {
+      const parts = s.description.split(',')
+      onFill({ street: parts[0]?.trim() ?? '', city: parts[1]?.trim() ?? '', state: parts[2]?.trim() ?? '' })
+    }
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+          {searching ? (
+            <svg className="h-3.5 w-3.5 animate-spin text-orange-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          ) : (
+            <svg fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-3.5 w-3.5 text-gray-400">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+          )}
+        </div>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          placeholder="Search address or landmark…"
+          autoComplete="off"
+          className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+        />
+      </div>
+      {searchErr ? (
+        <p className="mt-1 text-xs text-red-500">{searchErr}</p>
+      ) : (
+        <p className="mt-1 text-xs text-gray-400">Powered by Google Maps · auto-fills street, city, state</p>
+      )}
+      {open && suggestions.length > 0 && (
+        <ul className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-gray-100 bg-white shadow-xl">
+          {suggestions.map((s) => (
+            <li key={s.place_id}>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); void handleSelect(s) }}
+                className="flex w-full cursor-pointer items-start gap-2.5 px-3 py-2.5 text-left text-sm transition hover:bg-orange-50"
+              >
+                <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="mt-0.5 h-4 w-4 shrink-0 text-orange-400">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                </svg>
+                <span className="leading-snug text-gray-700">{s.description}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 interface Props {
   open: boolean
   onClose: () => void
@@ -27,7 +160,12 @@ const FALLBACK_CUISINE_SUGGESTIONS = [
 ]
 
 const defaultForm = {
+  ownerFirstName: '',
+  ownerLastName: '',
+  ownerEmail: '',
   ownerPhone: '',
+  ownerPassword: '',
+  ownerConfirmPassword: '',
   name: '',
   phone: '',
   email: '',
@@ -52,11 +190,12 @@ export function OnboardSlideOver({ open, onClose }: Props) {
   const [cuisineOpen, setCuisineOpen] = useState(false)
   const [cuisineSuggestions, setCuisineSuggestions] = useState<string[]>(FALLBACK_CUISINE_SUGGESTIONS)
 
-  // Owner phone lookup state
+  // Owner phone lookup — determines whether password fields are shown
   const [ownerLookup, setOwnerLookup] = useState<{
     status: 'idle' | 'loading' | 'found' | 'not_found'
     user: User | null
   }>({ status: 'idle', user: null })
+  const [showPassword, setShowPassword] = useState(false)
 
   const firstInput = useRef<HTMLInputElement>(null)
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -66,6 +205,7 @@ export function OnboardSlideOver({ open, onClose }: Props) {
       setForm(defaultForm)
       setErrors({})
       setOwnerLookup({ status: 'idle', user: null })
+      setShowPassword(false)
       setTimeout(() => firstInput.current?.focus(), 100)
     }
   }, [open])
@@ -82,7 +222,7 @@ export function OnboardSlideOver({ open, onClose }: Props) {
       .catch(() => { /* fallback list already set */ })
   }, [])
 
-  // Debounced owner phone lookup
+  // Debounced owner phone lookup — found → hide password fields, not_found → show them
   const lookupOwner = useCallback((phone: string) => {
     if (lookupTimer.current) clearTimeout(lookupTimer.current)
     if (!phone.match(/^\+[1-9]\d{7,14}$/)) {
@@ -109,6 +249,13 @@ export function OnboardSlideOver({ open, onClose }: Props) {
     mutationFn: () =>
       adminRestaurantsApi.onboard({
         ownerPhone: form.ownerPhone.trim(),
+        // Only send personal details when creating a new account (not_found)
+        ...(ownerLookup.status === 'not_found' && {
+          ownerFirstName: form.ownerFirstName.trim(),
+          ownerLastName: form.ownerLastName.trim(),
+          ownerEmail: form.ownerEmail.trim() || undefined,
+          ownerPassword: form.ownerPassword,
+        }),
         name: form.name.trim(),
         phone: form.phone.trim(),
         email: form.email.trim() || undefined,
@@ -140,8 +287,17 @@ export function OnboardSlideOver({ open, onClose }: Props) {
 
   function validate() {
     const e: Record<string, string> = {}
+    if (!form.ownerFirstName.trim()) e.ownerFirstName = 'First name is required'
+    if (!form.ownerLastName.trim()) e.ownerLastName = 'Last name is required'
+    if (form.ownerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.ownerEmail)) e.ownerEmail = 'Invalid email address'
     if (!form.ownerPhone.match(/^\+[1-9]\d{7,14}$/)) e.ownerPhone = 'E.164 format required (+2348012345678)'
-    if (ownerLookup.status === 'not_found') e.ownerPhone = 'No GrandXL account found for this number'
+    if (ownerLookup.status === 'loading') e.ownerPhone = 'Checking account — please wait a moment'
+    if (ownerLookup.status === 'not_found') {
+      if (form.ownerPassword.length < 8) e.ownerPassword = 'Minimum 8 characters'
+      else if (!/[A-Z]/.test(form.ownerPassword)) e.ownerPassword = 'Must include at least one uppercase letter'
+      else if (!/[0-9]/.test(form.ownerPassword)) e.ownerPassword = 'Must include at least one number'
+      if (form.ownerConfirmPassword !== form.ownerPassword) e.ownerConfirmPassword = 'Passwords do not match'
+    }
     if (form.name.trim().length < 2) e.name = 'Name is required'
     if (!form.phone.match(/^\+[1-9]\d{7,14}$/)) e.phone = 'E.164 format required (+2348012345678)'
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email'
@@ -207,32 +363,65 @@ export function OnboardSlideOver({ open, onClose }: Props) {
         <div className="flex-1 overflow-y-auto px-6 py-6">
           <div className="space-y-6">
 
-            {/* Owner */}
-            <Section label="Owner" icon="person">
-              <Field label="Owner Phone Number" error={errors.ownerPhone} required>
-                <input
-                  ref={firstInput}
-                  type="tel"
-                  value={form.ownerPhone}
-                  onChange={e => {
-                    set('ownerPhone', e.target.value)
-                    lookupOwner(e.target.value)
-                  }}
-                  placeholder="+2348012345678"
-                  className={input(errors.ownerPhone)}
-                />
-                <p className="mt-1.5 text-xs text-gray-400">Must be an existing GrandXL user account</p>
+            {/* Owner — same fields as self-service Step 1 */}
+            <Section label="Owner Account" icon="person">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="First Name" error={errors.ownerFirstName} required>
+                  <input
+                    ref={firstInput}
+                    type="text"
+                    value={form.ownerFirstName}
+                    onChange={e => set('ownerFirstName', e.target.value)}
+                    placeholder="Amaka"
+                    className={input(errors.ownerFirstName ?? '')}
+                  />
+                </Field>
+                <Field label="Last Name" error={errors.ownerLastName} required>
+                  <input
+                    type="text"
+                    value={form.ownerLastName}
+                    onChange={e => set('ownerLastName', e.target.value)}
+                    placeholder="Okonkwo"
+                    className={input(errors.ownerLastName ?? '')}
+                  />
+                </Field>
+              </div>
 
-                {/* Owner lookup feedback */}
-                {ownerLookup.status === 'loading' && (
-                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
-                    <svg className="h-3.5 w-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Looking up account…
-                  </div>
-                )}
+              <Field label="Email Address" error={errors.ownerEmail}>
+                <input
+                  type="email"
+                  value={form.ownerEmail}
+                  onChange={e => set('ownerEmail', e.target.value)}
+                  placeholder="amaka@restaurant.com"
+                  className={input(errors.ownerEmail ?? '')}
+                />
+                <p className="mt-1 text-xs text-gray-400">Optional — welcome email with login details sent here</p>
+              </Field>
+
+              <Field label="Phone Number" error={errors.ownerPhone} required>
+                <div className="relative">
+                  <input
+                    type="tel"
+                    value={form.ownerPhone}
+                    onChange={e => {
+                      set('ownerPhone', e.target.value)
+                      lookupOwner(e.target.value)
+                    }}
+                    placeholder="+2348012345678"
+                    className={input(errors.ownerPhone) + ' pr-9'}
+                  />
+                  {ownerLookup.status === 'loading' && (
+                    <div className="absolute inset-y-0 right-3 flex items-center">
+                      <svg className="h-4 w-4 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-gray-400">E.164 format · include country code e.g. +234 for Nigeria</p>
+
+                {/* Existing account found — no password needed */}
                 {ownerLookup.status === 'found' && ownerLookup.user && (
                   <div className="mt-2 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -240,23 +429,59 @@ export function OnboardSlideOver({ open, onClose }: Props) {
                     </svg>
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-green-800">
-                        {ownerLookup.user.firstName} {ownerLookup.user.lastName}
+                        Existing account — {ownerLookup.user.firstName} {ownerLookup.user.lastName}
                       </p>
-                      {ownerLookup.user.email && (
-                        <p className="truncate text-xs text-green-600">{ownerLookup.user.email}</p>
-                      )}
+                      <p className="text-xs text-green-600">Owner will log in with their existing password</p>
                     </div>
                   </div>
                 )}
-                {ownerLookup.status === 'not_found' && (
-                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                    </svg>
-                    <p className="text-xs text-red-700">No GrandXL account found for this number</p>
-                  </div>
-                )}
               </Field>
+
+              {/* Password fields — only shown when phone has no account yet */}
+              {ownerLookup.status === 'not_found' && (
+                <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                  <p className="text-xs font-medium text-blue-700">
+                    No account found for this number — set a password to create one
+                  </p>
+                  <Field label="Password" error={errors.ownerPassword} required>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={form.ownerPassword}
+                        onChange={e => set('ownerPassword', e.target.value)}
+                        placeholder="Min 8 chars, 1 uppercase, 1 number"
+                        className={input(errors.ownerPassword ?? '') + ' pr-9'}
+                      />
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => setShowPassword(v => !v)}
+                        className="absolute inset-y-0 right-3 flex cursor-pointer items-center text-gray-400 hover:text-gray-600"
+                      >
+                        {showPassword ? (
+                          <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.7} stroke="currentColor" className="h-4 w-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                          </svg>
+                        ) : (
+                          <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.7} stroke="currentColor" className="h-4 w-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </Field>
+                  <Field label="Confirm Password" error={errors.ownerConfirmPassword} required>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.ownerConfirmPassword}
+                      onChange={e => set('ownerConfirmPassword', e.target.value)}
+                      placeholder="Repeat the password"
+                      className={input(errors.ownerConfirmPassword ?? '')}
+                    />
+                  </Field>
+                </div>
+              )}
             </Section>
 
             {/* Restaurant Details */}
@@ -339,26 +564,43 @@ export function OnboardSlideOver({ open, onClose }: Props) {
                   </div>
                 </div>
                 {errors.cuisine && <p className="mt-1 text-xs text-red-500">{errors.cuisine}</p>}
-                {/* Quick-pick chips */}
-                {form.cuisine.length === 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {cuisineSuggestions.slice(0, 8).map(s => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => addCuisine(s)}
-                        className="cursor-pointer rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Quick-pick chips — always show unselected options */}
+                {(() => {
+                  const unselected = cuisineSuggestions.filter(s => !form.cuisine.includes(s)).slice(0, 8)
+                  return unselected.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {unselected.map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => addCuisine(s)}
+                          className="cursor-pointer rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null
+                })()}
               </Field>
             </Section>
 
             {/* Address */}
             <Section label="Address" icon="location">
+              <Field label="Search Address">
+                <AddressAutocomplete
+                  onFill={({ street, city, state }) => {
+                    setForm(f => ({
+                      ...f,
+                      street: street || f.street,
+                      city: city || f.city,
+                      state: state || f.state,
+                    }))
+                    setErrors(e => ({ ...e, street: '', city: '', state: '' }))
+                  }}
+                />
+              </Field>
+
               <Field label="Street Address" error={errors.street} required>
                 <input
                   type="text"

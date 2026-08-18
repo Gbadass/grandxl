@@ -20,7 +20,7 @@ import {
 } from '@nestjs/swagger'
 import type { Request } from 'express'
 import { RestaurantsService } from './restaurants.service'
-import { RejectRestaurantDto, SuspendRestaurantDto, RequestMoreInfoDto, AdminOnboardRestaurantDto } from './dto/admin-action.dto'
+import { RejectRestaurantDto, SuspendRestaurantDto, RequestMoreInfoDto, AdminOnboardRestaurantDto, TerminateRestaurantDto } from './dto/admin-action.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
@@ -150,6 +150,21 @@ export class AdminRestaurantsController {
   ) {
     const result = await this.restaurantsService.reinstate(id, user.sub)
     void this.audit.log({ ...this.auditMeta(req, user), action: 'restaurant.reinstate', targetType: 'restaurant', targetId: id })
+    return result
+  }
+
+  @Patch(':id/terminate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Permanently terminate a restaurant — soft-deletes, hides from all listings, data retained for compliance' })
+  @ApiOkResponse({ description: 'Restaurant terminated' })
+  async terminate(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: TerminateRestaurantDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.restaurantsService.terminate(id, dto.reason, user.sub)
+    void this.audit.log({ ...this.auditMeta(req, user), action: 'restaurant.terminate', targetType: 'restaurant', targetId: id, metadata: { reason: dto.reason } })
     return result
   }
 }

@@ -50,7 +50,7 @@ export default function NewMenuItemPage() {
       menuManagementApi.createItem(restaurantId!, {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
-        price: Math.round(parseFloat(form.price) * 100), // naira → kobo
+        basePrice: Math.round(parseFloat(form.price) * 100), // naira → kobo
         categoryId: form.categoryId,
         isAvailable: form.isAvailable,
       }),

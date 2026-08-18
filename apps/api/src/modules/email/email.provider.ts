@@ -127,6 +127,42 @@ export class EmailProvider {
     })
   }
 
+  async sendOwnerWelcomeCredentials(
+    email: string,
+    firstName: string,
+    restaurantName: string,
+    phone: string,
+    tempPassword: string,
+  ): Promise<void> {
+    const adminUrl = this.config.get<string>('ADMIN_URL', 'http://localhost:3000')
+    const loginUrl = `${adminUrl}/auth/login`
+    await this.send({
+      to: email,
+      subject: `Welcome to GrandXL — your restaurant account is ready`,
+      html: `
+        <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;color:#111">
+          <h2 style="margin-bottom:8px">Hi ${firstName},</h2>
+          <p style="color:#555;line-height:1.55">
+            A GrandXL account has been created for you as the owner of
+            <strong>${restaurantName}</strong>. Your restaurant is already live and approved.
+          </p>
+          <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin:20px 0">
+            <p style="margin:0 0 8px;font-size:13px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Your login details</p>
+            <p style="margin:4px 0;font-size:15px"><strong>Phone:</strong> ${phone}</p>
+            <p style="margin:4px 0;font-size:15px"><strong>Temp password:</strong> <span style="font-family:monospace;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:2px 8px">${tempPassword}</span></p>
+          </div>
+          <a href="${loginUrl}"
+             style="background:#f97316;color:#fff;padding:12px 24px;border-radius:9999px;text-decoration:none;display:inline-block;margin:0 0 16px;font-weight:600">
+            Login to your dashboard
+          </a>
+          <p style="color:#ef4444;font-size:13px;font-weight:600">⚠ Please change your password immediately after logging in.</p>
+          <p style="color:#888;font-size:13px;margin-top:24px">Questions? Reply to this email or WhatsApp us at our partner support line.</p>
+          <p style="margin-top:24px;color:#aaa;font-size:12px">— The GrandXL Team</p>
+        </div>
+      `,
+    })
+  }
+
   async sendAdminSecurityAlert(email: string, lockedUntil: Date): Promise<void> {
     await this.send({
       to: email,

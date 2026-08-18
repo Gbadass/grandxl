@@ -56,6 +56,9 @@ export interface Restaurant {
   approvalNote: string | null
   approvedAt: Date | null
   approvedBy: string | null
+  terminatedAt: Date | null
+  terminatedBy: string | null
+  terminationReason: string | null
   rating: number
   ratingCount: number
   country: string

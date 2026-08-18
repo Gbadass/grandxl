@@ -14,8 +14,10 @@ import type { CreateRestaurantDto } from './dto/create-restaurant.dto'
 import type { UpdateRestaurantDto } from './dto/update-restaurant.dto'
 import type { QueryRestaurantsDto } from './dto/query-restaurants.dto'
 import { PAGINATION_DEFAULT_LIMIT, PAGINATION_MAX_LIMIT } from '../../common/constants/app.constants'
+import * as bcrypt from 'bcryptjs'
 import { UsersService } from '../users/users.service'
 import { EmailProvider } from '../email/email.provider'
+import { TermiiProvider } from '../auth/providers/termii.provider'
 
 export type SafeRestaurant = Omit<ReturnType<RestaurantDocument['toObject']>, 'bankDetails'>
 
@@ -26,6 +28,7 @@ export class RestaurantsService {
     private readonly restaurantModel: Model<RestaurantDocument>,
     private readonly usersService: UsersService,
     private readonly email: EmailProvider,
+    private readonly termii: TermiiProvider,
   ) {}
 
   // ── Slug generation ──────────────────────────────────────────────
@@ -301,6 +304,10 @@ export class RestaurantsService {
   async adminOnboard(
     dto: {
       ownerPhone: string
+      ownerFirstName?: string
+      ownerLastName?: string
+      ownerEmail?: string
+      ownerPassword?: string
       name: string
       phone: string
       email?: string
@@ -314,8 +321,50 @@ export class RestaurantsService {
     },
     adminId: string,
   ): Promise<RestaurantDocument> {
-    const owner = await this.usersService.findByPhone(dto.ownerPhone)
-    if (!owner) throw new NotFoundException(`No user found with phone ${dto.ownerPhone}`)
+    let owner = await this.usersService.findByPhone(dto.ownerPhone)
+
+    if (!owner) {
+      if (!dto.ownerFirstName?.trim() || !dto.ownerLastName?.trim()) {
+        throw new NotFoundException(
+          `No GrandXL account found for ${dto.ownerPhone}. Provide ownerFirstName and ownerLastName to create one.`,
+        )
+      }
+
+      if (!dto.ownerPassword) {
+        throw new NotFoundException(
+          `No GrandXL account found for ${dto.ownerPhone}. Provide ownerFirstName, ownerLastName and ownerPassword to create one.`,
+        )
+      }
+
+      const passwordHash = await bcrypt.hash(dto.ownerPassword, 12)
+
+      owner = await this.usersService.create({
+        phone: dto.ownerPhone,
+        firstName: dto.ownerFirstName.trim(),
+        lastName: dto.ownerLastName.trim(),
+        email: dto.ownerEmail?.trim().toLowerCase() || undefined,
+        passwordHash,
+        roles: [UserRole.RESTAURANT_OWNER],
+      })
+
+      // Fire-and-forget — outages must not block restaurant creation
+      void this.termii.sendTransactional(
+        dto.ownerPhone,
+        `Hi ${dto.ownerFirstName.trim()}, your GrandXL restaurant owner account is ready. ` +
+        `Login with your phone number and the password set for you by our team. ` +
+        `Visit grandxl.com to get started.`,
+      )
+
+      if (dto.ownerEmail?.trim()) {
+        void this.email.sendOwnerWelcomeCredentials(
+          dto.ownerEmail.trim().toLowerCase(),
+          dto.ownerFirstName.trim(),
+          dto.name.trim(),
+          dto.ownerPhone,
+          dto.ownerPassword,
+        )
+      }
+    }
 
     const slug = await this.generateUniqueSlug(dto.name)
 
@@ -528,6 +577,37 @@ export class RestaurantsService {
             approvalStatus: RestaurantApprovalStatus.APPROVED,
             approvalNote: null,
             approvedBy: new Types.ObjectId(adminId),
+          },
+        },
+        { new: true },
+      )
+      .exec()
+
+    if (!updated) throw new NotFoundException('Restaurant not found')
+    return updated
+  }
+
+  // ── Admin — terminate (permanent soft-delete) ────────────────────
+
+  async terminate(restaurantId: string, reason: string, adminId: string): Promise<RestaurantDocument> {
+    const restaurant = await this.findByIdRaw(restaurantId)
+
+    if (restaurant.approvalStatus === RestaurantApprovalStatus.TERMINATED) {
+      throw new BadRequestException('Restaurant is already terminated')
+    }
+
+    const updated = await this.restaurantModel
+      .findByIdAndUpdate(
+        restaurantId,
+        {
+          $set: {
+            isApproved: false,
+            isActive: false,
+            isOpen: false,
+            approvalStatus: RestaurantApprovalStatus.TERMINATED,
+            terminatedAt: new Date(),
+            terminatedBy: new Types.ObjectId(adminId),
+            terminationReason: reason.trim(),
           },
         },
         { new: true },

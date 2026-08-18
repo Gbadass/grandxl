@@ -34,6 +34,7 @@ export enum RestaurantApprovalStatus {
   APPROVED = 'approved',
   REJECTED = 'rejected',
   SUSPENDED = 'suspended',
+  TERMINATED = 'terminated',
 }
 
 export enum VehicleType {
