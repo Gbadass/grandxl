@@ -25,6 +25,7 @@ export interface CreateOrderDto {
   // ISO datetime; must be 60min–7d in the future. Omit for "order now".
   scheduledFor?: string
   customerNote?: string
+  deliveryInstructions?: string
 }
 
 export interface UpdateOrderStatusDto {

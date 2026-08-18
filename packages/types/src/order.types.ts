@@ -68,6 +68,7 @@ export interface Order {
   payment: OrderPayment
   coupon: OrderCoupon
   customerNote: string | null
+  deliveryInstructions: string | null
   estimatedTime: number | null // minutes
   actualDeliveryAt: Date | null
   cancelReason: string | null

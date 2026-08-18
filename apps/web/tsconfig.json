@@ -13,6 +13,6 @@
     "noUnusedParameters": false
   },
   "include": ["src"],
-  "exclude": ["src/test"],
+  "exclude": ["src/test", "src/sw.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

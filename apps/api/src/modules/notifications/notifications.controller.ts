@@ -41,7 +41,7 @@ export class NotificationsController {
   }
 
   @Get('my')
-  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
+  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Get notifications for the current user' })
   @ApiOkResponse({ description: 'Paginated notifications with unread count' })
   async getMyNotifications(
@@ -57,7 +57,7 @@ export class NotificationsController {
   }
 
   @Patch(':id/read')
-  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
+  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER, UserRole.SUPER_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Mark a single notification as read' })
   @ApiNoContentResponse({ description: 'Marked as read' })
@@ -69,7 +69,7 @@ export class NotificationsController {
   }
 
   @Patch('read-all')
-  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
+  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER, UserRole.SUPER_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Mark all notifications as read' })
   @ApiNoContentResponse({ description: 'All marked as read' })

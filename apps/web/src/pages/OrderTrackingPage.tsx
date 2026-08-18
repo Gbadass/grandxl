@@ -14,8 +14,12 @@ import {
   ShoppingBag,
   XCircle,
   Star,
+  Navigation,
   type LucideIcon,
 } from 'lucide-react'
+import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import { OrderStatus } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
@@ -107,6 +111,36 @@ const STATUS_RANK: Record<string, number> = {
   ready:     3,
   picked_up: 4,
   delivered: 5,
+}
+
+// ── Leaflet custom icons (avoids Vite asset path issues) ─────────────────────
+
+const riderDivIcon = L.divIcon({
+  html: '<div style="width:16px;height:16px;border-radius:50%;background:#4f46e5;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35)"></div>',
+  className: '',
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+})
+
+const destDivIcon = L.divIcon({
+  html: '<div style="width:14px;height:14px;border-radius:50%;background:#E84B3A;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35)"></div>',
+  className: '',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+})
+
+// Auto-fit map bounds to rider + delivery pin
+function FitBounds({ coords }: { coords: [number, number][] }) {
+  const map = useMap()
+  useEffect(() => {
+    if (coords.length === 0) return
+    if (coords.length === 1) {
+      map.setView(coords[0], 15)
+    } else {
+      map.fitBounds(L.latLngBounds(coords), { padding: [40, 40] })
+    }
+  }, [map, coords])
+  return null
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -361,8 +395,32 @@ function DeliveryAddressCard({ order }: { order: Order }) {
   )
 }
 
-function RiderCard({ order }: { order: Order }) {
+function RiderCard({
+  order,
+  riderCoords,
+}: {
+  order: Order
+  riderCoords: { lat: number; lng: number } | null
+}) {
   if (!order.riderId || order.status !== OrderStatus.PICKED_UP) return null
+
+  const deliveryCoords =
+    order.deliveryAddress.coordinates?.coordinates
+      ? ([
+          order.deliveryAddress.coordinates.coordinates[1],
+          order.deliveryAddress.coordinates.coordinates[0],
+        ] as [number, number])
+      : null
+
+  const mapBounds: [number, number][] = [
+    ...(riderCoords ? [[riderCoords.lat, riderCoords.lng] as [number, number]] : []),
+    ...(deliveryCoords ? [deliveryCoords] : []),
+  ]
+
+  // Fallback center when we have no coords yet
+  const center: [number, number] = riderCoords
+    ? [riderCoords.lat, riderCoords.lng]
+    : deliveryCoords ?? [6.5244, 3.3792]
 
   return (
     <AnimatePresence>
@@ -371,27 +429,71 @@ function RiderCard({ order }: { order: Order }) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0 }}
         transition={{ type: 'spring', stiffness: 280, damping: 24 }}
-        className="bg-white rounded-3xl shadow-sm p-4 flex items-center gap-3"
+        className="bg-white rounded-3xl shadow-sm overflow-hidden"
       >
-        <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-          <Bike size={22} className="text-indigo-600" />
+        {/* Rider info row */}
+        <div className="p-4 flex items-center gap-3">
+          <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+            <Bike size={22} className="text-indigo-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Your rider</p>
+            <p className="text-sm font-bold text-gray-900 mt-0.5">On the way to you</p>
+            <div className="flex items-center gap-1 mt-0.5">
+              <motion.div
+                className="h-1.5 w-1.5 rounded-full bg-green-400"
+                animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              />
+              <p className="text-xs text-green-600 font-medium">
+                {riderCoords ? 'GPS lock · updating live' : 'Waiting for rider GPS…'}
+              </p>
+            </div>
+          </div>
+          <a
+            href="tel:"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white hover:bg-primary/90 transition-colors cursor-pointer shrink-0"
+            aria-label="Call rider"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <Phone size={17} />
+          </a>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Your rider</p>
-          <p className="text-sm font-bold text-gray-900 mt-0.5">On the way to you</p>
-          <div className="flex items-center gap-1 mt-0.5">
-            <div className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-            <p className="text-xs text-green-600 font-medium">Live tracking</p>
+
+        {/* Live map */}
+        <div className="h-52 w-full" style={{ zIndex: 0 }}>
+          <MapContainer
+            center={center}
+            zoom={14}
+            style={{ width: '100%', height: '100%' }}
+            zoomControl={false}
+            attributionControl={false}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            {riderCoords && (
+              <Marker
+                position={[riderCoords.lat, riderCoords.lng]}
+                icon={riderDivIcon}
+              />
+            )}
+            {deliveryCoords && (
+              <Marker position={deliveryCoords} icon={destDivIcon} />
+            )}
+            {mapBounds.length > 0 && <FitBounds coords={mapBounds} />}
+          </MapContainer>
+        </div>
+
+        {/* Legend */}
+        <div className="px-4 py-2.5 flex items-center gap-4 border-t border-gray-50">
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded-full bg-indigo-500 border-2 border-white shadow-sm" />
+            <span className="text-[11px] text-gray-500">Rider</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded-full bg-primary border-2 border-white shadow-sm" />
+            <span className="text-[11px] text-gray-500">Your address</span>
           </div>
         </div>
-        <a
-          href="tel:"
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white hover:bg-primary/90 transition-colors cursor-pointer shrink-0"
-          aria-label="Call rider"
-          style={{ touchAction: 'manipulation' }}
-        >
-          <Phone size={17} />
-        </a>
       </motion.div>
     </AnimatePresence>
   )
@@ -458,8 +560,9 @@ export default function OrderTrackingPage() {
 
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reviewDone, setReviewDone] = useState(false)
+  const [riderCoords, setRiderCoords] = useState<{ lat: number; lng: number } | null>(null)
 
-  // Join the order socket room for real-time status pushes
+  // Join the order socket room for real-time status pushes and rider GPS
   useEffect(() => {
     if (!id) return
 
@@ -477,11 +580,17 @@ export default function OrderTrackingPage() {
       void queryClient.invalidateQueries({ queryKey: ['order', id] })
     }
 
+    function onRiderLocation(data: { riderId: string; lat: number; lng: number; bearing: number }) {
+      setRiderCoords({ lat: data.lat, lng: data.lng })
+    }
+
     socket.on('order:status_update', onStatusUpdate)
+    socket.on('rider:location', onRiderLocation)
 
     return () => {
       socket.off('connect', joinRoom)
       socket.off('order:status_update', onStatusUpdate)
+      socket.off('rider:location', onRiderLocation)
       socket.emit('order:leave_room', { orderId: id })
     }
   }, [id, queryClient])
@@ -567,9 +676,9 @@ export default function OrderTrackingPage() {
         <DeliveryAddressCard order={order} />
       </div>
 
-      {/* Rider card — appears when picked up */}
+      {/* Rider card with live map — appears when picked up */}
       <div className="mt-3">
-        <RiderCard order={order} />
+        <RiderCard order={order} riderCoords={riderCoords} />
       </div>
 
       {/* Customer note */}
@@ -581,6 +690,18 @@ export default function OrderTrackingPage() {
         >
           <ShoppingBag size={14} className="text-amber-500 mt-0.5 shrink-0" />
           <p className="text-xs text-amber-700">{order.customerNote}</p>
+        </motion.div>
+      )}
+
+      {/* Delivery instructions */}
+      {order.deliveryInstructions && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-3 rounded-2xl bg-indigo-50 border border-indigo-100 p-3 flex items-start gap-2"
+        >
+          <Navigation size={14} className="text-indigo-500 mt-0.5 shrink-0" />
+          <p className="text-xs text-indigo-700">{order.deliveryInstructions}</p>
         </motion.div>
       )}
 

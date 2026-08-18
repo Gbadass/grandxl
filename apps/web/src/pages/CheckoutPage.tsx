@@ -3,7 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, MapPin, CreditCard, Wallet, Banknote, ChevronRight, Plus, Gift } from 'lucide-react'
+import { ChevronLeft, MapPin, CreditCard, Wallet, Banknote, ChevronRight, Plus, Gift, Navigation } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ordersApi, paymentsApi } from '@grandxl/api-client'
 import { PaymentMethod, OrderStatus } from '@grandxl/types'
@@ -55,6 +55,7 @@ export default function CheckoutPage() {
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.PAYSTACK)
   const [customerNote, setCustomerNote] = useState('')
+  const [deliveryInstructions, setDeliveryInstructions] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null)
 
@@ -118,6 +119,7 @@ export default function CheckoutPage() {
       },
       paymentMethod,
       customerNote: customerNote.trim() || undefined,
+      deliveryInstructions: deliveryInstructions.trim() || undefined,
     }
 
     setIsSubmitting(true)
@@ -214,6 +216,22 @@ export default function CheckoutPage() {
               </motion.button>
             )}
           </AnimatePresence>
+        </section>
+
+        {/* Delivery instructions */}
+        <section className="mb-4">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Navigation size={16} className="text-primary" />
+            <h2 className="font-semibold text-sm text-gray-900">Delivery instructions</h2>
+          </div>
+          <textarea
+            value={deliveryInstructions}
+            onChange={(e) => setDeliveryInstructions(e.target.value)}
+            placeholder="e.g. Flat 3B, ring bell twice, leave at door"
+            rows={2}
+            maxLength={300}
+            className="w-full px-4 py-3 bg-white rounded-2xl shadow-sm text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary/20 transition resize-none"
+          />
         </section>
 
         {/* Payment method */}

@@ -3,9 +3,11 @@ import { NavBar } from '../organisms/NavBar'
 import { BottomNav } from '../organisms/BottomNav'
 import { CartFab } from '../organisms/CartFab'
 import { useDetectLocation } from '../../hooks/useDetectLocation'
+import { useWebPush } from '../../hooks/useWebPush'
 
 export function AppShell() {
   useDetectLocation()
+  useWebPush()
 
   return (
     <div className="min-h-screen bg-gray-50">

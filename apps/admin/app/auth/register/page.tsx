@@ -277,6 +277,28 @@ function Step1Form({
   )
 }
 
+// Fallback used when the API is unreachable — matches DEFAULT_CATEGORIES in the service
+const FALLBACK_CATEGORIES: FoodCategory[] = [
+  { _id: 'rice',              name: 'Rice',               slug: 'rice',              sortOrder: 0,  isActive: true, image: null, createdBy: null },
+  { _id: 'chicken',           name: 'Chicken',            slug: 'chicken',           sortOrder: 1,  isActive: true, image: null, createdBy: null },
+  { _id: 'swallow',           name: 'Swallow',            slug: 'swallow',           sortOrder: 2,  isActive: true, image: null, createdBy: null },
+  { _id: 'soups-stews',       name: 'Soups & Stews',      slug: 'soups-stews',       sortOrder: 3,  isActive: true, image: null, createdBy: null },
+  { _id: 'burgers',           name: 'Burgers',            slug: 'burgers',           sortOrder: 4,  isActive: true, image: null, createdBy: null },
+  { _id: 'pizza',             name: 'Pizza',              slug: 'pizza',             sortOrder: 5,  isActive: true, image: null, createdBy: null },
+  { _id: 'shawarma',          name: 'Shawarma',           slug: 'shawarma',          sortOrder: 6,  isActive: true, image: null, createdBy: null },
+  { _id: 'grills-suya',       name: 'Grills & Suya',      slug: 'grills-suya',       sortOrder: 7,  isActive: true, image: null, createdBy: null },
+  { _id: 'seafood',           name: 'Seafood',            slug: 'seafood',           sortOrder: 8,  isActive: true, image: null, createdBy: null },
+  { _id: 'fast-food',         name: 'Fast Food',          slug: 'fast-food',         sortOrder: 9,  isActive: true, image: null, createdBy: null },
+  { _id: 'snacks',            name: 'Snacks',             slug: 'snacks',            sortOrder: 10, isActive: true, image: null, createdBy: null },
+  { _id: 'breakfast',         name: 'Breakfast',          slug: 'breakfast',         sortOrder: 11, isActive: true, image: null, createdBy: null },
+  { _id: 'continental',       name: 'Continental',        slug: 'continental',       sortOrder: 12, isActive: true, image: null, createdBy: null },
+  { _id: 'chinese',           name: 'Chinese',            slug: 'chinese',           sortOrder: 13, isActive: true, image: null, createdBy: null },
+  { _id: 'desserts',          name: 'Desserts',           slug: 'desserts',          sortOrder: 14, isActive: true, image: null, createdBy: null },
+  { _id: 'drinks-smoothies',  name: 'Drinks & Smoothies', slug: 'drinks-smoothies',  sortOrder: 15, isActive: true, image: null, createdBy: null },
+  { _id: 'wraps-sandwiches',  name: 'Wraps & Sandwiches', slug: 'wraps-sandwiches',  sortOrder: 16, isActive: true, image: null, createdBy: null },
+  { _id: 'healthy',           name: 'Healthy',            slug: 'healthy',           sortOrder: 17, isActive: true, image: null, createdBy: null },
+] as unknown as FoodCategory[]
+
 function Step2Form({
   restaurant,
   onChangeField,
@@ -288,11 +310,25 @@ function Step2Form({
   ) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
   onToggleCuisine: (slug: string) => void
 }) {
-  const [categories, setCategories] = useState<FoodCategory[]>([])
+  const [categories, setCategories] = useState<FoodCategory[]>(FALLBACK_CATEGORIES)
+  const [loadingCats, setLoadingCats] = useState(true)
+  const [catError, setCatError] = useState<string | null>(null)
 
   useEffect(() => {
-    foodCategoriesApi.getAll().then((res) => setCategories(res.data.data)).catch(() => {})
+    foodCategoriesApi
+      .getAll()
+      .then((res) => {
+        const data = res.data.data
+        if (Array.isArray(data) && data.length > 0) setCategories(data)
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('[register] Failed to load food categories from API:', msg, err)
+        setCatError(msg)
+      })
+      .finally(() => setLoadingCats(false))
   }, [])
+
   return (
     <div className="space-y-5">
       <div>
@@ -343,8 +379,13 @@ function Step2Form({
         <label className="mb-2 block text-sm font-medium text-gray-700">
           Cuisine types <span className="text-orange-500">*</span>
         </label>
+        {catError && (
+          <p className="mb-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800">
+            Could not load live categories ({catError}) — showing defaults. You can still continue.
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
-          {categories.length === 0 && (
+          {loadingCats && categories.length === 0 && (
             <p className="text-xs text-gray-400">Loading categories…</p>
           )}
           {categories.map((c) => {

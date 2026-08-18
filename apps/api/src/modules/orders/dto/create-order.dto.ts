@@ -167,4 +167,10 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(300)
   customerNote?: string
+
+  @ApiPropertyOptional({ example: 'Flat 3B, ring bell twice', maxLength: 300 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  deliveryInstructions?: string
 }

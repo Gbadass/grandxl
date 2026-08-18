@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Star, Clock } from 'lucide-react'
 import type { Restaurant } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, isRestaurantOpen } from '@grandxl/utils'
+import type { RestaurantHours } from '@grandxl/utils'
 
 interface Props {
   restaurant: Restaurant
@@ -31,6 +32,8 @@ function initials(name: string) {
 
 export function RestaurantCard({ restaurant }: Props) {
   const isFree = restaurant.deliveryFeeFixed === 0
+  // Closed if manually toggled off, OR if outside today's opening hours schedule
+  const isOpen = restaurant.isOpen && isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours)
 
   return (
     <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.985 }} transition={{ duration: 0.15 }}>
@@ -64,11 +67,11 @@ export function RestaurantCard({ restaurant }: Props) {
           {/* Top badges */}
           <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between">
             {/* Closed badge */}
-            {!restaurant.isOpen ? (
+            {!isOpen ? (
               <div className="bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
                 CLOSED
               </div>
-            ) : isFree ? (
+            ) : isOpen && isFree ? (
               <div className="bg-green-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
                 FREE DELIVERY
               </div>

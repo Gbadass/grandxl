@@ -106,6 +106,9 @@ export class OrderDocument extends Document {
   @Prop({ type: String, default: null })
   customerNote!: string | null
 
+  @Prop({ type: String, default: null })
+  deliveryInstructions!: string | null
+
   @Prop({ type: Number, default: null })
   estimatedTime!: number | null // minutes
 

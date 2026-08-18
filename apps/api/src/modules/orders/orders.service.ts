@@ -32,6 +32,8 @@ import {
 } from '../jobs/constants/queue.constants'
 import { OrderStatus, PaymentMethod, PaymentStatus, UserRole } from '@grandxl/types'
 import type { JwtPayload } from '@grandxl/types'
+import { isRestaurantOpen } from '@grandxl/utils'
+import type { RestaurantHours } from '@grandxl/utils'
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PENDING]:    [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
@@ -92,6 +94,9 @@ export class OrdersService {
     }
     if (!restaurant.isOpen) {
       throw new BadRequestException('Restaurant is currently closed')
+    }
+    if (restaurant.openingHours && !isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours)) {
+      throw new BadRequestException('Restaurant is currently outside their opening hours')
     }
 
     const menuItemIds = dto.items.map((i) => i.menuItemId)
@@ -302,6 +307,7 @@ export class OrdersService {
       },
       coupon: { code: dto.couponCode ?? null, discountAmount: discount },
       customerNote: dto.customerNote ?? null,
+      deliveryInstructions: dto.deliveryInstructions ?? null,
       estimatedTime: restaurant.estimatedDeliveryTime,
       country: restaurant.country,
       currency: restaurant.currency,

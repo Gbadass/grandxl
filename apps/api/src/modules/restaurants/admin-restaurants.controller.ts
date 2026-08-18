@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Body,
   Param,
@@ -14,11 +15,12 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiOkResponse,
+  ApiCreatedResponse,
   ApiQuery,
 } from '@nestjs/swagger'
 import type { Request } from 'express'
 import { RestaurantsService } from './restaurants.service'
-import { RejectRestaurantDto, SuspendRestaurantDto, RequestMoreInfoDto } from './dto/admin-action.dto'
+import { RejectRestaurantDto, SuspendRestaurantDto, RequestMoreInfoDto, AdminOnboardRestaurantDto } from './dto/admin-action.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
@@ -42,6 +44,20 @@ export class AdminRestaurantsController {
       ipAddress: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip,
       userAgent: req.headers['user-agent'],
     }
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Admin onboards a restaurant directly — creates pre-approved on behalf of existing user' })
+  @ApiCreatedResponse({ description: 'Restaurant created and approved' })
+  async onboard(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: AdminOnboardRestaurantDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.restaurantsService.adminOnboard(dto, user.sub)
+    void this.audit.log({ ...this.auditMeta(req, user), action: 'restaurant.admin_onboard', targetType: 'restaurant', targetId: result._id.toString(), metadata: { name: dto.name, ownerPhone: dto.ownerPhone } })
+    return result
   }
 
   @Get()

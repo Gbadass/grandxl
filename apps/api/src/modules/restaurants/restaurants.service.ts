@@ -296,6 +296,68 @@ export class RestaurantsService {
     return { data: data as unknown as RestaurantDocument[], meta: { total, page, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) } }
   }
 
+  // ── Admin — onboard (create pre-approved on behalf of owner) ─────
+
+  async adminOnboard(
+    dto: {
+      ownerPhone: string
+      name: string
+      phone: string
+      email?: string
+      description?: string
+      cuisine: string[]
+      address: { street: string; city: string; state: string; country?: string; lat?: number; lng?: number }
+      minOrderAmount?: number
+      estimatedDeliveryTime?: number
+      deliveryFeeFixed?: number
+      deliveryRadius?: number
+    },
+    adminId: string,
+  ): Promise<RestaurantDocument> {
+    const owner = await this.usersService.findByPhone(dto.ownerPhone)
+    if (!owner) throw new NotFoundException(`No user found with phone ${dto.ownerPhone}`)
+
+    const slug = await this.generateUniqueSlug(dto.name)
+
+    const lat = dto.address.lat ?? 6.5244
+    const lng = dto.address.lng ?? 3.3792
+
+    const restaurant = new this.restaurantModel({
+      ownerId: owner._id,
+      name: dto.name.trim(),
+      slug,
+      description: dto.description?.trim() ?? '',
+      phone: dto.phone,
+      email: dto.email?.toLowerCase().trim() ?? '',
+      cuisine: dto.cuisine,
+      address: {
+        street: dto.address.street.trim(),
+        city: dto.address.city.trim(),
+        state: dto.address.state.trim(),
+        country: dto.address.country ?? 'NG',
+        coordinates: { type: 'Point', coordinates: [lng, lat] },
+      },
+      deliveryRadius: dto.deliveryRadius ?? 5,
+      minOrderAmount: dto.minOrderAmount ?? 0,
+      deliveryFeeFixed: dto.deliveryFeeFixed ?? 100000,
+      estimatedDeliveryTime: dto.estimatedDeliveryTime ?? 30,
+      approvalStatus: RestaurantApprovalStatus.APPROVED,
+      isApproved: true,
+      approvedAt: new Date(),
+      approvedBy: new Types.ObjectId(adminId),
+      country: 'NG',
+      currency: 'NGN',
+    })
+
+    await restaurant.save()
+
+    if (!owner.roles.includes(UserRole.RESTAURANT_OWNER)) {
+      await this.usersService.addRole(owner._id.toString(), UserRole.RESTAURANT_OWNER)
+    }
+
+    return restaurant
+  }
+
   // ── Admin — approve ──────────────────────────────────────────────
 
   async approve(restaurantId: string, adminId: string): Promise<RestaurantDocument> {

@@ -33,12 +33,36 @@ export interface RequestMoreInfoDto {
   message: string
 }
 
+export interface AdminOnboardRestaurantDto {
+  ownerPhone: string
+  name: string
+  phone: string
+  email?: string
+  description?: string
+  cuisine: string[]
+  address: {
+    street: string
+    city: string
+    state: string
+    country?: string
+    lat?: number
+    lng?: number
+  }
+  minOrderAmount?: number
+  estimatedDeliveryTime?: number
+  deliveryFeeFixed?: number
+  deliveryRadius?: number
+}
+
 export const adminRestaurantsApi = {
   list: (params?: AdminRestaurantQueryDto) =>
     getClient().get<PaginatedResponse<Restaurant>>('/admin/restaurants', { params }),
 
   getById: (id: string) =>
     getClient().get<ApiResponse<Restaurant>>(`/admin/restaurants/${id}`),
+
+  onboard: (dto: AdminOnboardRestaurantDto) =>
+    getClient().post<ApiResponse<Restaurant>>('/admin/restaurants', dto),
 
   approve: (id: string) =>
     getClient().patch<ApiResponse<Restaurant>>(`/admin/restaurants/${id}/approve`),
