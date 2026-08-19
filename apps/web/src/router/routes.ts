@@ -14,10 +14,12 @@ export const ROUTES = {
   ORDERS: '/orders',
   ORDER: (id: string) => `/orders/${id}`,
   ORDER_TRACKING: (id: string) => `/orders/${id}/tracking`,
+  ORDER_CHAT: (id: string) => `/orders/${id}/chat`,
   PROFILE: '/profile',
   UNAUTHORIZED: '/unauthorized',
   WALLET: '/wallet',
   NOTIFICATIONS: '/notifications',
   ADDRESSES: '/profile/addresses',
   PAYMENT_CALLBACK: '/payment/callback',
+  FAVORITES: '/favorites',
 } as const

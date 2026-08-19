@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { myRestaurantApi } from '@grandxl/api-client'
-import { OrderStatus, UserRole } from '@grandxl/types'
-import type { Order } from '@grandxl/types'
+import { myRestaurantApi, analyticsApi } from '@grandxl/api-client'
+import { UserRole } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { PageHeader } from '../../../../src/components/ui/PageHeader'
@@ -115,92 +114,51 @@ export default function RestaurantAnalyticsPage() {
   const restaurantId = restaurant?._id
   const currency     = restaurant?.currency ?? 'NGN'
 
-  const { data: ordersData, isLoading } = useQuery({
-    queryKey: ['my-orders', restaurantId, 'analytics'],
-    queryFn:  () => myRestaurantApi.getOrders(restaurantId!, { limit: 500 }),
+  const { data: analyticsRes, isLoading, isError } = useQuery({
+    queryKey: ['restaurant-analytics', restaurantId],
+    queryFn:  () => analyticsApi.getRestaurant(restaurantId!).then((r) => r.data),
     enabled:  !!restaurantId,
+    staleTime: 2 * 60_000,
   })
 
-  const allOrders = useMemo(
-    () => (ordersData?.data?.data?.data ?? []) as Order[],
-    [ordersData],
-  )
+  const analytics = analyticsRes?.data
 
-  const delivered  = useMemo(() => allOrders.filter((o) => o.status === OrderStatus.DELIVERED), [allOrders])
-  const cancelled  = useMemo(() => allOrders.filter((o) => o.status === OrderStatus.CANCELLED), [allOrders])
-  const active     = useMemo(() => allOrders.filter((o) =>
-    [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.PICKED_UP]
-      .includes(o.status as OrderStatus),
-  ), [allOrders])
+  // ── Derived display values ─────────────────────────────────────────────────
 
-  // ── KPIs ──────────────────────────────────────────────────────────────────────
+  const totalOrders     = analytics?.orders.total ?? 0
+  const completedOrders = analytics?.orders.completed ?? 0
+  const cancelledOrders = analytics?.orders.cancelled ?? 0
+  const activeOrders    = Math.max(totalOrders - completedOrders - cancelledOrders, 0)
+  const completionRate  = analytics?.orders.completionRate ?? 0
+  const cancelRate      = totalOrders > 0
+    ? ((cancelledOrders / totalOrders) * 100).toFixed(1)
+    : '0'
 
-  const totalRevenue  = delivered.reduce((s, o) => s + o.pricing.total, 0)
-  const avgOrderValue = delivered.length > 0 ? Math.round(totalRevenue / delivered.length) : 0
-  const cancelRate    = allOrders.length > 0 ? ((cancelled.length / allOrders.length) * 100).toFixed(1) : '0'
+  // Revenue in kobo — display in naira
+  const totalRevenue  = analytics?.revenue.totalKobo ?? 0
+  const avgOrderValue = analytics?.revenue.avgOrderKobo ?? 0
 
-  const now       = new Date()
-  const todayStr  = now.toDateString()
-  const weekAgo   = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0)
-  const monthAgo  = new Date(now); monthAgo.setDate(1); monthAgo.setHours(0,0,0,0)
+  // Daily orders chart
+  const dailyOrdersChart = (analytics?.dailyOrders ?? []).map((d) => ({
+    label: d._id.slice(5), // "MM-DD" from "YYYY-MM-DD"
+    value: d.count,
+  }))
 
-  const todayRevenue  = delivered.filter((o) => new Date(o.createdAt).toDateString() === todayStr).reduce((s, o) => s + o.pricing.total, 0)
-  const weekRevenue   = delivered.filter((o) => new Date(o.createdAt) >= weekAgo).reduce((s, o) => s + o.pricing.total, 0)
-  const monthRevenue  = delivered.filter((o) => new Date(o.createdAt) >= monthAgo).reduce((s, o) => s + o.pricing.total, 0)
+  // Daily revenue chart — revenue is in kobo, display as naira (÷100)
+  const dailyRevenueChart = (analytics?.dailyOrders ?? []).map((d) => ({
+    label: d._id.slice(5),
+    value: Math.round(d.revenue / 100),
+  }))
 
-  // ── Last 7 days bar charts ────────────────────────────────────────────────────
-
-  const last7Orders = useMemo(() => Array.from({ length: 7 }, (_, i) => {
-    const d    = new Date(); d.setDate(d.getDate() - (6 - i)); d.setHours(0,0,0,0)
-    const next = new Date(d); next.setDate(next.getDate() + 1)
-    return {
-      label: d.toLocaleDateString('en-NG', { weekday: 'short' }),
-      value: allOrders.filter((o) => { const t = new Date(o.createdAt); return t >= d && t < next }).length,
-    }
-  }), [allOrders])
-
-  const last7Revenue = useMemo(() => Array.from({ length: 7 }, (_, i) => {
-    const d    = new Date(); d.setDate(d.getDate() - (6 - i)); d.setHours(0,0,0,0)
-    const next = new Date(d); next.setDate(next.getDate() + 1)
-    const rev  = delivered.filter((o) => { const t = new Date(o.createdAt); return t >= d && t < next }).reduce((s, o) => s + o.pricing.total, 0)
-    return {
-      label: d.toLocaleDateString('en-NG', { weekday: 'short' }),
-      value: Math.round(rev / 100),
-    }
-  }), [delivered])
-
-  // ── Peak hours (0-23) ─────────────────────────────────────────────────────────
-
-  const peakHours = useMemo(() => Array.from({ length: 24 }, (_, h) => ({
-    label: h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`,
-    value: allOrders.filter((o) => new Date(o.createdAt).getHours() === h).length,
-  })), [allOrders])
-
-  // Show only 6a–11p for readability
-  const peakHoursFiltered = peakHours.slice(6, 23)
-
-  // ── Top menu items ────────────────────────────────────────────────────────────
-
-  const topItems = useMemo(() => {
-    const counts: Record<string, { name: string; count: number; revenue: number }> = {}
-    delivered.forEach((order) => {
-      order.items.forEach((item) => {
-        if (!counts[item.menuItemId]) counts[item.menuItemId] = { name: item.name, count: 0, revenue: 0 }
-        counts[item.menuItemId].count   += item.quantity
-        counts[item.menuItemId].revenue += item.basePrice * item.quantity
-      })
-    })
-    return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 8)
-  }, [delivered])
-
+  // Top items from API
+  const topItems    = analytics?.topItems ?? []
   const maxItemCount = Math.max(...topItems.map((i) => i.count), 1)
 
-  // ── Order status donut ────────────────────────────────────────────────────────
-
+  // Order status donut
   const statusSlices = [
-    { label: 'Delivered',   value: delivered.length,  color: '#22c55e' },
-    { label: 'Cancelled',   value: cancelled.length,  color: '#ef4444' },
-    { label: 'Active',      value: active.length,     color: '#f97316' },
+    { label: 'Delivered', value: completedOrders, color: '#22c55e' },
+    { label: 'Cancelled', value: cancelledOrders, color: '#ef4444' },
+    { label: 'Active',    value: activeOrders,    color: '#f97316' },
   ]
 
   if (isInitializing) return null
@@ -209,95 +167,128 @@ export default function RestaurantAnalyticsPage() {
     <div>
       <PageHeader title="Analytics" subtitle={`Performance insights for ${restaurant?.name ?? 'your restaurant'}`} />
 
+      {isError && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          Failed to load analytics data. Please refresh the page.
+        </div>
+      )}
+
       {/* KPI row */}
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatsCard title="Total Revenue"    value={formatMoney(totalRevenue, currency)}  icon="revenue"    loading={isLoading} />
-        <StatsCard title="Total Orders"     value={allOrders.length}                     icon="orders"     loading={isLoading} />
-        <StatsCard title="Avg Order Value"  value={formatMoney(avgOrderValue, currency)} icon="analytics"  loading={isLoading} />
-        <StatsCard title="Cancellation Rate" value={`${cancelRate}%`}                   icon="active"     loading={isLoading} />
-      </div>
-
-      {/* Period revenue strip */}
-      <div className="mb-6 grid grid-cols-3 gap-4">
-        {[
-          { label: "Today's Revenue",      value: todayRevenue  },
-          { label: "This Week's Revenue",  value: weekRevenue   },
-          { label: "This Month's Revenue", value: monthRevenue  },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-xl border border-gray-200/80 bg-white p-4 shadow-sm">
-            <p className="text-xs text-gray-400">{label}</p>
-            <p className="mt-1 text-lg font-bold text-gray-900 tabular-nums">
-              {isLoading ? <span className="block h-6 w-28 animate-pulse rounded bg-gray-100" /> : formatMoney(value, currency)}
-            </p>
-          </div>
-        ))}
+        <StatsCard title="Total Revenue"     value={formatMoney(totalRevenue, currency)}  icon="revenue"    loading={isLoading} />
+        <StatsCard title="Total Orders"      value={totalOrders}                           icon="orders"     loading={isLoading} />
+        <StatsCard title="Avg Order Value"   value={formatMoney(avgOrderValue, currency)}  icon="analytics"  loading={isLoading} />
+        <StatsCard title="Cancellation Rate" value={`${cancelRate}%`}                      icon="active"     loading={isLoading} />
       </div>
 
       {/* Charts row 1 */}
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card title="Order Volume" subtitle="Last 7 days">
-          <BarChart data={last7Orders} color="bg-orange-400" />
+        <Card title="Order Volume" subtitle="Daily trend">
+          {isLoading
+            ? <div className="h-36 animate-pulse rounded-lg bg-gray-100" />
+            : dailyOrdersChart.length === 0
+              ? <p className="py-6 text-center text-sm text-gray-400">No data yet</p>
+              : <BarChart data={dailyOrdersChart} color="bg-orange-400" />
+          }
         </Card>
-        <Card title="Revenue Trend" subtitle="Last 7 days (₦ hundreds)">
-          <BarChart data={last7Revenue} color="bg-green-400" />
+        <Card title="Revenue Trend" subtitle="Daily (₦)">
+          {isLoading
+            ? <div className="h-36 animate-pulse rounded-lg bg-gray-100" />
+            : dailyRevenueChart.length === 0
+              ? <p className="py-6 text-center text-sm text-gray-400">No data yet</p>
+              : <BarChart data={dailyRevenueChart} color="bg-green-400" />
+          }
         </Card>
       </div>
 
       {/* Charts row 2 */}
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card title="Order Breakdown" subtitle="All-time by status">
-          <DonutChart slices={statusSlices} />
-          <div className="mt-4 grid grid-cols-3 gap-2 border-t border-gray-50 pt-4">
-            <Stat label="Delivered"  value={delivered.length} color="text-green-600" />
-            <Stat label="Cancelled"  value={cancelled.length} color="text-red-500"   />
-            <Stat label="Active"     value={active.length}    color="text-orange-500" />
-          </div>
-        </Card>
-
-        <Card title="Peak Hours" subtitle="Orders by hour of day" >
-          <BarChart data={peakHoursFiltered} color="bg-violet-400" />
+          {isLoading
+            ? <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+            : (
+              <>
+                <DonutChart slices={statusSlices} />
+                <div className="mt-4 grid grid-cols-3 gap-2 border-t border-gray-50 pt-4">
+                  <Stat label="Delivered"  value={completedOrders} color="text-green-600" />
+                  <Stat label="Cancelled"  value={cancelledOrders} color="text-red-500"   />
+                  <Stat label="Active"     value={activeOrders}    color="text-orange-500" />
+                </div>
+              </>
+            )
+          }
         </Card>
 
         <Card title="Key Metrics" subtitle="Lifetime summary">
-          <div className="space-y-3 text-sm">
-            <MetricRow label="Total orders"        value={String(allOrders.length)} />
-            <MetricRow label="Delivered"           value={String(delivered.length)} />
-            <MetricRow label="Cancelled"           value={String(cancelled.length)} />
-            <MetricRow label="Active now"          value={String(active.length)} />
-            <MetricRow label="Avg order value"     value={formatMoney(avgOrderValue, currency)} />
-            <MetricRow label="Cancellation rate"   value={`${cancelRate}%`} />
-            <MetricRow label="Total revenue"       value={formatMoney(totalRevenue, currency)} bold />
-          </div>
+          {isLoading
+            ? <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+            : (
+              <div className="space-y-3 text-sm">
+                <MetricRow label="Total orders"      value={String(totalOrders)} />
+                <MetricRow label="Delivered"         value={String(completedOrders)} />
+                <MetricRow label="Cancelled"         value={String(cancelledOrders)} />
+                <MetricRow label="Active now"        value={String(activeOrders)} />
+                <MetricRow label="Avg order value"   value={formatMoney(avgOrderValue, currency)} />
+                <MetricRow label="Cancellation rate" value={`${cancelRate}%`} />
+                <MetricRow label="Completion rate"   value={`${completionRate.toFixed(1)}%`} />
+                <MetricRow label="Total revenue"     value={formatMoney(totalRevenue, currency)} bold />
+              </div>
+            )
+          }
+        </Card>
+
+        <Card title="Top Items" subtitle="Most ordered">
+          {isLoading
+            ? <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+            : topItems.length === 0
+              ? <p className="py-6 text-center text-sm text-gray-400">No completed orders yet</p>
+              : (
+                <div className="space-y-2">
+                  {topItems.slice(0, 5).map((item, i) => (
+                    <div key={item.name} className="flex items-center gap-2 text-sm">
+                      <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-orange-50 text-[10px] font-bold text-orange-600">
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 truncate text-gray-700">{item.name}</span>
+                      <span className="text-xs text-gray-400 tabular-nums">{item.count}×</span>
+                    </div>
+                  ))}
+                </div>
+              )
+          }
         </Card>
       </div>
 
-      {/* Top menu items */}
+      {/* Top menu items full table */}
       <Card title="Top Menu Items" subtitle="Ranked by number of times ordered">
-        {topItems.length === 0 ? (
-          <p className="py-6 text-center text-sm text-gray-400">No completed orders yet</p>
-        ) : (
-          <div className="space-y-3">
-            {topItems.map((item, i) => (
-              <div key={item.name} className="flex items-center gap-3">
-                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-orange-50 text-xs font-bold text-orange-600">
-                  {i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-gray-800">{item.name}</span>
-                    <span className="flex-shrink-0 text-xs text-gray-500">{item.count}× — {formatMoney(item.revenue, currency)}</span>
+        {isLoading
+          ? <div className="h-48 animate-pulse rounded-lg bg-gray-100" />
+          : topItems.length === 0
+            ? <p className="py-6 text-center text-sm text-gray-400">No completed orders yet</p>
+            : (
+              <div className="space-y-3">
+                {topItems.map((item, i) => (
+                  <div key={item.name} className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-orange-50 text-xs font-bold text-orange-600">
+                      {i + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium text-gray-800">{item.name}</span>
+                        <span className="flex-shrink-0 text-xs text-gray-500">{item.count}× — {formatMoney(item.revenue, currency)}</span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-gray-100">
+                        <div
+                          className="h-1.5 rounded-full bg-orange-400 transition-all"
+                          style={{ width: `${(item.count / maxItemCount) * 100}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="h-1.5 w-full rounded-full bg-gray-100">
-                    <div
-                      className="h-1.5 rounded-full bg-orange-400 transition-all"
-                      style={{ width: `${(item.count / maxItemCount) * 100}%` }}
-                    />
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            )
+        }
       </Card>
     </div>
   )

@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react'
 import { AppShell, type NavItem } from '../../src/components/layout/AppShell'
+import { SocketProvider } from '../../src/components/SocketProvider'
 
 const NAV: NavItem[] = [
   { href: '/dashboard',   label: 'Dashboard',   icon: 'dashboard'   },
@@ -18,6 +19,7 @@ const NAV: NavItem[] = [
 export default function SuperAdminLayout({ children }: { children: ReactNode }) {
   return (
     <AppShell navItems={NAV} portalLabel="Super Admin">
+      <SocketProvider />
       {children}
     </AppShell>
   )

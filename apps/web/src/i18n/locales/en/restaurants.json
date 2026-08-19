@@ -13,5 +13,10 @@
   "deliveryFee": "Delivery fee",
   "minOrder": "Min. order",
   "estimatedTime": "{{minutes}} mins",
-  "rating": "{{rating}} ({{count}} reviews)"
+  "rating": "{{rating}} ({{count}} reviews)",
+  "saved": "Saved Restaurants",
+  "restaurant": "restaurant",
+  "restaurants": "restaurants",
+  "noFavorites": "No saved restaurants yet",
+  "noFavoritesHint": "Tap the ♡ on any restaurant to save it here for quick access."
 }

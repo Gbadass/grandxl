@@ -13,7 +13,7 @@ import {
   RIDER_DISPATCH_QUEUE,
   SCHEDULED_ORDER_QUEUE,
   SETTLEMENT_QUEUE,
-  RIDER_DISPATCH_RETRY_DELAY_MS,
+  RIDER_DISPATCH_BACKOFF_BASE_MS,
   RIDER_DISPATCH_MAX_ATTEMPTS,
 } from './constants/queue.constants'
 
@@ -28,18 +28,28 @@ import {
         name: RIDER_DISPATCH_QUEUE,
         defaultJobOptions: {
           attempts: RIDER_DISPATCH_MAX_ATTEMPTS,
-          backoff: { type: 'fixed', delay: RIDER_DISPATCH_RETRY_DELAY_MS },
+          backoff: { type: 'exponential', delay: RIDER_DISPATCH_BACKOFF_BASE_MS },
+          removeOnComplete: true,
+          removeOnFail: 100, // keep more for debugging dispatch failures
+        },
+      },
+      {
+        name: SCHEDULED_ORDER_QUEUE,
+        defaultJobOptions: {
+          attempts: 3,
+          backoff: { type: 'fixed', delay: 10_000 },
           removeOnComplete: true,
           removeOnFail: 50,
         },
       },
       {
-        name: SCHEDULED_ORDER_QUEUE,
-        defaultJobOptions: { attempts: 3, removeOnComplete: true, removeOnFail: 50 },
-      },
-      {
         name: SETTLEMENT_QUEUE,
-        defaultJobOptions: { attempts: 2, removeOnComplete: 30, removeOnFail: 50 },
+        defaultJobOptions: {
+          attempts: 2,
+          backoff: { type: 'fixed', delay: 60_000 }, // 1min between retries for nightly batch
+          removeOnComplete: 30,
+          removeOnFail: 50,
+        },
       },
     ),
     OrdersModule,

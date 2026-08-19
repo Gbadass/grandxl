@@ -9,8 +9,9 @@ export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(
   socketUrl,
   {
     autoConnect: false,
-    reconnectionAttempts: 10,
-    reconnectionDelay: 2000,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 10000,
     timeout: 10000,
   },
 )

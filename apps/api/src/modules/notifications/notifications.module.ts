@@ -7,6 +7,7 @@ import { NotificationsService } from './notifications.service'
 import { NotificationsController } from './notifications.controller'
 import { UsersModule } from '../users/users.module'
 import { TermiiProvider } from '../auth/providers/termii.provider'
+import { TrackingModule } from '../tracking/tracking.module'
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { TermiiProvider } from '../auth/providers/termii.provider'
       { name: NotificationDocument.name, schema: NotificationSchema },
     ]),
     UsersModule,
+    TrackingModule,
   ],
   controllers: [NotificationsController],
   providers: [PushProvider, WebPushProvider, NotificationsService, TermiiProvider],

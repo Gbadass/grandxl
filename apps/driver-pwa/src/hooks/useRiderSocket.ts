@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { socket } from '../lib/socket'
 import { useAuthStore } from '../store/auth.store'
 import { useRiderStore } from '../store/rider.store'
+import { playJobAlert, primeAudio } from '../lib/alertSound'
 import { OrderStatus } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
 
@@ -16,6 +17,18 @@ export function useRiderSocket() {
 
   // Keep ref up-to-date so socket handlers always see the latest value
   useEffect(() => { activeOrderRef.current = activeOrder }, [activeOrder])
+
+  // Unlock AudioContext on first user gesture — must happen before any job alert plays
+  useEffect(() => {
+    if (!isAuthenticated) return
+    function unlock() { primeAudio() }
+    window.addEventListener('pointerdown', unlock, { once: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken) {
@@ -31,15 +44,17 @@ export function useRiderSocket() {
     }
 
     function onDirectJob({ order }: { order: Order }) {
-      // Direct assignment — no need to "accept", rider is already assigned
+      // Direct assignment — navigate immediately, rider cannot decline
       setActiveOrder(order)
-      toast.success(`New delivery! Head to the restaurant — ${order.orderNumber}`)
+      playJobAlert()
+      toast.success(`Delivery assigned — ${order.orderNumber}`, { duration: 5000 })
       void navigate(`/delivery/${order._id}`, { replace: true })
     }
 
     function onBroadcastJob({ order }: { order: Order }) {
+      // Adds to pendingJobs — JobOfferSheet picks it up and shows the bottom sheet
       addPendingJob(order)
-      toast(`New job nearby — ${order.orderNumber}`, { icon: '📦' })
+      playJobAlert()
     }
 
     function onStatusUpdate({ orderId, status }: { orderId: string; status: OrderStatus }) {

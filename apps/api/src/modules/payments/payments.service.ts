@@ -21,6 +21,13 @@ import type { InitiatePaymentDto } from './dto/initiate-payment.dto'
 
 // Paystack base URL — no axios dependency, use native fetch (Node 18+)
 const PAYSTACK_BASE = 'https://api.paystack.co'
+const PAYSTACK_TIMEOUT_MS = 10_000 // 10s — abort if Paystack doesn't respond
+
+function paystackFetch(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PAYSTACK_TIMEOUT_MS)
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer))
+}
 
 @Injectable()
 export class PaymentsService {
@@ -69,7 +76,7 @@ export class PaymentsService {
     const customer = await this.usersService.findById(customerId)
     const customerEmail = customer?.email ?? `${customerId}@grandxl.com`
 
-    const response = await fetch(`${PAYSTACK_BASE}/transaction/initialize`, {
+    const response = await paystackFetch(`${PAYSTACK_BASE}/transaction/initialize`, {
       method: 'POST',
       headers: {
         Authorization:  `Bearer ${this.paystackSecret}`,
@@ -158,7 +165,7 @@ export class PaymentsService {
       body.callback_url = dto.callbackUrl
     }
 
-    const response = await fetch(`${PAYSTACK_BASE}/transaction/initialize`, {
+    const response = await paystackFetch(`${PAYSTACK_BASE}/transaction/initialize`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.paystackSecret}`,
@@ -222,19 +229,19 @@ export class PaymentsService {
     amount: number
     metadata?: { orderId?: string; purpose?: string }
   }): Promise<void> {
-    const transaction = await this.transactionModel.findOne({ reference: data.reference })
+    // Atomic flip: only one concurrent call can win the PENDING → COMPLETED transition.
+    // findOneAndUpdate with { status: PENDING } as filter acts as a test-and-set —
+    // if another call already flipped it, this returns null and we skip processing.
+    const transaction = await this.transactionModel.findOneAndUpdate(
+      { reference: data.reference, status: PaymentStatus.PENDING },
+      { $set: { status: PaymentStatus.COMPLETED, paystackData: data as unknown as Record<string, unknown> } },
+      { new: false }, // return pre-update doc so we have the original fields
+    )
     if (!transaction) {
-      this.logger.warn(`Webhook received for unknown reference: ${data.reference}`)
+      // Either unknown reference or already processed — both are safe to ignore
+      this.logger.log(`handleChargeSuccess: no PENDING transaction for ref ${data.reference} (already processed or unknown)`)
       return
     }
-    if (transaction.status === PaymentStatus.COMPLETED) return // idempotent
-
-    await this.transactionModel.findByIdAndUpdate(transaction._id, {
-      $set: {
-        status: PaymentStatus.COMPLETED,
-        paystackData: data as unknown as Record<string, unknown>,
-      },
-    })
 
     // Route by transaction type. Wallet top-up credits the ledger; order
     // payment finalizes the order. Refund webhook handling lands later.
@@ -297,7 +304,7 @@ export class PaymentsService {
     // handler is idempotent so a duplicate call here is safe.
     if (transaction.status === PaymentStatus.PENDING) {
       try {
-        const res = await fetch(`${PAYSTACK_BASE}/transaction/verify/${reference}`, {
+        const res = await paystackFetch(`${PAYSTACK_BASE}/transaction/verify/${reference}`, {
           headers: { Authorization: `Bearer ${this.paystackSecret}` },
         })
         const json = (await res.json()) as {

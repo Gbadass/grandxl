@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import { TopBar } from '../organisms/TopBar'
 import { BottomNav } from '../organisms/BottomNav'
 import { OfflineBanner } from '../organisms/OfflineBanner'
+import { JobOfferSheet } from '../organisms/JobOfferSheet'
 
 export function AppShell() {
   return (
@@ -12,6 +13,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <BottomNav />
+      <JobOfferSheet />
     </div>
   )
 }

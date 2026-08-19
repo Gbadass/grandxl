@@ -79,9 +79,12 @@ export default function RestaurantSettingsPage() {
   const [geocodedLabel, setGeocodedLabel] = useState('')
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null)
   const [coverUploading, setCoverUploading] = useState(false)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [logoUploading, setLogoUploading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const cuisineRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
+  const logoInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (isInitializing) return
@@ -111,6 +114,7 @@ export default function RestaurantSettingsPage() {
       if (restaurant.openingHours) setHours(restaurant.openingHours)
       if (restaurant.cuisine?.length) setCuisine(restaurant.cuisine)
       if (restaurant.coverImage) setCoverImageUrl(restaurant.coverImage)
+      if (restaurant.logo) setLogoUrl(restaurant.logo)
       if (restaurant.bankDetails) {
         setBankDetails({
           bankName: restaurant.bankDetails.bankName,
@@ -150,6 +154,22 @@ export default function RestaurantSettingsPage() {
     } finally {
       setCoverUploading(false)
       // Reset so the same file can be re-selected after removal
+      e.target.value = ''
+    }
+  }
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLogoUploading(true)
+    try {
+      const res = await uploadsApi.uploadRestaurantLogo(file)
+      setLogoUrl(res.data.data.url)
+      toast.success('Logo uploaded')
+    } catch {
+      toast.error('Upload failed. Image must be JPG, PNG or WebP under 5 MB.')
+    } finally {
+      setLogoUploading(false)
       e.target.value = ''
     }
   }
@@ -196,6 +216,7 @@ export default function RestaurantSettingsPage() {
         openingHours: hours as unknown as Record<string, { open: string; close: string; isOpen: boolean }>,
         cuisine: cuisine.length ? cuisine : undefined,
         coverImage: coverImageUrl ?? null,
+        logo: logoUrl ?? null,
         bankDetails: (bankDetails.bankName || bankDetails.accountNumber || bankDetails.accountName)
           ? bankDetails
           : undefined,
@@ -331,6 +352,79 @@ export default function RestaurantSettingsPage() {
               )}
             </button>
           )}
+        </Section>
+
+        {/* Logo */}
+        <Section title="Restaurant Logo">
+          <p className="text-xs text-gray-500 -mt-2">
+            Square logo shown in search results and on your order receipts. Recommended: 400×400px.
+          </p>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={handleLogoUpload}
+          />
+          <div className="flex items-center gap-4">
+            {logoUrl ? (
+              <div className="relative group h-24 w-24 overflow-hidden rounded-2xl border border-gray-200 shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={logoUrl} alt="Restaurant logo" className="h-full w-full object-cover" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    disabled={logoUploading}
+                    className="rounded-lg bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-lg"
+                  >
+                    Change
+                  </button>
+                </div>
+                {logoUploading && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <svg className="h-6 w-6 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => logoInputRef.current?.click()}
+                disabled={logoUploading}
+                className="h-24 w-24 flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-500 transition-colors disabled:opacity-60 cursor-pointer shrink-0"
+              >
+                {logoUploading ? (
+                  <svg className="h-6 w-6 animate-spin text-orange-500" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                ) : (
+                  <>
+                    <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 19.5h18M3.75 4.5h16.5a.75.75 0 01.75.75v11.25a.75.75 0 01-.75.75H3.75a.75.75 0 01-.75-.75V5.25a.75.75 0 01.75-.75z" />
+                    </svg>
+                    <span className="text-[10px] font-medium text-center">Upload logo</span>
+                  </>
+                )}
+              </button>
+            )}
+            <div className="text-sm text-gray-500 space-y-1">
+              <p>Your logo appears in search results, receipts, and on your restaurant page header.</p>
+              {logoUrl && (
+                <button
+                  type="button"
+                  onClick={() => setLogoUrl(null)}
+                  className="text-xs text-red-500 hover:text-red-700 cursor-pointer"
+                >
+                  Remove logo
+                </button>
+              )}
+            </div>
+          </div>
         </Section>
 
         {/* Cuisine Types */}

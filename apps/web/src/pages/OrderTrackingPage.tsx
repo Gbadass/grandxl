@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronLeft,
@@ -26,6 +26,11 @@ import { formatMoney } from '@grandxl/utils'
 import { useOrder } from '../features/orders/hooks/useOrders'
 import { socket } from '../lib/socket'
 import { ReviewSheet } from '../features/reviews/components/ReviewSheet'
+import { ordersApi, refundsApi, chatApi } from '@grandxl/api-client'
+import type { RiderContact, ChatMessage } from '@grandxl/api-client'
+import { useAuthStore } from '../store/auth.store'
+import { ROUTES } from '../router/routes'
+import toast from 'react-hot-toast'
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
@@ -402,25 +407,36 @@ function RiderCard({
   order: Order
   riderCoords: { lat: number; lng: number } | null
 }) {
-  if (!order.riderId || order.status !== OrderStatus.PICKED_UP) return null
+  const [riderContact, setRiderContact] = useState<RiderContact | null>(null)
 
-  const deliveryCoords =
-    order.deliveryAddress.coordinates?.coordinates
-      ? ([
-          order.deliveryAddress.coordinates.coordinates[1],
-          order.deliveryAddress.coordinates.coordinates[0],
-        ] as [number, number])
-      : null
+  useEffect(() => {
+    if (!order.riderId || order.status !== OrderStatus.PICKED_UP) return
+    ordersApi.getRiderContact(order._id).then((res) => {
+      setRiderContact(res.data.data)
+    }).catch(() => {
+      // Silently fail — phone button remains non-functional
+    })
+  }, [order._id, order.riderId, order.status])
 
-  const mapBounds: [number, number][] = [
+  // All hooks must be called before any early return (Rules of Hooks)
+  const deliveryCoords = useMemo<[number, number] | null>(() => {
+    const coords = order.deliveryAddress.coordinates?.coordinates
+    if (!coords) return null
+    return [coords[1], coords[0]]
+  }, [order.deliveryAddress.coordinates])
+
+  const mapBounds = useMemo<[number, number][]>(() => [
     ...(riderCoords ? [[riderCoords.lat, riderCoords.lng] as [number, number]] : []),
     ...(deliveryCoords ? [deliveryCoords] : []),
-  ]
+  ], [riderCoords, deliveryCoords])
 
-  // Fallback center when we have no coords yet
-  const center: [number, number] = riderCoords
-    ? [riderCoords.lat, riderCoords.lng]
-    : deliveryCoords ?? [6.5244, 3.3792]
+  const center = useMemo<[number, number]>(() =>
+    riderCoords
+      ? [riderCoords.lat, riderCoords.lng]
+      : deliveryCoords ?? [6.5244, 3.3792]
+  , [riderCoords, deliveryCoords])
+
+  if (!order.riderId || order.status !== OrderStatus.PICKED_UP) return null
 
   return (
     <AnimatePresence>
@@ -438,7 +454,7 @@ function RiderCard({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Your rider</p>
-            <p className="text-sm font-bold text-gray-900 mt-0.5">On the way to you</p>
+            <p className="text-sm font-bold text-gray-900 mt-0.5">{riderContact?.firstName ?? 'On the way'}</p>
             <div className="flex items-center gap-1 mt-0.5">
               <motion.div
                 className="h-1.5 w-1.5 rounded-full bg-green-400"
@@ -451,7 +467,7 @@ function RiderCard({
             </div>
           </div>
           <a
-            href="tel:"
+            href={riderContact?.phone ? `tel:${riderContact.phone}` : '#'}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white hover:bg-primary/90 transition-colors cursor-pointer shrink-0"
             aria-label="Call rider"
             style={{ touchAction: 'manipulation' }}
@@ -550,6 +566,216 @@ function OrderSummaryCard({ order }: { order: Order }) {
   )
 }
 
+const CHAT_ACTIVE_STATUSES = new Set<string>([
+  OrderStatus.CONFIRMED,
+  OrderStatus.PREPARING,
+  OrderStatus.READY,
+  OrderStatus.PICKED_UP,
+])
+
+function ChatSection({ orderId, currentUserId }: { orderId: string; currentUserId: string }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [text, setText] = useState('')
+  const [peerTyping, setPeerTyping] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isTypingRef = useRef(false)
+
+  useQuery({
+    queryKey: ['chat', orderId],
+    queryFn: async () => {
+      const res = await chatApi.getMessages(orderId, { limit: 30 })
+      const data = res.data.data
+      setMessages(data.messages)
+      setUnreadCount(data.unreadCount)
+      return data
+    },
+  })
+
+  // Mark as read when panel is visible
+  useEffect(() => {
+    if (unreadCount > 0) {
+      socket.emit('chat:read', { orderId })
+      chatApi.markRead(orderId).catch(() => undefined)
+      setUnreadCount(0)
+    }
+  }, [unreadCount, orderId])
+
+  // Socket listeners (room join is handled by parent page)
+  useEffect(() => {
+    function onMessage(msg: ChatMessage) {
+      setMessages((prev) => {
+        if (msg.tempId) {
+          const idx = prev.findIndex((m) => m._id === msg.tempId)
+          if (idx !== -1) {
+            const next = [...prev]
+            next[idx] = { ...msg, status: 'sent' }
+            return next
+          }
+        }
+        if (prev.some((m) => m._id === msg._id)) return prev
+        // Mark incoming message read immediately since panel is open
+        socket.emit('chat:read', { orderId })
+        return [...prev, { ...msg, status: 'sent' }]
+      })
+    }
+    function onPeerTyping(data: { orderId: string; isTyping: boolean }) {
+      if (data.orderId === orderId) setPeerTyping(data.isTyping)
+    }
+    function onMessagesRead(data: { orderId: string; readAt: string }) {
+      if (data.orderId !== orderId) return
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.senderId === currentUserId && !m.readAt
+            ? { ...m, isRead: true, readAt: data.readAt }
+            : m,
+        ),
+      )
+    }
+    socket.on('chat:message', onMessage)
+    socket.on('chat:peer_typing', onPeerTyping)
+    socket.on('chat:messages_read', onMessagesRead)
+    return () => {
+      socket.off('chat:message', onMessage)
+      socket.off('chat:peer_typing', onPeerTyping)
+      socket.off('chat:messages_read', onMessagesRead)
+    }
+  }, [orderId, currentUserId])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, peerTyping])
+
+  function handleInput(value: string) {
+    setText(value)
+    if (!isTypingRef.current) {
+      isTypingRef.current = true
+      socket.emit('chat:typing', { orderId, isTyping: true })
+    }
+    if (typingTimeout.current) clearTimeout(typingTimeout.current)
+    typingTimeout.current = setTimeout(() => {
+      isTypingRef.current = false
+      socket.emit('chat:typing', { orderId, isTyping: false })
+    }, 2000)
+  }
+
+  const send = useCallback(() => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    if (typingTimeout.current) clearTimeout(typingTimeout.current)
+    if (isTypingRef.current) {
+      isTypingRef.current = false
+      socket.emit('chat:typing', { orderId, isTyping: false })
+    }
+    const tempId = `opt_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const optimistic: ChatMessage = {
+      _id: tempId, orderId, senderId: currentUserId,
+      senderRole: 'customer', text: trimmed,
+      isRead: false, readAt: null, deletedAt: null,
+      createdAt: new Date().toISOString(), status: 'sending',
+    }
+    setMessages((prev) => [...prev, optimistic])
+    setText('')
+
+    socket.emit('chat:send', { orderId, text: trimmed, tempId }, (ack: { ok: boolean; error?: string } | undefined) => {
+      if (!ack?.ok) {
+        setMessages((prev) =>
+          prev.map((m) => m._id === tempId ? { ...m, status: 'failed' } : m),
+        )
+        toast.error(ack?.error ?? 'Failed to send message')
+      }
+    })
+  }, [text, orderId, currentUserId])
+
+  return (
+    <div className="mt-4 rounded-2xl bg-white shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-gray-900">Chat with your rider</p>
+          {unreadCount > 0 && (
+            <span className="h-5 min-w-5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center px-1">
+              {unreadCount}
+            </span>
+          )}
+        </div>
+        <Link
+          to={ROUTES.ORDER_CHAT(orderId)}
+          className="text-xs text-primary font-semibold hover:underline"
+        >
+          Full chat →
+        </Link>
+      </div>
+      <div className="h-52 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+        {messages.length === 0 && !peerTyping && (
+          <p className="text-xs text-gray-400 text-center mt-8">No messages yet. Say hi to your rider!</p>
+        )}
+        {messages.map((m) => {
+          const isMe = m.senderId === currentUserId
+          const isFailed = m.status === 'failed'
+          return (
+            <div key={m._id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+              <div
+                className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${
+                  isMe
+                    ? isFailed ? 'bg-red-100 text-red-700 rounded-br-sm' : 'bg-primary text-white rounded-br-sm'
+                    : 'bg-gray-100 text-gray-900 rounded-bl-sm'
+                } ${m.status === 'sending' ? 'opacity-60' : ''}`}
+              >
+                {m.deletedAt ? <span className="italic opacity-60">Removed</span> : m.text}
+              </div>
+              {isMe && m.readAt && (
+                <span className="text-[10px] text-primary mt-0.5 mr-1">Read</span>
+              )}
+              {isFailed && (
+                <button
+                  onClick={() => {
+                    setMessages((prev) => prev.filter((x) => x._id !== m._id))
+                    setText(m.text)
+                  }}
+                  className="text-[11px] text-red-500 font-semibold mt-0.5 cursor-pointer"
+                >
+                  Failed — tap to retry
+                </button>
+              )}
+            </div>
+          )
+        })}
+        {peerTyping && (
+          <div className="flex items-center gap-2">
+            <div className="bg-gray-100 rounded-2xl rounded-bl-sm px-3 py-2 flex gap-1 items-center">
+              {[0, 0.15, 0.3].map((d, i) => (
+                <motion.div key={i} className="h-1.5 w-1.5 rounded-full bg-gray-400"
+                  animate={{ y: [0, -3, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: d }} />
+              ))}
+            </div>
+            <span className="text-xs text-gray-400">Rider is typing…</span>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <div className="px-4 py-3 border-t border-gray-100 flex gap-2">
+        <input
+          value={text}
+          onChange={(e) => handleInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+          placeholder="Type a message..."
+          maxLength={500}
+          className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        <button
+          onClick={send}
+          disabled={!text.trim()}
+          className="px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl disabled:opacity-40 cursor-pointer"
+          style={{ minHeight: '44px', touchAction: 'manipulation' }}
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function OrderTrackingPage() {
@@ -557,10 +783,36 @@ export default function OrderTrackingPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { data: order, isLoading, isError, error } = useOrder(id ?? '')
+  const user = useAuthStore((s) => s.user)
 
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reviewDone, setReviewDone] = useState(false)
   const [riderCoords, setRiderCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  const [refunding, setRefunding] = useState(false)
+  const [refundReason, setRefundReason] = useState('')
+  const [refundSheetOpen, setRefundSheetOpen] = useState(false)
+  const [riderApproachingMetres, setRiderApproachingMetres] = useState<number | null>(null)
+  // ETA countdown: ticks down from estimatedTime in minutes
+  const [etaSecondsLeft, setEtaSecondsLeft] = useState<number | null>(null)
+
+  // Initialise ETA countdown from order.estimatedTime when it becomes available
+  useEffect(() => {
+    if (!order?.estimatedTime || order.status === OrderStatus.DELIVERED) {
+      setEtaSecondsLeft(null)
+      return
+    }
+    setEtaSecondsLeft(order.estimatedTime * 60)
+  }, [order?.estimatedTime, order?.status])
+
+  // Tick the ETA down every second
+  useEffect(() => {
+    if (etaSecondsLeft === null || etaSecondsLeft <= 0) return
+    const timer = setInterval(() => {
+      setEtaSecondsLeft((s) => (s !== null && s > 0 ? s - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [etaSecondsLeft])
 
   // Join the order socket room for real-time status pushes and rider GPS
   useEffect(() => {
@@ -584,13 +836,22 @@ export default function OrderTrackingPage() {
       setRiderCoords({ lat: data.lat, lng: data.lng })
     }
 
+    function onRiderApproaching(data: { orderId: string; distanceMetres: number }) {
+      if (data.orderId !== id) return
+      setRiderApproachingMetres(data.distanceMetres)
+      // Auto-dismiss after 30s
+      setTimeout(() => setRiderApproachingMetres(null), 30_000)
+    }
+
     socket.on('order:status_update', onStatusUpdate)
     socket.on('rider:location', onRiderLocation)
+    socket.on('rider:approaching_restaurant', onRiderApproaching)
 
     return () => {
       socket.off('connect', joinRoom)
       socket.off('order:status_update', onStatusUpdate)
       socket.off('rider:location', onRiderLocation)
+      socket.off('rider:approaching_restaurant', onRiderApproaching)
       socket.emit('order:leave_room', { orderId: id })
     }
   }, [id, queryClient])
@@ -633,6 +894,43 @@ export default function OrderTrackingPage() {
   }
 
   const isDelivered = order.status === OrderStatus.DELIVERED
+  const isCancellable =
+    order.status === OrderStatus.PENDING || order.status === OrderStatus.CONFIRMED
+
+  async function handleCancel() {
+    setCancelling(true)
+    try {
+      await ordersApi.cancel(order!._id, 'Cancelled by customer')
+      await queryClient.invalidateQueries({ queryKey: ['order', id] })
+      toast.success('Order cancelled')
+    } catch {
+      toast.error('Could not cancel order. Please try again.')
+    } finally {
+      setCancelling(false)
+    }
+  }
+
+  async function handleRefund() {
+    if (!refundReason.trim()) {
+      toast.error('Please describe the reason for your refund')
+      return
+    }
+    setRefunding(true)
+    try {
+      await refundsApi.create({
+        orderId: id!,
+        amountKobo: order!.pricing.total,
+        reason: refundReason,
+      })
+      toast.success("Refund request submitted. We'll review it within 24 hours.")
+      setRefundSheetOpen(false)
+      setRefundReason('')
+    } catch {
+      toast.error('Could not submit refund request. Please try again.')
+    } finally {
+      setRefunding(false)
+    }
+  }
 
   return (
     <div className="max-w-2xl mx-auto px-4 pb-28">
@@ -666,6 +964,68 @@ export default function OrderTrackingPage() {
       {/* Status hero */}
       <StatusHero order={order} />
 
+      {/* ETA countdown banner */}
+      <AnimatePresence>
+        {etaSecondsLeft !== null && etaSecondsLeft > 0 && order.status !== OrderStatus.DELIVERED && (
+          <motion.div
+            key="eta-banner"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="mt-3 rounded-2xl bg-primary/5 border border-primary/15 px-4 py-3 flex items-center gap-3"
+          >
+            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+              <Clock size={15} className="text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide">Estimated arrival</p>
+              <p className="text-sm font-bold text-gray-900">
+                {Math.ceil(etaSecondsLeft / 60)} min{Math.ceil(etaSecondsLeft / 60) !== 1 ? 's' : ''} away
+              </p>
+            </div>
+            {/* Countdown ring */}
+            <div className="shrink-0">
+              <svg className="h-10 w-10 -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="14" fill="none" strokeWidth="3" className="stroke-primary/10" />
+                <circle
+                  cx="18" cy="18" r="14"
+                  fill="none" strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 14}`}
+                  strokeDashoffset={`${2 * Math.PI * 14 * (etaSecondsLeft / ((order.estimatedTime ?? 30) * 60))}`}
+                  className="stroke-primary transition-all duration-1000"
+                />
+              </svg>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Rider approaching banner */}
+      <AnimatePresence>
+        {riderApproachingMetres !== null && (
+          <motion.div
+            key="approaching-banner"
+            initial={{ opacity: 0, scale: 0.95, y: -8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -8 }}
+            className="mt-3 rounded-2xl bg-green-50 border border-green-200 px-4 py-3 flex items-center gap-3"
+          >
+            <motion.div
+              className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center shrink-0"
+              animate={{ scale: [1, 1.15, 1] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+            >
+              <Bike size={15} className="text-green-600" />
+            </motion.div>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-green-700">Rider is nearby!</p>
+              <p className="text-xs text-green-600 mt-0.5">~{Math.round(riderApproachingMetres)}m away — be ready to receive your order</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Progress timeline */}
       <div className="mt-3">
         <ProgressTimeline order={order} />
@@ -680,6 +1040,11 @@ export default function OrderTrackingPage() {
       <div className="mt-3">
         <RiderCard order={order} riderCoords={riderCoords} />
       </div>
+
+      {/* Chat with rider — visible on active statuses with a rider assigned */}
+      {CHAT_ACTIVE_STATUSES.has(order.status) && order.riderId && user && (
+        <ChatSection orderId={id!} currentUserId={user._id} />
+      )}
 
       {/* Customer note */}
       {order.customerNote && (
@@ -710,6 +1075,30 @@ export default function OrderTrackingPage() {
         <OrderSummaryCard order={order} />
       </div>
 
+      {/* Cancel order CTA — only on cancellable statuses */}
+      <AnimatePresence>
+        {isCancellable && (
+          <motion.div
+            key="cancel-cta"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ delay: 0.3 }}
+            className="mt-4"
+          >
+            <button
+              onClick={() => void handleCancel()}
+              disabled={cancelling}
+              className="w-full py-4 rounded-2xl bg-red-50 border border-red-200 text-red-600 font-semibold cursor-pointer hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ touchAction: 'manipulation', minHeight: '56px' }}
+            >
+              <XCircle size={18} />
+              {cancelling ? 'Cancelling…' : 'Cancel order'}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Delivered CTA */}
       {isDelivered && (
         <motion.div
@@ -728,6 +1117,15 @@ export default function OrderTrackingPage() {
               Rate this order
             </button>
           )}
+          {!reviewDone && (
+            <button
+              onClick={() => setRefundSheetOpen(true)}
+              className="w-full py-4 rounded-2xl bg-gray-50 border border-gray-200 text-gray-600 font-semibold cursor-pointer hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
+              style={{ touchAction: 'manipulation', minHeight: '56px' }}
+            >
+              Request refund
+            </button>
+          )}
           <button
             onClick={() => void navigate('/')}
             className="w-full py-4 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors"
@@ -737,6 +1135,61 @@ export default function OrderTrackingPage() {
           </button>
         </motion.div>
       )}
+
+      {/* Refund sheet */}
+      <AnimatePresence>
+        {refundSheetOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="refund-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={() => setRefundSheetOpen(false)}
+            />
+            {/* Panel */}
+            <motion.div
+              key="refund-panel"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl p-6 shadow-xl max-w-2xl mx-auto"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-display font-bold text-lg text-gray-900">Request a refund</h2>
+                <button
+                  onClick={() => setRefundSheetOpen(false)}
+                  className="h-8 w-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors cursor-pointer"
+                  aria-label="Close"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                Tell us what went wrong and we'll review your refund request within 24 hours.
+              </p>
+              <textarea
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                placeholder="Describe the issue (e.g. wrong items, missing items, food quality)"
+                rows={4}
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary/30 resize-none transition"
+              />
+              <button
+                onClick={() => void handleRefund()}
+                disabled={refunding || !refundReason.trim()}
+                className="mt-4 w-full py-4 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ touchAction: 'manipulation', minHeight: '56px' }}
+              >
+                {refunding ? 'Submitting…' : 'Submit refund request'}
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Review sheet */}
       <ReviewSheet

@@ -13,6 +13,7 @@ const HomePage = lazy(() => import('../pages/HomePage'))
 const AvailableJobsPage = lazy(() => import('../pages/AvailableJobsPage'))
 const JobDetailPage = lazy(() => import('../pages/JobDetailPage'))
 const ActiveDeliveryPage = lazy(() => import('../pages/ActiveDeliveryPage'))
+const ChatPage = lazy(() => import('../pages/ChatPage'))
 const EarningsPage = lazy(() => import('../pages/EarningsPage'))
 const PayoutsPage = lazy(() => import('../pages/PayoutsPage'))
 const ProfilePage = lazy(() => import('../pages/ProfilePage'))
@@ -52,6 +53,7 @@ export function AppRouter() {
           <Route path={ROUTES.AVAILABLE_JOBS} element={wrap(<AvailableJobsPage />)} />
           <Route path={ROUTES.JOB_DETAIL} element={wrap(<JobDetailPage />)} />
           <Route path={ROUTES.ACTIVE_DELIVERY} element={wrap(<ActiveDeliveryPage />)} />
+          <Route path={ROUTES.CHAT} element={wrap(<ChatPage />)} />
           <Route path={ROUTES.EARNINGS} element={wrap(<EarningsPage />)} />
           <Route path={ROUTES.PAYOUTS} element={wrap(<PayoutsPage />)} />
           <Route path={ROUTES.PROFILE} element={wrap(<ProfilePage />)} />

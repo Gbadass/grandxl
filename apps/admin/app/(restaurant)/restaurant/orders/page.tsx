@@ -78,8 +78,8 @@ export default function RestaurantOrdersPage() {
   const restaurantLat = restaurantCoords ? restaurantCoords[1] : null
   const restaurantLng = restaurantCoords ? restaurantCoords[0] : null
 
-  // Live: fetch PENDING + CONFIRMED + PREPARING + READY
-  const { data: liveData, isLoading: liveLoading } = useQuery({
+  // Live: fetch PENDING + CONFIRMED + PREPARING + READY — 10s polling so kitchen never misses an update
+  const { data: liveData, isLoading: liveLoading, isError: liveError, refetch: refetchLive } = useQuery({
     queryKey: ['my-orders-live', restaurantId],
     queryFn: async () => {
       const [p, c, pr, r] = await Promise.all([
@@ -98,7 +98,8 @@ export default function RestaurantOrdersPage() {
       }
     },
     enabled: !!restaurantId && activeTab === 'live',
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
+    retry: 3,
   })
 
   // Other tabs: normal paginated fetch
@@ -239,7 +240,24 @@ export default function RestaurantOrdersPage() {
       {/* Live view */}
       {activeTab === 'live' && (
         <>
-          {liveLoading && (
+          {/* Live tab header with manual refresh */}
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-xs text-gray-400">
+              {liveLoading ? 'Refreshing…' : liveError ? 'Could not load orders' : `${liveCount} active order${liveCount === 1 ? '' : 's'}`}
+            </p>
+            <button
+              onClick={() => void refetchLive()}
+              disabled={liveLoading}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+            >
+              <svg className={`h-3.5 w-3.5 ${liveLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
+
+          {liveLoading && !liveData && (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-28 animate-pulse rounded-xl bg-gray-100" />
@@ -247,7 +265,23 @@ export default function RestaurantOrdersPage() {
             </div>
           )}
 
-          {!liveLoading && liveCount === 0 && (
+          {liveError && !liveLoading && (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-red-200 bg-red-50 py-16 text-center">
+              <svg className="mb-3 h-10 w-10 text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="font-medium text-red-500">Could not load orders</p>
+              <p className="mt-1 text-sm text-red-400">Server may be reconnecting — your orders are safe</p>
+              <button
+                onClick={() => void refetchLive()}
+                className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 transition"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {!liveLoading && !liveError && liveCount === 0 && (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
               <svg className="mb-3 h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -257,7 +291,7 @@ export default function RestaurantOrdersPage() {
             </div>
           )}
 
-          {!liveLoading && liveData && liveCount > 0 && (
+          {!liveError && liveData && liveCount > 0 && (
             <div className="space-y-6">
               {/* Pending group — needs attention */}
               {liveData.pending.length > 0 && (

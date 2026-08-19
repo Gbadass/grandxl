@@ -10,8 +10,9 @@ const socketUrl = (process.env['NEXT_PUBLIC_API_URL'] ?? '').replace(/\/api\/v\d
 export const socket: TypedSocket = io(socketUrl, {
   autoConnect: false,
   withCredentials: true,
-  reconnectionAttempts: 5,
+  reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
+  reconnectionDelayMax: 10000,
   timeout: 10000,
   transports: ['websocket'],
 }) as TypedSocket

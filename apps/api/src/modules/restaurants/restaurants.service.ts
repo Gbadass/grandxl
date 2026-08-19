@@ -18,6 +18,7 @@ import * as bcrypt from 'bcryptjs'
 import { UsersService } from '../users/users.service'
 import { EmailProvider } from '../email/email.provider'
 import { TermiiProvider } from '../auth/providers/termii.provider'
+import { NotificationsService } from '../notifications/notifications.service'
 
 export type SafeRestaurant = Omit<ReturnType<RestaurantDocument['toObject']>, 'bankDetails'>
 
@@ -29,6 +30,7 @@ export class RestaurantsService {
     private readonly usersService: UsersService,
     private readonly email: EmailProvider,
     private readonly termii: TermiiProvider,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Slug generation ──────────────────────────────────────────────
@@ -181,6 +183,21 @@ export class RestaurantsService {
     return doc
   }
 
+  // Atomically incorporate a new rating into the restaurant's running average.
+  // Uses $inc so two simultaneous ratings don't clobber each other.
+  async updateRating(restaurantId: string, newRating: number): Promise<void> {
+    const restaurant = await this.restaurantModel.findById(restaurantId, { rating: 1, ratingCount: 1 }).lean()
+    if (!restaurant) return
+    const prevCount = restaurant.ratingCount ?? 0
+    const prevRating = restaurant.rating ?? 0
+    const newCount = prevCount + 1
+    const newAvg = Math.round(((prevRating * prevCount) + newRating) / newCount * 10) / 10
+    await this.restaurantModel.findByIdAndUpdate(restaurantId, {
+      $set:  { rating: newAvg },
+      $inc:  { ratingCount: 1 },
+    })
+  }
+
   async findByIdLean(id: string): Promise<Record<string, unknown>> {
     if (!Types.ObjectId.isValid(id)) throw new NotFoundException('Restaurant not found')
     const doc = await this.restaurantModel.findById(id).lean()
@@ -276,6 +293,9 @@ export class RestaurantsService {
       .exec()
 
     if (!updated) throw new NotFoundException('Restaurant not found')
+
+    void this.notifications.onRestaurantApplied(restaurantId, updated.name).catch(() => undefined)
+
     return updated
   }
 
@@ -433,6 +453,11 @@ export class RestaurantsService {
       .exec()
 
     if (!updated) throw new NotFoundException('Restaurant not found')
+
+    void this.notifications.onAdminActionOnRestaurant(
+      updated.ownerId.toString(), updated.name, 'approved',
+    ).catch(() => undefined)
+
     return updated
   }
 
@@ -454,6 +479,11 @@ export class RestaurantsService {
       .exec()
 
     if (!updated) throw new NotFoundException('Restaurant not found')
+
+    void this.notifications.onAdminActionOnRestaurant(
+      updated.ownerId.toString(), updated.name, 'rejected', reason,
+    ).catch(() => undefined)
+
     return updated
   }
 
@@ -486,6 +516,10 @@ export class RestaurantsService {
       )
     }
 
+    void this.notifications.onAdminActionOnRestaurant(
+      updated.ownerId.toString(), updated.name, 'info_requested', message,
+    ).catch(() => undefined)
+
     return updated
   }
 
@@ -514,6 +548,11 @@ export class RestaurantsService {
       .exec()
 
     if (!updated) throw new NotFoundException('Restaurant not found')
+
+    void this.notifications.onAdminActionOnRestaurant(
+      updated.ownerId.toString(), updated.name, 'suspended', reason,
+    ).catch(() => undefined)
+
     return updated
   }
 
@@ -584,6 +623,11 @@ export class RestaurantsService {
       .exec()
 
     if (!updated) throw new NotFoundException('Restaurant not found')
+
+    void this.notifications.onAdminActionOnRestaurant(
+      updated.ownerId.toString(), updated.name, 'reinstated',
+    ).catch(() => undefined)
+
     return updated
   }
 
@@ -615,6 +659,11 @@ export class RestaurantsService {
       .exec()
 
     if (!updated) throw new NotFoundException('Restaurant not found')
+
+    void this.notifications.onAdminActionOnRestaurant(
+      updated.ownerId.toString(), updated.name, 'terminated',
+    ).catch(() => undefined)
+
     return updated
   }
 }

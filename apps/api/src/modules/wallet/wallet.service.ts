@@ -8,6 +8,8 @@ import {
   WalletTxnType,
 } from './schemas/wallet-transaction.schema'
 
+const MAX_WALLET_TXN_KOBO = 50_000_000 // ₦500,000 — prevents runaway credits on bad data
+
 interface MutationArgs {
   userId: string
   amount: number // kobo, positive
@@ -41,19 +43,22 @@ export class WalletService {
     return { balance: wallet.balance, currency: wallet.currency }
   }
 
-  async credit(args: MutationArgs): Promise<{ balance: number }> {
+  async credit(args: MutationArgs): Promise<{ balance: number; txnId: string }> {
     return this.mutate(args, WalletTxnType.CREDIT)
   }
 
-  async debit(args: MutationArgs): Promise<{ balance: number }> {
+  async debit(args: MutationArgs): Promise<{ balance: number; txnId: string }> {
     return this.mutate(args, WalletTxnType.DEBIT)
   }
 
   // Atomic balance update with ledger row. findOneAndUpdate with $inc gives us the
   // pre-update document and the post-update balance in a single op — no race.
-  private async mutate(args: MutationArgs, type: WalletTxnType): Promise<{ balance: number }> {
+  private async mutate(args: MutationArgs, type: WalletTxnType): Promise<{ balance: number; txnId: string }> {
     if (!Number.isInteger(args.amount) || args.amount <= 0) {
       throw new BadRequestException('amount must be a positive integer (kobo)')
+    }
+    if (args.amount > MAX_WALLET_TXN_KOBO) {
+      throw new BadRequestException('Transaction amount exceeds the maximum allowed limit')
     }
 
     const uid = new Types.ObjectId(args.userId)
@@ -71,7 +76,7 @@ export class WalletService {
       if (!updated) throw new BadRequestException('Insufficient wallet balance')
       const balanceAfter  = updated.balance
       const balanceBefore = balanceAfter - delta
-      await this.txnModel.create({
+      const txn = await this.txnModel.create({
         userId:       uid,
         type,
         reason:       args.reason,
@@ -82,7 +87,7 @@ export class WalletService {
         referenceType: args.referenceType,
         referenceId:   args.referenceId,
       })
-      return { balance: balanceAfter }
+      return { balance: balanceAfter, txnId: (txn._id as Types.ObjectId).toString() }
     }
 
     const updated = await this.walletModel.findOneAndUpdate(
@@ -93,7 +98,7 @@ export class WalletService {
     if (!updated) throw new BadRequestException('Wallet not found')
     const balanceAfter  = updated.balance
     const balanceBefore = balanceAfter - delta
-    await this.txnModel.create({
+    const txn = await this.txnModel.create({
       userId:       uid,
       type,
       reason:       args.reason,
@@ -104,7 +109,7 @@ export class WalletService {
       referenceType: args.referenceType,
       referenceId:   args.referenceId,
     })
-    return { balance: balanceAfter }
+    return { balance: balanceAfter, txnId: (txn._id as Types.ObjectId).toString() }
   }
 
   async listTransactions(userId: string, page = 1, limit = 20) {

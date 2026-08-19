@@ -175,6 +175,21 @@ export class UsersController {
     await this.usersService.removeWebPushSubscription(user.sub, body.endpoint)
   }
 
+  // ── Notification preferences ─────────────────────────────────────
+
+  @Patch('me/preferences')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Update notification preferences (SMS opt-in/out)' })
+  @ApiNoContentResponse({ description: 'Preferences updated' })
+  async updatePreferences(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { smsOptIn?: boolean },
+  ) {
+    if (typeof body.smsOptIn === 'boolean') {
+      await this.usersService.updatePreferences(user.sub, { smsOptIn: body.smsOptIn })
+    }
+  }
+
   // ── NDPR — Part 31 ───────────────────────────────────────────────
 
   @Get('me/data-export')

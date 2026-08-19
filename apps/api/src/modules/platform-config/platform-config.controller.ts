@@ -43,6 +43,21 @@ export class PlatformConfigController {
     return this.platformConfigService.getConfig()
   }
 
+  // Lightweight public endpoint — returns only the fee rates the frontend
+  // needs to render real-time cart totals. Avoids exposing commission %.
+  @Get('pricing')
+  @Public()
+  @ApiOperation({ summary: 'Get public pricing rates (service fee %)' })
+  @ApiOkResponse({ description: 'Public pricing rates' })
+  async getPricing() {
+    const config = await this.platformConfigService.getConfig()
+    return {
+      serviceFeePercent: config.serviceFeePercent,
+      serviceFeeCapKobo: config.serviceFeeCapKobo,
+      deliveryTiers:     config.deliveryTiers,
+    }
+  }
+
   // ── Admin — manage config ────────────────────────────────────────
 
   @Patch('config')

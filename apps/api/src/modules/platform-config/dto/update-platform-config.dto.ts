@@ -35,6 +35,13 @@ export class UpdatePlatformConfigDto {
   @Max(100)
   platformCommissionPercent?: number
 
+  @ApiPropertyOptional({ example: 5, description: 'Customer-facing service fee %' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  serviceFeePercent?: number
+
   @ApiPropertyOptional({ example: 50000 })
   @IsOptional()
   @IsInt()

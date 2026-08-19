@@ -31,11 +31,12 @@ export class SurgePricingService {
   }
 
   // Returns the highest active multiplier matching `at`. If nothing matches, 1.0.
-  // Uses UTC for tests + deterministic behaviour; server timezone must be set to
-  // WAT (Africa/Lagos = UTC+1) via TZ env for the local-time contract to hold.
+  // Uses Africa/Lagos local time explicitly via Intl — does not depend on TZ env.
   async getMultiplierAt(at: Date = new Date()): Promise<number> {
-    const day    = at.getDay()  // 0..6
-    const minute = at.getHours() * 60 + at.getMinutes()
+    // Reinterpret `at` in Africa/Lagos so getDay()/getHours() return local values.
+    const lagosDate = new Date(at.toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+    const day    = lagosDate.getDay()
+    const minute = lagosDate.getHours() * 60 + lagosDate.getMinutes()
 
     const rules = await this.ruleModel.find({
       isActive:     true,

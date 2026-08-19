@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { PlatformConfigDocument, PlatformConfigSchema } from './schemas/platform-config.schema'
 import { CouponDocument, CouponSchema } from './schemas/coupon.schema'
+import { CouponUsageDocument, CouponUsageSchema } from './schemas/coupon-usage.schema'
 import { PlatformConfigService } from './platform-config.service'
 import { PlatformConfigController } from './platform-config.controller'
 import { CouponsController } from './coupons.controller'
@@ -13,6 +14,7 @@ import { RestaurantsModule } from '../restaurants/restaurants.module'
     MongooseModule.forFeature([
       { name: PlatformConfigDocument.name, schema: PlatformConfigSchema },
       { name: CouponDocument.name, schema: CouponSchema },
+      { name: CouponUsageDocument.name, schema: CouponUsageSchema },
     ]),
     // Owner-coupon controller resolves the caller's restaurant via RestaurantsService.
     RestaurantsModule,

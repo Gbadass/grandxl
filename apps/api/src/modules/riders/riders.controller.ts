@@ -97,8 +97,20 @@ export class RidersController {
   @Roles(UserRole.RIDER)
   @ApiOperation({ summary: 'Get orders available for pickup (no rider assigned yet)' })
   @ApiOkResponse({ description: 'List of available orders' })
-  async getAvailableJobs() {
-    return this.ordersService.getAvailableOrders()
+  async getAvailableJobs(@CurrentUser() user: JwtPayload) {
+    return this.ordersService.getAvailableOrders(user.sub)
+  }
+
+  @Post('me/jobs/:orderId/decline')
+  @Roles(UserRole.RIDER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Decline a broadcast order — removes it from this rider\'s feed' })
+  @ApiOkResponse({ description: 'Decline recorded' })
+  async declineJob(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId') orderId: string,
+  ) {
+    return this.ridersService.declineOrder(user.sub, orderId)
   }
 
   @Get('me/jobs/active')

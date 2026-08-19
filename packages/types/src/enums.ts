@@ -54,6 +54,10 @@ export enum NotificationType {
   RIDER_JOB = 'rider_job',
   PROMO = 'promo',
   SYSTEM = 'system',
+  RESTAURANT_APPLIED = 'restaurant_applied',
+  RIDER_REGISTERED = 'rider_registered',
+  REFUND_REQUESTED = 'refund_requested',
+  ADMIN_ACTION = 'admin_action',
 }
 
 export enum Country {

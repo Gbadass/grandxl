@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { MenuCategoryDocument } from './schemas/menu-category.schema'
 import { MenuItemDocument } from './schemas/menu-item.schema'
+import { RestaurantsService } from '../restaurants/restaurants.service'
 import type { CreateMenuCategoryDto, UpdateMenuCategoryDto } from './dto/menu-category.dto'
 import type { CreateMenuItemDto, UpdateMenuItemDto } from './dto/menu-item.dto'
 
@@ -18,13 +19,22 @@ export class MenuItemsService {
     private readonly categoryModel: Model<MenuCategoryDocument>,
     @InjectModel(MenuItemDocument.name)
     private readonly itemModel: Model<MenuItemDocument>,
+    private readonly restaurantsService: RestaurantsService,
   ) {}
 
-  // ── Ownership guard (shared by category + item methods) ──────────
+  // ── Ownership guard — ensures requester owns the restaurant ──────
+  // SUPER_ADMINs bypass the check. Fetches the raw restaurant (bypasses
+  // isApproved/isActive filters) so owners can manage menus during review.
 
-  private assertOwner(resourceOwnerId: Types.ObjectId, requesterId: string): void {
-    if (resourceOwnerId.toString() !== requesterId) {
-      throw new ForbiddenException('You do not have permission to modify this resource')
+  private async assertRestaurantOwner(
+    restaurantId: string,
+    requesterId: string,
+    isSuperAdmin: boolean,
+  ): Promise<void> {
+    if (isSuperAdmin) return
+    const restaurant = await this.restaurantsService.findByIdRaw(restaurantId)
+    if (restaurant.ownerId.toString() !== requesterId) {
+      throw new ForbiddenException('You do not own this restaurant')
     }
   }
 
@@ -40,7 +50,10 @@ export class MenuItemsService {
   async createCategory(
     restaurantId: string,
     dto: CreateMenuCategoryDto,
+    requesterId: string,
+    isSuperAdmin: boolean,
   ): Promise<MenuCategoryDocument> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
     const category = new this.categoryModel({
       restaurantId: new Types.ObjectId(restaurantId),
       name: dto.name.trim(),
@@ -54,7 +67,10 @@ export class MenuItemsService {
     categoryId: string,
     restaurantId: string,
     dto: UpdateMenuCategoryDto,
+    requesterId: string,
+    isSuperAdmin: boolean,
   ): Promise<MenuCategoryDocument> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
     const category = await this.categoryModel.findById(categoryId)
     if (!category) throw new NotFoundException('Category not found')
     if (category.restaurantId.toString() !== restaurantId) {
@@ -74,7 +90,13 @@ export class MenuItemsService {
     return updated
   }
 
-  async deleteCategory(categoryId: string, restaurantId: string): Promise<void> {
+  async deleteCategory(
+    categoryId: string,
+    restaurantId: string,
+    requesterId: string,
+    isSuperAdmin: boolean,
+  ): Promise<void> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
     const category = await this.categoryModel.findById(categoryId)
     if (!category) throw new NotFoundException('Category not found')
     if (category.restaurantId.toString() !== restaurantId) {
@@ -127,7 +149,10 @@ export class MenuItemsService {
   async createItem(
     restaurantId: string,
     dto: CreateMenuItemDto,
+    requesterId: string,
+    isSuperAdmin: boolean,
   ): Promise<MenuItemDocument> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
     // Verify category belongs to this restaurant
     if (!Types.ObjectId.isValid(dto.categoryId)) {
       throw new BadRequestException('Invalid category ID')
@@ -160,7 +185,10 @@ export class MenuItemsService {
     itemId: string,
     restaurantId: string,
     dto: UpdateMenuItemDto,
+    requesterId: string,
+    isSuperAdmin: boolean,
   ): Promise<MenuItemDocument> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
     if (!Types.ObjectId.isValid(itemId)) throw new NotFoundException('Menu item not found')
     const item = await this.itemModel.findById(itemId)
     if (!item) throw new NotFoundException('Menu item not found')
@@ -201,7 +229,13 @@ export class MenuItemsService {
     return updated
   }
 
-  async deleteItem(itemId: string, restaurantId: string): Promise<void> {
+  async deleteItem(
+    itemId: string,
+    restaurantId: string,
+    requesterId: string,
+    isSuperAdmin: boolean,
+  ): Promise<void> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
     if (!Types.ObjectId.isValid(itemId)) throw new NotFoundException('Menu item not found')
     const item = await this.itemModel.findById(itemId)
     if (!item) throw new NotFoundException('Menu item not found')

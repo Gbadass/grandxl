@@ -16,6 +16,7 @@
   "nav": {
     "home": "Home",
     "browse": "Browse",
+    "saved": "Saved",
     "orders": "Orders",
     "profile": "Profile",
     "mainNavigation": "Main navigation",

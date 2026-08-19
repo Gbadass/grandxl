@@ -32,6 +32,12 @@ import {
   REDIS_PWD_RESET_PREFIX,
   REDIS_ADMIN_LOGIN_ATTEMPTS_PREFIX,
   REDIS_ADMIN_LOGIN_LOCKED_PREFIX,
+  REDIS_LOGIN_ATTEMPTS_PREFIX,
+  REDIS_LOGIN_LOCKED_PREFIX,
+  LOGIN_MAX_ATTEMPTS,
+  LOGIN_LOCKOUT_SECONDS,
+  REDIS_OTP_SEND_RATE_PREFIX,
+  OTP_SEND_COOLDOWN_SECONDS,
 } from '../../common/constants/app.constants'
 import type { RegisterDto } from './dto/register.dto'
 import type { LoginDto } from './dto/login.dto'
@@ -171,14 +177,25 @@ export class AuthService {
   async sendOtp(phone: string): Promise<void> {
     const skipOtp = this.config.get<string>('SKIP_OTP_IN_DEV') === 'true'
 
+    // Rate-limit: one OTP per phone per minute to prevent SMS cost abuse
+    const rateLimitKey = `${REDIS_OTP_SEND_RATE_PREFIX}${phone}`
+    const alreadySent  = await this.redis.get(rateLimitKey)
+    if (alreadySent) {
+      const ttl = await this.redis.ttl(rateLimitKey)
+      throw new HttpException(
+        `Please wait ${ttl} seconds before requesting another OTP.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      )
+    }
+
     const otp = skipOtp ? '123456' : this.generateOtp()
     const otpHash = await bcrypt.hash(otp, BCRYPT_ROUNDS)
 
     await this.redis.setex(`${REDIS_OTP_PREFIX}${phone}`, OTP_TTL_SECONDS, otpHash)
     await this.redis.del(`${REDIS_OTP_ATTEMPTS_PREFIX}${phone}`)
+    await this.redis.setex(rateLimitKey, OTP_SEND_COOLDOWN_SECONDS, '1')
 
     if (skipOtp) {
-      // Print to console so dev/test can proceed without an SMS
       this.logger.log(`[DEV] OTP for ${phone}: ${otp}`)
     } else {
       await this.termii.sendOtp(phone, otp)
@@ -243,23 +260,41 @@ export class AuthService {
       throw new BadRequestException('Provide either phone or email')
     }
 
+    // Key by phone or email — both are unique identifiers
+    const lockKey = `${REDIS_LOGIN_LOCKED_PREFIX}${dto.phone ?? dto.email}`
+    const attemptsKey = `${REDIS_LOGIN_ATTEMPTS_PREFIX}${dto.phone ?? dto.email}`
+
+    const locked = await this.redis.get(lockKey)
+    if (locked) {
+      const ttl = await this.redis.ttl(lockKey)
+      throw new ForbiddenException(
+        `Too many failed attempts. Try again in ${Math.ceil(ttl / 60)} minutes.`,
+      )
+    }
+
     const user = dto.phone
       ? await this.usersService.findByPhone(dto.phone)
       : await this.usersService.findByEmail(dto.email!)
 
-    if (!user || !user.isActive) {
+    const isValidUser = user && user.isActive && user.passwordHash
+    const passwordValid = isValidUser && await bcrypt.compare(dto.password, user.passwordHash!)
+
+    if (!isValidUser || !passwordValid) {
+      const attempts = await this.redis.incr(attemptsKey)
+      await this.redis.expire(attemptsKey, LOGIN_LOCKOUT_SECONDS)
+      if (attempts >= LOGIN_MAX_ATTEMPTS) {
+        await this.redis.setex(lockKey, LOGIN_LOCKOUT_SECONDS, '1')
+        await this.redis.del(attemptsKey)
+        throw new ForbiddenException(
+          `Too many failed attempts. Account locked for 15 minutes.`,
+        )
+      }
+      // Generic message — don't reveal whether account exists or password is wrong
       throw new UnauthorizedException('Invalid credentials')
     }
 
-    if (!user.passwordHash) {
-      throw new UnauthorizedException('Please set a password for your account')
-    }
-
-    const passwordValid = await bcrypt.compare(dto.password, user.passwordHash)
-    if (!passwordValid) {
-      throw new UnauthorizedException('Invalid credentials')
-    }
-
+    // Success — clear failed attempts counter
+    await this.redis.del(attemptsKey)
     await this.usersService.updateLastLogin(user._id.toString())
 
     const tokens = await this.issueTokens(user)

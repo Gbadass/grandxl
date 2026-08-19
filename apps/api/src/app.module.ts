@@ -48,6 +48,8 @@ import { DeliveryZonesModule } from './modules/delivery-zones/delivery-zones.mod
 import { SurgePricingModule } from './modules/surge-pricing/surge-pricing.module'
 import { DataExportModule } from './modules/data-export/data-export.module'
 import { ContentPagesModule } from './modules/content-pages/content-pages.module'
+import { AnalyticsModule } from './modules/analytics/analytics.module'
+import { ChatModule } from './modules/chat/chat.module'
 
 @Module({
   imports: [
@@ -126,6 +128,8 @@ import { ContentPagesModule } from './modules/content-pages/content-pages.module
     SurgePricingModule,
     DataExportModule,
     ContentPagesModule,
+    AnalyticsModule,
+    ChatModule,
   ],
   providers: [
     // AllExceptionsFilter uses Winston DI — must be APP_FILTER, not new in main.ts

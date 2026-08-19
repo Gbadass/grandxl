@@ -1,17 +1,27 @@
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
+import { socket } from '../../lib/socket'
 
 export function OfflineBanner() {
   const { isOnline, wasOffline } = useNetworkStatus()
   const queryClient = useQueryClient()
 
-  // Refetch stale queries when connection is restored
+  // Refetch stale queries when network comes back
   useEffect(() => {
     if (wasOffline && isOnline) {
       queryClient.invalidateQueries()
     }
   }, [wasOffline, isOnline, queryClient])
+
+  // Also refetch when socket reconnects (server crash recovery)
+  useEffect(() => {
+    function onReconnect() {
+      queryClient.invalidateQueries()
+    }
+    socket.on('connect', onReconnect)
+    return () => { socket.off('connect', onReconnect) }
+  }, [queryClient])
 
   if (isOnline && !wasOffline) return null
 

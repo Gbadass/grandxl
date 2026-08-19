@@ -26,6 +26,20 @@ module.exports = {
       transitionDuration: {
         DEFAULT: '150ms',
       },
+      keyframes: {
+        'slide-in-right': {
+          from: { transform: 'translateX(110%)', opacity: '0' },
+          to:   { transform: 'translateX(0)',    opacity: '1' },
+        },
+        'slide-in-up': {
+          from: { transform: 'translateY(110%)', opacity: '0' },
+          to:   { transform: 'translateY(0)',    opacity: '1' },
+        },
+      },
+      animation: {
+        'slide-in-right': 'slide-in-right 0.3s ease-out',
+        'slide-in-up':    'slide-in-up 0.35s ease-out',
+      },
     },
   },
   plugins: [],

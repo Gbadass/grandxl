@@ -4,6 +4,7 @@ import { MenuCategoryDocument, MenuCategorySchema } from './schemas/menu-categor
 import { MenuItemDocument, MenuItemSchema } from './schemas/menu-item.schema'
 import { MenuItemsService } from './menu-items.service'
 import { MenuItemsController } from './menu-items.controller'
+import { RestaurantsModule } from '../restaurants/restaurants.module'
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { MenuItemsController } from './menu-items.controller'
       { name: MenuCategoryDocument.name, schema: MenuCategorySchema },
       { name: MenuItemDocument.name, schema: MenuItemSchema },
     ]),
+    RestaurantsModule,
   ],
   controllers: [MenuItemsController],
   providers: [MenuItemsService],

@@ -115,6 +115,11 @@ export class UserDocument extends Document {
   @Prop({ type: Date, default: null })
   consentDate!: Date | null
 
+  // Transactional SMS opt-in. Defaults true so existing users keep receiving
+  // order status SMS. Users can set false via PATCH /users/me/preferences.
+  @Prop({ default: true })
+  smsOptIn!: boolean
+
   @Prop({ type: Date, default: null })
   lastLoginAt!: Date | null
 

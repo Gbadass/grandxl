@@ -1,5 +1,7 @@
 import {
   Injectable,
+  Inject,
+  forwardRef,
   NotFoundException,
   ConflictException,
   ForbiddenException,
@@ -13,6 +15,7 @@ import { OrdersService } from '../orders/orders.service'
 import { UsersService } from '../users/users.service'
 import { TermiiProvider } from '../auth/providers/termii.provider'
 import { EmailProvider } from '../email/email.provider'
+import { NotificationsService } from '../notifications/notifications.service'
 import { OrderStatus, UserRole } from '@grandxl/types'
 import type { RegisterRiderDto } from './dto/register-rider.dto'
 import type { UpdateLocationDto } from './dto/update-location.dto'
@@ -27,10 +30,12 @@ export class RidersService {
   constructor(
     @InjectModel(RiderDocument.name)
     private readonly riderModel: Model<RiderDocument>,
+    @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
     private readonly usersService: UsersService,
     private readonly termii: TermiiProvider,
     private readonly email: EmailProvider,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Profile ──────────────────────────────────────────────────────
@@ -51,11 +56,23 @@ export class RidersService {
       ) as Promise<RiderDocument>
     }
 
-    return this.riderModel.create({
+    const created = await this.riderModel.create({
       userId: new Types.ObjectId(userId),
       vehicleType: dto.vehicleType,
       vehiclePlate: dto.vehiclePlate ?? null,
     })
+
+    void (async () => {
+      const user = await this.usersService.findById(userId).catch(() => null)
+      if (user) {
+        void this.notifications.onRiderRegistered(
+          String(created._id),
+          `${user.firstName} ${user.lastName}`,
+        ).catch(() => undefined)
+      }
+    })()
+
+    return created
   }
 
   async getProfile(userId: string): Promise<RiderDocument> {
@@ -143,11 +160,32 @@ export class RidersService {
     await this.riderModel.findByIdAndUpdate(riderId, { $set: { isAvailable: false } })
   }
 
-  async onDeliveryComplete(riderId: string): Promise<void> {
+  async onDeliveryComplete(riderId: string, earningsKobo: number): Promise<void> {
+    // Money enters pendingKobo (24h hold). Settlement will move it to totalKobo.
+    // Do NOT increment totalKobo here — settlement.service does that atomically.
     await this.riderModel.findByIdAndUpdate(riderId, {
       $set: { isAvailable: true },
-      $inc: { totalDeliveries: 1 },
+      $inc: {
+        totalDeliveries:        1,
+        'earnings.pendingKobo': earningsKobo,
+      },
     })
+  }
+
+  async getUserIdByRiderId(riderId: string): Promise<string | null> {
+    if (!Types.ObjectId.isValid(riderId)) return null
+    const rider = await this.riderModel.findById(riderId, { userId: 1 }).lean()
+    return rider ? (rider.userId as Types.ObjectId).toString() : null
+  }
+
+  // Moves earned kobo from pendingKobo to totalKobo — called by nightly settlement.
+  // Guards against pendingKobo going negative: if the rider's pending balance is below
+  // the expected amount (data inconsistency), the update is skipped for that rider.
+  async settleEarnings(riderId: string, amountKobo: number): Promise<void> {
+    await this.riderModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(riderId), 'earnings.pendingKobo': { $gte: amountKobo } },
+      { $inc: { 'earnings.totalKobo': amountKobo, 'earnings.pendingKobo': -amountKobo } },
+    )
   }
 
   // ── Find nearest available rider (used by auto-dispatch) ──────────
@@ -194,16 +232,39 @@ export class RidersService {
       .lean() as unknown as RiderDocument[]
   }
 
-  // Rider voluntarily accepts a broadcast order — atomic first-writer-wins
+  // Rider voluntarily accepts a broadcast order — atomic first-writer-wins.
+  // We use findOneAndUpdate with isAvailable:true as a filter condition so that
+  // two concurrent accept calls cannot both claim the same rider slot (TOCTOU fix).
   async acceptOrder(userId: string, orderId: string): Promise<void> {
+    // Fetch profile first to surface meaningful errors (not found, not verified, offline).
     const rider = await this.riderModel.findOne({ userId: new Types.ObjectId(userId) })
     if (!rider) throw new NotFoundException('Rider profile not found')
     if (!rider.isVerified) throw new ForbiddenException('Rider is not verified')
-    if (!rider.isOnline) throw new BadRequestException('Rider must be online to accept orders')
+    if (!rider.isOnline)   throw new BadRequestException('Rider must be online to accept orders')
 
-    // assignRider throws ConflictException if another rider got there first
-    await this.ordersService.assignRider(orderId, String(rider._id), rider.userId.toString())
-    void this.riderModel.findByIdAndUpdate(rider._id, { $set: { isAvailable: false } }).catch(() => undefined)
+    // Atomically mark rider as busy. If another concurrent request beat us here,
+    // findOneAndUpdate returns null (no document matched isAvailable:true) and we surface
+    // a clear error instead of letting two orders both think they own the same rider.
+    const claimed = await this.riderModel.findOneAndUpdate(
+      { _id: rider._id, isAvailable: true },
+      { $set: { isAvailable: false } },
+    )
+    if (!claimed) throw new BadRequestException('You are currently busy with another delivery')
+
+    try {
+      // assignRider throws ConflictException if another rider already claimed the order
+      await this.ordersService.assignRider(orderId, String(rider._id), rider.userId.toString())
+    } catch (err) {
+      // Release the rider's availability lock if order assignment fails (order already taken, etc.)
+      void this.riderModel.findByIdAndUpdate(rider._id, { $set: { isAvailable: true } }).catch(() => undefined)
+      throw err
+    }
+  }
+
+  // Rider declines a broadcast job — recorded so they don't see it again on the next poll.
+  // If re-dispatch is needed (all riders declined), ordersService.redispatchUnassigned handles it.
+  async declineOrder(userId: string, orderId: string): Promise<void> {
+    await this.ordersService.recordDecline(orderId, userId)
   }
 
   // ── Admin ────────────────────────────────────────────────────────
@@ -280,6 +341,7 @@ export class RidersService {
       { new: true },
     )
     if (!rider) throw new NotFoundException('Rider not found')
+    void this.notifications.onAdminActionOnRider(rider.userId.toString(), 'verified').catch(() => undefined)
     return rider
   }
 
@@ -287,29 +349,33 @@ export class RidersService {
     const rider = await this.riderModel.findById(riderId)
     if (!rider) throw new NotFoundException('Rider not found')
     if (rider.terminatedAt) throw new BadRequestException('Cannot suspend a terminated rider')
-    return this.riderModel.findByIdAndUpdate(
+    const suspended = await this.riderModel.findByIdAndUpdate(
       riderId,
       { $set: { isSuspended: true, suspensionReason: dto.reason, isOnline: false, isAvailable: false } },
       { new: true },
-    ) as Promise<RiderDocument>
+    ) as RiderDocument
+    void this.notifications.onAdminActionOnRider(suspended.userId.toString(), 'suspended', dto.reason).catch(() => undefined)
+    return suspended
   }
 
   async reinstateRider(riderId: string): Promise<RiderDocument> {
     const rider = await this.riderModel.findById(riderId)
     if (!rider) throw new NotFoundException('Rider not found')
     if (rider.terminatedAt) throw new BadRequestException('Cannot reinstate a terminated rider')
-    return this.riderModel.findByIdAndUpdate(
+    const reinstated = await this.riderModel.findByIdAndUpdate(
       riderId,
       { $set: { isSuspended: false, suspensionReason: null } },
       { new: true },
-    ) as Promise<RiderDocument>
+    ) as RiderDocument
+    void this.notifications.onAdminActionOnRider(reinstated.userId.toString(), 'reinstated').catch(() => undefined)
+    return reinstated
   }
 
   async terminateRider(riderId: string, dto: TerminateRiderDto): Promise<RiderDocument> {
     const rider = await this.riderModel.findById(riderId)
     if (!rider) throw new NotFoundException('Rider not found')
     if (rider.terminatedAt) throw new BadRequestException('Rider is already terminated')
-    return this.riderModel.findByIdAndUpdate(
+    const terminated = await this.riderModel.findByIdAndUpdate(
       riderId,
       {
         $set: {
@@ -323,7 +389,9 @@ export class RidersService {
         },
       },
       { new: true },
-    ) as Promise<RiderDocument>
+    ) as RiderDocument
+    void this.notifications.onAdminActionOnRider(terminated.userId.toString(), 'terminated').catch(() => undefined)
+    return terminated
   }
 
   async listRiders(page = 1, limit = 20) {

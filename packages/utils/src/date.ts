@@ -47,14 +47,14 @@ export interface RestaurantHours {
 export function isRestaurantOpen(
   openingHours: RestaurantHours,
   timezone: string = DEFAULT_TIMEZONE,
+  at: Date = new Date(),
 ): boolean {
-  const now = new Date()
-  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-  const dayName = dayNames[now.getDay()] as keyof RestaurantHours
+  // Use formatInTimeZone for both day and time to handle UTC-midnight boundary correctly.
+  const dayName = formatInTimeZone(at, timezone, 'EEEE').toLowerCase() as keyof RestaurantHours
   const todayHours = openingHours[dayName]
 
-  if (!todayHours.isOpen) return false
+  if (!todayHours?.isOpen) return false
 
-  const currentTime = formatInTimeZone(now, timezone, 'HH:mm')
+  const currentTime = formatInTimeZone(at, timezone, 'HH:mm')
   return currentTime >= todayHours.open && currentTime <= todayHours.close
 }

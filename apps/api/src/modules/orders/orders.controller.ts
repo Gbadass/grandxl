@@ -21,6 +21,7 @@ import { OrdersService } from './orders.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { QueryOrdersDto } from './dto/query-orders.dto'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
+import { RateOrderDto } from './dto/rate-order.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { Idempotent } from '../../common/decorators/idempotent.decorator'
@@ -35,6 +36,18 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   // ── Customer — place and view their orders ───────────────────────
+
+  @Post('estimate')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
+  @ApiOperation({ summary: 'Get live pricing estimate before placing an order — shows surge, zone multiplier, discount' })
+  @ApiOkResponse({ description: 'Pricing breakdown returned' })
+  async estimateOrder(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateOrderDto,
+  ) {
+    return this.ordersService.estimateOrder(user.sub, dto)
+  }
 
   @Post()
   @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
@@ -70,6 +83,19 @@ export class OrdersController {
     return this.ordersService.getCustomerOrderById(id, user.sub)
   }
 
+  @Post('my/:id/rate')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
+  @ApiOperation({ summary: 'Rate a delivered order — 1–5 stars + optional review text' })
+  @ApiOkResponse({ description: 'Rating recorded' })
+  async rateOrder(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: RateOrderDto,
+  ) {
+    return this.ordersService.rateOrder(id, user.sub, dto)
+  }
+
   // ── Shared — update order status ─────────────────────────────────
   // Available to: customer (cancel only), restaurant owner, rider, super_admin
 
@@ -98,10 +124,11 @@ export class OrdersController {
   @ApiOperation({ summary: 'List orders for a restaurant (owner or admin)' })
   @ApiOkResponse({ description: 'Paginated order list' })
   async getRestaurantOrders(
+    @CurrentUser() user: JwtPayload,
     @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
     @Query() query: QueryOrdersDto,
   ) {
-    return this.ordersService.getRestaurantOrders(restaurantId, query)
+    return this.ordersService.getRestaurantOrders(restaurantId, query, user)
   }
 
   @Delete('restaurant/:restaurantId/history')

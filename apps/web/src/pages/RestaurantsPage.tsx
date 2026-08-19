@@ -4,6 +4,9 @@ import { Search, X, SlidersHorizontal } from 'lucide-react'
 import type { Restaurant } from '@grandxl/types'
 import { useRestaurants, useFoodCategories } from '../features/restaurants/hooks/useRestaurants'
 import { RestaurantCard } from '../features/restaurants/components/RestaurantCard'
+import { restaurantsApi } from '@grandxl/api-client'
+import { useQuery } from '@tanstack/react-query'
+import { useLocationStore } from '../store/location.store'
 
 type SortKey = 'rating' | 'deliveryTime' | 'default'
 
@@ -26,29 +29,36 @@ export default function RestaurantsPage() {
   const [activeCuisine, setActiveCuisine] = useState<string | null>(null)
   const [sort, setSort] = useState<SortKey>('default')
 
+  const coordinates = useLocationStore((s) => s.coordinates)
+
   const { data: categories = [] } = useFoodCategories()
   const { data: restaurantPage, isLoading } = useRestaurants(
     activeCuisine ? { cuisine: activeCuisine } : undefined,
   )
   const allRestaurants: Restaurant[] = restaurantPage?.data ?? []
 
+  const { data: searchResults, isLoading: searchLoading } = useQuery({
+    queryKey: ['restaurant-search', query],
+    queryFn: () =>
+      restaurantsApi
+        .search(query, coordinates ? { lat: coordinates.lat, lng: coordinates.lng } : undefined)
+        .then((r) => r.data.data.restaurants),
+    enabled: query.trim().length >= 2,
+    staleTime: 30_000,
+  })
+
   const filtered = useCallback(() => {
+    // When actively searching, server handles text matching — skip client-side text filter
     let list = allRestaurants
-    if (query.trim()) {
-      const q = query.toLowerCase()
-      list = list.filter(
-        (r) =>
-          r.name.toLowerCase().includes(q) ||
-          r.cuisine.some((c) => c.toLowerCase().includes(q)),
-      )
-    }
     if (sort === 'rating') list = [...list].sort((a, b) => b.rating - a.rating)
     if (sort === 'deliveryTime')
       list = [...list].sort((a, b) => a.estimatedDeliveryTime - b.estimatedDeliveryTime)
     return list
-  }, [allRestaurants, query, sort])
+  }, [allRestaurants, sort])
 
-  const restaurants = filtered()
+  const isSearching = query.trim().length >= 2
+  const restaurants: Restaurant[] = isSearching ? (searchResults ?? []) : filtered()
+  const showLoading = isSearching ? isLoading || searchLoading : isLoading
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-4">
@@ -114,14 +124,14 @@ export default function RestaurantsPage() {
       </div>
 
       {/* Count */}
-      {!isLoading && (
+      {!showLoading && (
         <p className="text-xs text-gray-500 mb-4">
           {restaurants.length} {t('all', 'restaurants')}
         </p>
       )}
 
       {/* Grid */}
-      {isLoading ? (
+      {showLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <RestaurantSkeleton key={i} />

@@ -62,7 +62,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ medium: { limit: 5, ttl: 60_000 } })
+  @Throttle({ medium: { limit: 3, ttl: 60_000 } })
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify OTP and mark phone as verified' })

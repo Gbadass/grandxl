@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { authApi } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import { useAuthStore } from '../../store/auth.store'
+import { useAlertStore } from '../../store/alert.store'
 import { type ReactNode } from 'react'
 import type { NavItem } from '../layout/AppShell'
 
@@ -127,6 +128,8 @@ export function Sidebar({ navItems, portalLabel, onClose }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const { user, clearAuth } = useAuthStore()
+  const pendingCount = useAlertStore((s) => s.pendingOrders.length)
+  const isSuperAdmin = user?.roles?.includes(UserRole.SUPER_ADMIN) ?? false
 
   async function handleLogout() {
     try {
@@ -192,6 +195,11 @@ export function Sidebar({ navItems, portalLabel, onClose }: Props) {
                 {NAV_ICONS[icon]}
               </span>
               {label}
+              {href === '/orders' && isSuperAdmin && pendingCount > 0 && (
+                <span className="ml-auto shrink-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white">
+                  {pendingCount > 9 ? '9+' : pendingCount}
+                </span>
+              )}
             </Link>
           )
         })}

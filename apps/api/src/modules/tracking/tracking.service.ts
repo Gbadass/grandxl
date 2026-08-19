@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { TrackingGateway } from './tracking.gateway'
-import type { OrderStatus } from '@grandxl/types'
+import { type OrderStatus, OrderStatus as OS } from '@grandxl/types'
 
 // Thin wrapper so other modules can push Socket.io events without importing the gateway directly
 @Injectable()
@@ -21,10 +21,17 @@ export class TrackingService {
     this.gateway.sendToUser(restaurantId, 'order:status_update', payload)
     // Notify anyone watching the order room (e.g. admin dashboard)
     this.gateway.sendToOrderRoom(orderId, 'order:status_update', payload)
+    // When order is picked up, clear the proximity alert so a future re-use
+    // of this orderId (unlikely but possible with re-dispatch) fires correctly.
+    if (status === OS.PICKED_UP) {
+      this.gateway.clearProximityAlert(orderId)
+    }
   }
 
   notifyNewOrder(restaurantId: string, order: unknown): void {
     this.gateway.sendToUser(restaurantId, 'order:new', { order })
+    // Also notify all connected super admins so they see new orders in real-time
+    this.gateway.server.to('role_super_admin').emit('order:new', { order })
   }
 
   notifyRiderNewJob(riderId: string, order: unknown): void {

@@ -1,16 +1,20 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { MapPin, Navigation, CheckCircle2, Package, Bike, Phone, Zap } from 'lucide-react'
+import { MapPin, Navigation, CheckCircle2, Package, Bike, Phone, Zap, AlertTriangle, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { ordersApi, ridersApi } from '@grandxl/api-client'
+import { useQuery } from '@tanstack/react-query'
+import { ordersApi, ridersApi, chatApi } from '@grandxl/api-client'
+import type { ChatMessage } from '@grandxl/api-client'
 import { OrderStatus } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
+import { useAuthStore } from '../store/auth.store'
 import { ROUTES } from '../router/routes'
+import { socket } from '../lib/socket'
 
 // Fix Leaflet default icon paths broken by bundlers
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl
@@ -102,11 +106,229 @@ function StepTracker({ status }: { status: OrderStatus }) {
   )
 }
 
+function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; currentUserId: string; onFullChat: () => void }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [text, setText] = useState('')
+  const [peerTyping, setPeerTyping] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isTypingRef = useRef(false)
+
+  useQuery({
+    queryKey: ['chat', orderId],
+    queryFn: async () => {
+      const res = await chatApi.getMessages(orderId, { limit: 30 })
+      const data = res.data.data
+      setMessages(data.messages)
+      setUnreadCount(data.unreadCount)
+      return data
+    },
+  })
+
+  // Mark read immediately when panel opens
+  useEffect(() => {
+    if (unreadCount > 0) {
+      socket.emit('chat:read', { orderId })
+      chatApi.markRead(orderId).catch(() => undefined)
+      setUnreadCount(0)
+    }
+  }, [unreadCount, orderId])
+
+  const joinRoom = useCallback(() => {
+    socket.emit('order:join_room', { orderId })
+  }, [orderId])
+
+  useEffect(() => {
+    joinRoom()
+    socket.on('connect', joinRoom)
+
+    function onMessage(msg: ChatMessage) {
+      setMessages((prev) => {
+        if (msg.tempId) {
+          const idx = prev.findIndex((m) => m._id === msg.tempId)
+          if (idx !== -1) {
+            const next = [...prev]
+            next[idx] = { ...msg, status: 'sent' }
+            return next
+          }
+        }
+        if (prev.some((m) => m._id === msg._id)) return prev
+        socket.emit('chat:read', { orderId })
+        return [...prev, { ...msg, status: 'sent' }]
+      })
+    }
+    function onPeerTyping(data: { orderId: string; isTyping: boolean }) {
+      if (data.orderId === orderId) setPeerTyping(data.isTyping)
+    }
+    function onMessagesRead(data: { orderId: string; readAt: string }) {
+      if (data.orderId !== orderId) return
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.senderId === currentUserId && !m.readAt
+            ? { ...m, isRead: true, readAt: data.readAt }
+            : m,
+        ),
+      )
+    }
+    socket.on('chat:message', onMessage)
+    socket.on('chat:peer_typing', onPeerTyping)
+    socket.on('chat:messages_read', onMessagesRead)
+
+    return () => {
+      socket.off('connect', joinRoom)
+      socket.off('chat:message', onMessage)
+      socket.off('chat:peer_typing', onPeerTyping)
+      socket.off('chat:messages_read', onMessagesRead)
+      socket.emit('order:leave_room', { orderId })
+    }
+  }, [orderId, joinRoom, currentUserId])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, peerTyping])
+
+  function handleInput(value: string) {
+    setText(value)
+    if (!isTypingRef.current) {
+      isTypingRef.current = true
+      socket.emit('chat:typing', { orderId, isTyping: true })
+    }
+    if (typingTimeout.current) clearTimeout(typingTimeout.current)
+    typingTimeout.current = setTimeout(() => {
+      isTypingRef.current = false
+      socket.emit('chat:typing', { orderId, isTyping: false })
+    }, 2000)
+  }
+
+  function send() {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    if (typingTimeout.current) clearTimeout(typingTimeout.current)
+    if (isTypingRef.current) {
+      isTypingRef.current = false
+      socket.emit('chat:typing', { orderId, isTyping: false })
+    }
+    const tempId = `opt_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const optimistic: ChatMessage = {
+      _id: tempId, orderId, senderId: currentUserId,
+      senderRole: 'rider', text: trimmed,
+      isRead: false, readAt: null, deletedAt: null,
+      createdAt: new Date().toISOString(), status: 'sending',
+    }
+    setMessages((prev) => [...prev, optimistic])
+    setText('')
+
+    socket.emit('chat:send', { orderId, text: trimmed, tempId }, (ack) => {
+      if (!ack?.ok) {
+        setMessages((prev) =>
+          prev.map((m) => m._id === tempId ? { ...m, status: 'failed' } : m),
+        )
+      }
+    })
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.18 }}
+      className="rounded-3xl border border-zinc-800 bg-zinc-900 overflow-hidden"
+    >
+      <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-zinc-200">Chat with customer</p>
+          {unreadCount > 0 && (
+            <span className="h-5 min-w-5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center px-1">
+              {unreadCount}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onFullChat}
+          className="text-xs text-primary font-semibold cursor-pointer hover:opacity-80 transition-opacity"
+          style={{ touchAction: 'manipulation' }}
+        >
+          Full chat →
+        </button>
+      </div>
+      <div className="h-52 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+        {messages.length === 0 && !peerTyping && (
+          <p className="text-xs text-zinc-600 text-center mt-8">No messages yet.</p>
+        )}
+        {messages.map((m) => {
+          const isMe = m.senderId === currentUserId
+          const isFailed = m.status === 'failed'
+          return (
+            <div key={m._id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+              <div
+                className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${
+                  isMe
+                    ? isFailed ? 'bg-red-900/60 text-red-300 rounded-br-sm' : 'bg-primary text-white rounded-br-sm'
+                    : 'bg-zinc-800 text-zinc-200 rounded-bl-sm'
+                } ${m.status === 'sending' ? 'opacity-60' : ''}`}
+              >
+                {m.deletedAt ? <span className="italic opacity-60">Removed</span> : m.text}
+              </div>
+              {isMe && m.readAt && (
+                <span className="text-[10px] text-primary/70 mt-0.5 mr-1">Read</span>
+              )}
+              {isFailed && (
+                <button
+                  onClick={() => {
+                    setMessages((prev) => prev.filter((x) => x._id !== m._id))
+                    setText(m.text)
+                  }}
+                  className="text-[11px] text-red-400 font-semibold mt-0.5 cursor-pointer"
+                >
+                  Failed — retry
+                </button>
+              )}
+            </div>
+          )
+        })}
+        {peerTyping && (
+          <div className="flex items-center gap-2">
+            <div className="bg-zinc-800 rounded-2xl rounded-bl-sm px-3 py-2 flex gap-1 items-center">
+              {[0, 0.15, 0.3].map((d, i) => (
+                <motion.div key={i} className="h-1.5 w-1.5 rounded-full bg-zinc-500"
+                  animate={{ y: [0, -3, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: d }} />
+              ))}
+            </div>
+            <span className="text-xs text-zinc-600">Customer is typing…</span>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <div className="px-4 py-3 border-t border-zinc-800 flex gap-2">
+        <input
+          value={text}
+          onChange={(e) => handleInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+          placeholder="Message customer..."
+          maxLength={500}
+          className="flex-1 rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        <button
+          onClick={send}
+          disabled={!text.trim()}
+          className="px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl disabled:opacity-40 cursor-pointer"
+          style={{ minHeight: '44px', touchAction: 'manipulation' }}
+        >
+          Send
+        </button>
+      </div>
+    </motion.div>
+  )
+}
+
 export default function ActiveDeliveryPage() {
   const { orderId } = useParams<{ orderId: string }>()
   const navigate = useNavigate()
   const { activeOrder, setActiveOrder } = useRiderStore()
+  const { user } = useAuthStore()
   const [acting, setActing] = useState(false)
+  const [sosOpen, setSosOpen] = useState(false)
   const [riderPos, setRiderPos] = useState<[number, number] | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
@@ -151,18 +373,54 @@ export default function ActiveDeliveryPage() {
     return () => clearInterval(id)
   }, [order?._id, setActiveOrder, navigate])
 
-  // Watch rider's GPS position for the live map dot
+  // Watch rider's GPS position — update local map dot, broadcast to order room, persist to DB
   useEffect(() => {
     if (!navigator.geolocation) return
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => setRiderPos([pos.coords.latitude, pos.coords.longitude]),
+      (pos) => {
+        const lat = pos.coords.latitude
+        const lng = pos.coords.longitude
+        const bearing = pos.coords.heading ?? 0
+        setRiderPos([lat, lng])
+        socket.emit('rider:location_update', { lat, lng, bearing, orderId })
+        void ridersApi.updateLocation({ lat, lng, bearing })
+      },
       () => undefined,
       { enableHighAccuracy: true, maximumAge: 5000 },
     )
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
     }
-  }, [])
+  }, [orderId])
+
+  // Keep screen awake during active delivery so watchPosition is not paused by the OS
+  useEffect(() => {
+    if (!order) return
+    type WakeLockSentinel = { release(): void }
+    type NavWithWakeLock = Navigator & { wakeLock?: { request(type: string): Promise<WakeLockSentinel> } }
+    const nav = navigator as NavWithWakeLock
+    if (!nav.wakeLock) return
+
+    let sentinel: WakeLockSentinel | null = null
+
+    const acquire = () => {
+      nav.wakeLock!.request('screen')
+        .then((s) => { sentinel = s })
+        .catch(() => undefined)
+    }
+
+    acquire()
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') acquire()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      sentinel?.release()
+    }
+  }, [order?._id])
 
   if (!order) {
     return (
@@ -216,10 +474,10 @@ export default function ActiveDeliveryPage() {
     }
   }
 
-  const mapPoints: [number, number][] = [
+  const mapPoints = useMemo<[number, number][]>(() => [
     ...(riderPos ? [riderPos] : []),
     ...(destination ? [[destination.lat, destination.lng] as [number, number]] : []),
-  ]
+  ], [riderPos, destination])
   const mapCenter: [number, number] = destination
     ? [destination.lat, destination.lng]
     : [9.0765, 7.3986] // Nigeria fallback
@@ -261,6 +519,18 @@ export default function ActiveDeliveryPage() {
         >
           <Navigation size={13} className="text-primary" />
           Navigate
+        </motion.button>
+
+        {/* SOS button */}
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setSosOpen(true)}
+          className="absolute bottom-3 left-3 z-[1000] flex items-center gap-1.5 rounded-2xl bg-red-600/90 backdrop-blur-sm border border-red-500/40 px-3 py-2.5 text-xs font-bold text-white cursor-pointer hover:bg-red-600 transition-colors shadow-lg shadow-red-900/40"
+          style={{ touchAction: 'manipulation' }}
+          aria-label="Emergency SOS"
+        >
+          <AlertTriangle size={13} />
+          SOS
         </motion.button>
 
         {/* Phase badge */}
@@ -425,7 +695,98 @@ export default function ActiveDeliveryPage() {
           </a>
         </motion.div>
 
+        {/* In-app chat */}
+        {user && (
+          <ChatSection
+            orderId={order._id}
+            currentUserId={user._id}
+            onFullChat={() => void navigate(ROUTES.CHAT.replace(':orderId', order._id))}
+          />
+        )}
+
         {/* Main CTA */}
+        {/* SOS Modal */}
+        <AnimatePresence>
+          {sosOpen && (
+            <motion.div
+              key="sos-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm px-4 pb-8"
+              onClick={() => setSosOpen(false)}
+            >
+              <motion.div
+                initial={{ y: 60, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 60, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-sm rounded-3xl bg-zinc-900 border border-red-500/30 overflow-hidden"
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 bg-red-600/10 border-b border-red-500/20">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-2xl bg-red-600/20 flex items-center justify-center">
+                      <AlertTriangle size={18} className="text-red-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-red-400">Emergency SOS</p>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">Choose an option below</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSosOpen(false)}
+                    className="h-8 w-8 rounded-xl bg-zinc-800 flex items-center justify-center cursor-pointer hover:bg-zinc-700 transition-colors"
+                    aria-label="Close"
+                  >
+                    <X size={14} className="text-zinc-400" />
+                  </button>
+                </div>
+
+                {/* Emergency options */}
+                <div className="p-4 space-y-3">
+                  {[
+                    { label: 'Nigerian Police', number: '199', desc: 'Emergency police response', color: 'blue' },
+                    { label: 'Ambulance', number: '767', desc: 'Medical emergency', color: 'green' },
+                    { label: 'General Emergency', number: '112', desc: 'All emergency services', color: 'red' },
+                  ].map(({ label, number, desc, color }) => (
+                    <a
+                      key={number}
+                      href={`tel:${number}`}
+                      className={`flex items-center gap-3 rounded-2xl p-3.5 border cursor-pointer transition-colors ${
+                        color === 'blue' ? 'bg-blue-500/8 border-blue-500/20 hover:bg-blue-500/15'
+                        : color === 'green' ? 'bg-green-500/8 border-green-500/20 hover:bg-green-500/15'
+                        : 'bg-red-500/8 border-red-500/20 hover:bg-red-500/15'
+                      }`}
+                      style={{ touchAction: 'manipulation', minHeight: '56px' }}
+                    >
+                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+                        color === 'blue' ? 'bg-blue-500/20' : color === 'green' ? 'bg-green-500/20' : 'bg-red-500/20'
+                      }`}>
+                        <Phone size={16} className={
+                          color === 'blue' ? 'text-blue-400' : color === 'green' ? 'text-green-400' : 'text-red-400'
+                        } />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-zinc-200">{label}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">{desc}</p>
+                      </div>
+                      <span className={`text-lg font-bold font-mono ${
+                        color === 'blue' ? 'text-blue-400' : color === 'green' ? 'text-green-400' : 'text-red-400'
+                      }`}>{number}</span>
+                    </a>
+                  ))}
+
+                  <p className="text-center text-[10px] text-zinc-600 pt-1">
+                    Tapping a number will open your phone dialler
+                  </p>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence mode="wait">
           {isPendingPickup && !isReadyForPickup && (
             <motion.div

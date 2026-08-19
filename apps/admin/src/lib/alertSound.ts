@@ -21,8 +21,16 @@ function getContext(): AudioContext | null {
 export function primeAudio(): void {
   const c = getContext()
   if (c && c.state === 'suspended') {
-    void c.resume()
+    void c.resume().then(() => {
+      console.debug('[alertSound] AudioContext resumed successfully, state:', c.state)
+    })
   }
+}
+
+/** Returns true if the AudioContext is running (i.e. a user gesture has unlocked it). */
+export function isAudioUnlocked(): boolean {
+  const c = getContext()
+  return c?.state === 'running'
 }
 
 function beep(freq: number, durationMs: number, startOffsetMs = 0, volume = 0.25): void {
@@ -50,4 +58,30 @@ function beep(freq: number, durationMs: number, startOffsetMs = 0, volume = 0.25
 export function playNewOrderChime(): void {
   beep(784, 220, 0)
   beep(1047, 280, 180)
+}
+
+// ── Looping urgent alarm (for persistent modals) ─────────────────────────────
+
+let loopHandle: ReturnType<typeof setInterval> | null = null
+
+function playUrgentBell(): void {
+  beep(784,  150,   0, 0.4)
+  beep(988,  150, 130, 0.4)
+  beep(1175, 250, 260, 0.5)
+}
+
+export function startLoopAlarm(): void {
+  const c = getContext()
+  if (c?.state === 'suspended') void c.resume()
+  playUrgentBell()
+  if (!loopHandle) {
+    loopHandle = setInterval(playUrgentBell, 2800)
+  }
+}
+
+export function stopLoopAlarm(): void {
+  if (loopHandle) {
+    clearInterval(loopHandle)
+    loopHandle = null
+  }
 }

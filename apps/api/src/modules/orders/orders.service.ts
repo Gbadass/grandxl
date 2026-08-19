@@ -1,5 +1,7 @@
 import {
   Injectable,
+  Inject,
+  forwardRef,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
@@ -14,6 +16,7 @@ import { CounterDocument } from './schemas/counter.schema'
 import type { CreateOrderDto } from './dto/create-order.dto'
 import type { QueryOrdersDto } from './dto/query-orders.dto'
 import type { UpdateOrderStatusDto } from './dto/update-order-status.dto'
+import type { RateOrderDto } from './dto/rate-order.dto'
 import { MenuItemsService } from '../menu-items/menu-items.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { TrackingService } from '../tracking/tracking.service'
@@ -23,6 +26,7 @@ import { WalletService } from '../wallet/wallet.service'
 import { WalletTxnReason } from '../wallet/schemas/wallet-transaction.schema'
 import { DeliveryZonesService } from '../delivery-zones/delivery-zones.service'
 import { SurgePricingService } from '../surge-pricing/surge-pricing.service'
+import { RidersService } from '../riders/riders.service'
 import {
   ORDER_TIMEOUT_QUEUE,
   RIDER_DISPATCH_QUEUE,
@@ -32,7 +36,8 @@ import {
 } from '../jobs/constants/queue.constants'
 import { OrderStatus, PaymentMethod, PaymentStatus, UserRole } from '@grandxl/types'
 import type { JwtPayload } from '@grandxl/types'
-import { isRestaurantOpen } from '@grandxl/utils'
+import { MAX_ORDER_VALUE_KOBO } from '../../common/constants/app.constants'
+import { isRestaurantOpen, formatMoney } from '@grandxl/utils'
 import type { RestaurantHours } from '@grandxl/utils'
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
@@ -45,8 +50,9 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.CANCELLED]:  [],
 }
 
-const SERVICE_FEE_RATE = 0.05
-const SERVICE_FEE_CAP = 150_000 // ₦1,500 per master prompt spec
+// Fallback values used only if platform config is somehow missing (bootstrap race).
+const DEFAULT_SERVICE_FEE_PERCENT = 5
+const DEFAULT_SERVICE_FEE_CAP_KOBO = 150_000
 
 @Injectable()
 export class OrdersService {
@@ -63,6 +69,8 @@ export class OrdersService {
     private readonly walletService: WalletService,
     private readonly deliveryZonesService: DeliveryZonesService,
     private readonly surgePricingService: SurgePricingService,
+    @Inject(forwardRef(() => RidersService))
+    private readonly ridersService: RidersService,
     @InjectQueue(ORDER_TIMEOUT_QUEUE) private readonly orderTimeoutQueue: Queue,
     @InjectQueue(RIDER_DISPATCH_QUEUE) private readonly riderDispatchQueue: Queue,
     @InjectQueue(SCHEDULED_ORDER_QUEUE) private readonly scheduledOrderQueue: Queue,
@@ -82,13 +90,128 @@ export class OrdersService {
     return `GXL-${yyyymmdd}-${seq}`
   }
 
+  // ── Estimate order pricing (no side effects) ─────────────────────
+  // Returns the same breakdown as createOrder but without saving anything.
+  // Used by the frontend to show real-time cost before the customer confirms.
+
+  async estimateOrder(customerId: string, dto: CreateOrderDto): Promise<{
+    subtotal: number
+    deliveryFee: number
+    serviceFee: number
+    discount: number
+    total: number
+    surgeMultiplier: number
+    currency: string
+    isFirstOrder: boolean
+  }> {
+    if (!Types.ObjectId.isValid(dto.restaurantId)) {
+      throw new BadRequestException('Invalid restaurant ID')
+    }
+    const [restaurant, platformConfig] = await Promise.all([
+      this.restaurantsService.findByIdRaw(dto.restaurantId),
+      this.platformConfigService.getConfig().catch(() => null),
+    ])
+    if (!restaurant.isApproved || !restaurant.isActive) {
+      throw new BadRequestException('Restaurant not available')
+    }
+
+    const serviceFeePercent = (platformConfig?.serviceFeePercent ?? DEFAULT_SERVICE_FEE_PERCENT) / 100
+    const serviceFeeCap = platformConfig?.serviceFeeCapKobo ?? DEFAULT_SERVICE_FEE_CAP_KOBO
+
+    const menuItemIds = dto.items.map((i) => i.menuItemId)
+    const menuItems = await this.menuItemsService.findItemsByIds(menuItemIds)
+    const menuItemMap = new Map(menuItems.map((m) => [m._id.toString(), m]))
+
+    let subtotal = 0
+    for (const input of dto.items) {
+      const menuItem = menuItemMap.get(input.menuItemId)
+      if (!menuItem) throw new BadRequestException(`Menu item not found: ${input.menuItemId}`)
+      if (!menuItem.isAvailable) throw new BadRequestException(`"${menuItem.name}" is not available`)
+      const variantTotal = (input.selectedVariants ?? []).reduce((sum, sv) => {
+        const opt = menuItem.variants.find((v) => v.name === sv.variantName)?.options.find((o) => o.name === sv.optionName)
+        return sum + (opt?.priceAdjustment ?? 0)
+      }, 0)
+      const addOnTotal = (input.selectedAddOns ?? []).reduce((sum, sa) => {
+        const addOn = menuItem.addOns.find((a) => a.name === sa.name && a.isAvailable)
+        return sum + (addOn?.price ?? 0)
+      }, 0)
+      subtotal += (menuItem.basePrice + variantTotal + addOnTotal) * input.quantity
+    }
+
+    const zone = await this.deliveryZonesService.findZoneForPoint(
+      dto.deliveryAddress.coordinates.lat,
+      dto.deliveryAddress.coordinates.lng,
+    )
+    // Mirror the same zone coverage logic as createOrder — if zones are configured,
+    // an address outside all of them is undeliverable and the estimate should say so.
+    const hasAnyZones = zone !== null || (await this.deliveryZonesService.listAll()).length > 0
+    if (hasAnyZones && !zone) {
+      throw new BadRequestException("Sorry — we don't deliver to this address yet")
+    }
+    const zoneMultiplier = zone?.deliveryFeeMultiplier ?? 1.0
+
+    const rawSurge = await this.surgePricingService.getMultiplierAt(new Date())
+    const surgeMultiplier = Math.min(rawSurge, 5.0)
+    const uncappedFee = Math.round(restaurant.deliveryFeeFixed * zoneMultiplier * surgeMultiplier)
+    const deliveryFee = Math.min(uncappedFee, restaurant.deliveryFeeFixed * 5)
+
+    const serviceFee = Math.min(Math.round(subtotal * serviceFeePercent), serviceFeeCap)
+
+    let discount = 0
+    let freeDelivery = false
+    if (dto.couponCode) {
+      try {
+        const couponResult = await this.platformConfigService.validateCoupon(
+          dto.couponCode, dto.restaurantId, subtotal, customerId,
+        )
+        const coupon = await this.platformConfigService.getCouponByCode(dto.couponCode)
+        if (coupon?.type === 'free_delivery') {
+          freeDelivery = true
+          discount = deliveryFee
+        } else {
+          discount = couponResult.discountKobo
+        }
+      } catch {
+        // Invalid coupon — estimate continues without discount
+      }
+    }
+
+    if (!freeDelivery) {
+      const previousOrderCount = await this.orderModel.countDocuments({
+        customerId: new Types.ObjectId(customerId),
+        status: { $ne: OrderStatus.CANCELLED },
+      })
+      if (previousOrderCount === 0) {
+        freeDelivery = true
+        discount = deliveryFee
+      }
+    }
+
+    const effectiveDeliveryFee = freeDelivery ? 0 : deliveryFee
+    const total = Math.max(0, subtotal + effectiveDeliveryFee + serviceFee - discount)
+
+    return {
+      subtotal,
+      deliveryFee: effectiveDeliveryFee,
+      serviceFee,
+      discount,
+      total,
+      surgeMultiplier,
+      currency: restaurant.currency,
+      isFirstOrder: false,
+    }
+  }
+
   // ── Place order ──────────────────────────────────────────────────
 
   async createOrder(customerId: string, dto: CreateOrderDto): Promise<OrderDocument> {
     if (!Types.ObjectId.isValid(dto.restaurantId)) {
       throw new BadRequestException('Invalid restaurant ID')
     }
-    const restaurant = await this.restaurantsService.findByIdRaw(dto.restaurantId)
+    const [restaurant, platformConfig] = await Promise.all([
+      this.restaurantsService.findByIdRaw(dto.restaurantId),
+      this.platformConfigService.getConfig().catch(() => null),
+    ])
     if (!restaurant.isApproved || !restaurant.isActive) {
       throw new BadRequestException('Restaurant not available')
     }
@@ -98,6 +221,9 @@ export class OrdersService {
     if (restaurant.openingHours && !isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours)) {
       throw new BadRequestException('Restaurant is currently outside their opening hours')
     }
+
+    const serviceFeePercent = (platformConfig?.serviceFeePercent ?? DEFAULT_SERVICE_FEE_PERCENT) / 100
+    const serviceFeeCap = platformConfig?.serviceFeeCapKobo ?? DEFAULT_SERVICE_FEE_CAP_KOBO
 
     const menuItemIds = dto.items.map((i) => i.menuItemId)
     const invalidId = menuItemIds.find((id) => !Types.ObjectId.isValid(id))
@@ -123,19 +249,24 @@ export class OrdersService {
         }
       }
 
-      const variantTotal = (input.selectedVariants ?? []).reduce((sum, sv) => {
-        const option = menuItem.variants
-          .find((v) => v.name === sv.variantName)
-          ?.options.find((o) => o.name === sv.optionName)
-        return sum + (option?.priceAdjustment ?? 0)
-      }, 0)
+      const resolvedVariants = (input.selectedVariants ?? []).map((sv) => {
+        const variant = menuItem.variants.find((v) => v.name === sv.variantName)
+        if (!variant) throw new BadRequestException(`"${menuItem.name}" has no variant "${sv.variantName}"`)
+        const option = variant.options.find((o) => o.name === sv.optionName)
+        if (!option) throw new BadRequestException(`Variant "${sv.variantName}" has no option "${sv.optionName}"`)
+        return { variantName: sv.variantName, optionName: sv.optionName, priceAdjustment: option.priceAdjustment }
+      })
 
-      const addOnTotal = (input.selectedAddOns ?? []).reduce((sum, sa) => {
-        const addOn = menuItem.addOns.find((a) => a.name === sa.name && a.isAvailable)
-        return sum + (addOn?.price ?? 0)
-      }, 0)
+      const resolvedAddOns = (input.selectedAddOns ?? []).map((sa) => {
+        const addOn = menuItem.addOns.find((a) => a.name === sa.name)
+        if (!addOn) throw new BadRequestException(`"${menuItem.name}" has no add-on "${sa.name}"`)
+        if (!addOn.isAvailable) throw new BadRequestException(`Add-on "${sa.name}" is not currently available`)
+        return { name: sa.name, price: addOn.price }
+      })
 
-      const itemTotal = (menuItem.basePrice + variantTotal + addOnTotal) * input.quantity
+      const variantTotal = resolvedVariants.reduce((s, v) => s + v.priceAdjustment, 0)
+      const addOnTotal   = resolvedAddOns.reduce((s, a) => s + a.price, 0)
+      const itemTotal    = (menuItem.basePrice + variantTotal + addOnTotal) * input.quantity
       subtotal += itemTotal
 
       return {
@@ -144,19 +275,8 @@ export class OrdersService {
         image: menuItem.image,
         basePrice: menuItem.basePrice,
         quantity: input.quantity,
-        selectedVariants: (input.selectedVariants ?? []).map((sv) => ({
-          variantName: sv.variantName,
-          optionName: sv.optionName,
-          priceAdjustment:
-            menuItem.variants
-              .find((v) => v.name === sv.variantName)
-              ?.options.find((o) => o.name === sv.optionName)
-              ?.priceAdjustment ?? 0,
-        })),
-        selectedAddOns: (input.selectedAddOns ?? []).map((sa) => ({
-          name: sa.name,
-          price: menuItem.addOns.find((a) => a.name === sa.name && a.isAvailable)?.price ?? 0,
-        })),
+        selectedVariants: resolvedVariants,
+        selectedAddOns:   resolvedAddOns,
         itemTotal,
         note: input.note ?? null,
       }
@@ -164,8 +284,11 @@ export class OrdersService {
 
     if (subtotal < restaurant.minOrderAmount) {
       throw new BadRequestException(
-        `Minimum order amount is ₦${(restaurant.minOrderAmount / 100).toFixed(0)}`,
+        `Minimum order amount is ${formatMoney(restaurant.minOrderAmount, 'NGN')}`,
       )
+    }
+    if (subtotal > MAX_ORDER_VALUE_KOBO) {
+      throw new BadRequestException('Order value cannot exceed ₦500,000')
     }
 
     // Zone-based delivery fee. If any zones exist we require the address to
@@ -180,12 +303,14 @@ export class OrdersService {
       throw new BadRequestException("Sorry — we don't deliver to this address yet")
     }
     const zoneMultiplier  = zone?.deliveryFeeMultiplier ?? 1.0
-    // Surge stacks on the zone multiplier — a busy Friday night in a far zone
-    // could hit 1.5 × 2.0 = 3× base fee. Both capped individually (5× surge, arbitrary zone).
-    const surgeMultiplier = await this.surgePricingService.getMultiplierAt(new Date())
-    const deliveryFee = Math.round(restaurant.deliveryFeeFixed * zoneMultiplier * surgeMultiplier)
+    // Surge stacks on the zone multiplier. Combined result is capped at 5× the base
+    // fee to prevent pathological edge-cases (e.g. 3× surge × 2× zone = 6× base).
+    const rawSurge = await this.surgePricingService.getMultiplierAt(new Date())
+    const surgeMultiplier = Math.min(rawSurge, 5.0) // safety cap — bad surge rule can't create astronomical fees
+    const uncappedFee = Math.round(restaurant.deliveryFeeFixed * zoneMultiplier * surgeMultiplier)
+    const deliveryFee = Math.min(uncappedFee, restaurant.deliveryFeeFixed * 5)
 
-    const serviceFee = Math.min(Math.round(subtotal * SERVICE_FEE_RATE), SERVICE_FEE_CAP)
+    const serviceFee = Math.min(Math.round(subtotal * serviceFeePercent), serviceFeeCap)
     const vat = 0
 
     // Coupon validation — only if a code was provided
@@ -198,6 +323,7 @@ export class OrdersService {
         dto.couponCode,
         dto.restaurantId,
         subtotal,
+        customerId,
       )
       // Check if this is a free_delivery coupon by re-reading the coupon type
       const coupon = await this.platformConfigService.getCouponByCode(dto.couponCode)
@@ -241,6 +367,9 @@ export class OrdersService {
       if (when.getTime() > now + maxAhead) {
         throw new BadRequestException('Scheduled orders can be no more than 7 days out')
       }
+      if (restaurant.openingHours && !isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours, 'Africa/Lagos', when)) {
+        throw new BadRequestException('Restaurant will be closed at the scheduled time')
+      }
       scheduledFor = when
     }
 
@@ -268,7 +397,8 @@ export class OrdersService {
     const order = await new this.orderModel({
       orderNumber: await this.nextOrderNumber(),
       customerId: new Types.ObjectId(customerId),
-      restaurantId: new Types.ObjectId(dto.restaurantId),
+      restaurantId:      new Types.ObjectId(dto.restaurantId),
+      restaurantOwnerId: new Types.ObjectId(restaurant.ownerId.toString()),
       riderId: null,
       status: OrderStatus.PENDING,
       items: orderItems,
@@ -327,41 +457,58 @@ export class OrdersService {
       }
     }
 
-    // Increment coupon usage count (after successful save)
+    // Record coupon usage — tracks both global count and per-user usage for limit enforcement.
+    // Fire-and-forget: a usage tracking failure must not roll back a successfully placed order.
     if (appliedCouponId) {
-      this.platformConfigService.incrementCouponUsage(appliedCouponId).catch(() => undefined)
+      this.platformConfigService
+        .recordCouponUsage(appliedCouponId, customerId, order._id.toString())
+        .catch(() => undefined)
     }
 
     // Decrement stock atomically for each item. Race-safe via $gte filter — if any
     // item was concurrently sold out, this catches it. We pre-validated in the loop
     // above, but the gap between check and write is exactly what this guard exists for.
+    const decrementedItems: Array<{ menuItemId: string; quantity: number }> = []
     for (const it of orderItems) {
       const result = await this.menuItemsService.tryDecrementStock(
         it.menuItemId.toString(),
         it.quantity,
       )
       if (!result.ok) {
-        // Roll back: cancel the order, refund the wallet if applied, and surface the error.
+        // Roll back previously decremented items in this same order — prevents stock leak
+        // when the failure occurs mid-loop and earlier items were already decremented.
+        await Promise.allSettled(
+          decrementedItems.map((d) => this.menuItemsService.restock(d.menuItemId, d.quantity)),
+        )
+
         await this.orderModel.findByIdAndUpdate(order._id, {
-          $set: {
-            status: OrderStatus.CANCELLED,
-            cancelReason: result.reason,
-          },
+          $set: { status: OrderStatus.CANCELLED, cancelReason: result.reason },
         })
+
+        // Wallet refund is blocking — silent failure here would mean the customer loses
+        // money with no recourse. If the credit fails we surface the error rather than
+        // hiding it, so an operator can manually review.
         if (walletApplied > 0) {
-          this.walletService
-            .credit({
-              userId:        customerId,
-              amount:        walletApplied,
-              reason:        WalletTxnReason.REFUND,
-              description:   'Wallet credit returned — out of stock at order create',
-              referenceType: 'order',
-              referenceId:   order._id.toString(),
-            })
+          await this.walletService.credit({
+            userId:        customerId,
+            amount:        walletApplied,
+            reason:        WalletTxnReason.REFUND,
+            description:   'Wallet credit returned — out of stock at order create',
+            referenceType: 'order',
+            referenceId:   order._id.toString(),
+          })
+        }
+
+        // Restore coupon slot so the customer can re-try with a different restaurant
+        if (appliedCouponId) {
+          this.platformConfigService
+            .revokeCouponUsage(order._id.toString())
             .catch(() => undefined)
         }
+
         throw new BadRequestException(result.reason)
       }
+      decrementedItems.push({ menuItemId: it.menuItemId.toString(), quantity: it.quantity })
     }
 
     // Auto-cancel if unpaid after 15 minutes (no-op for cash orders that get confirmed below)
@@ -399,11 +546,11 @@ export class OrdersService {
       return confirmed
     }
 
-    // Card / wallet: return pending order — dispatch fires after payment webhook confirms
-    Promise.all([
-      this.notificationsService.onOrderPlaced(customerId, ownerId, order.orderNumber, orderId),
-      this.trackingService.notifyNewOrder(ownerId, order),
-    ]).catch(() => undefined)
+    // Card / wallet: only notify the customer that the order was placed.
+    // The restaurant alert fires in markPaymentComplete() after Paystack confirms payment.
+    this.notificationsService
+      .onOrderPlaced(customerId, ownerId, order.orderNumber, orderId)
+      .catch(() => undefined)
 
     return order
   }
@@ -438,12 +585,55 @@ export class OrdersService {
     return order
   }
 
+  async rateOrder(
+    orderId: string,
+    customerId: string,
+    dto: RateOrderDto,
+  ): Promise<{ rated: boolean }> {
+    if (!Types.ObjectId.isValid(orderId)) throw new NotFoundException('Order not found')
+    const order = await this.orderModel.findById(orderId)
+    if (!order) throw new NotFoundException('Order not found')
+    if (order.customerId.toString() !== customerId) {
+      throw new ForbiddenException('You do not have access to this order')
+    }
+    if (order.status !== OrderStatus.DELIVERED) {
+      throw new BadRequestException('You can only rate an order after it has been delivered')
+    }
+    if (order.ratedAt !== null) {
+      throw new ConflictException('You have already rated this order')
+    }
+
+    await this.orderModel.findByIdAndUpdate(orderId, {
+      $set: {
+        rating:     dto.rating,
+        reviewText: dto.reviewText ?? null,
+        ratedAt:    new Date(),
+      },
+    })
+
+    // Update restaurant's running average — fire-and-forget; rating failure must
+    // not surface back to the customer (the order is already rated at this point).
+    this.restaurantsService
+      .updateRating(order.restaurantId.toString(), dto.rating)
+      .catch(() => undefined)
+
+    return { rated: true }
+  }
+
   // ── Restaurant — view incoming orders ────────────────────────────
 
   async getRestaurantOrders(
     restaurantId: string,
     query: QueryOrdersDto,
+    requester: JwtPayload,
   ): Promise<{ data: OrderDocument[]; meta: { total: number; page: number; limit: number; totalPages: number } }> {
+    if (!requester.roles.includes(UserRole.SUPER_ADMIN)) {
+      const owned = await this.restaurantsService.findByOwner(requester.sub)
+      if (!owned.some((r) => r._id.toString() === restaurantId)) {
+        throw new ForbiddenException('Restaurant does not belong to you')
+      }
+    }
+
     const filter: Record<string, unknown> = {
       restaurantId: new Types.ObjectId(restaurantId),
       restaurantClearedAt: null,
@@ -482,7 +672,10 @@ export class OrdersService {
 
   async clearAllOrders(): Promise<{ cleared: number }> {
     const result = await this.orderModel.updateMany(
-      { systemClearedAt: null },
+      {
+        systemClearedAt: null,
+        status: { $in: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] },
+      },
       { $set: { systemClearedAt: new Date() } },
     )
     return { cleared: result.modifiedCount }
@@ -540,6 +733,23 @@ export class OrdersService {
           .restock(it.menuItemId.toString(), it.quantity)
           .catch(() => undefined)
       }
+
+      // Restore coupon slot — customer gets their per-user usage back on cancellation
+      if (order.coupon?.code) {
+        this.platformConfigService
+          .revokeCouponUsage(orderId)
+          .catch(() => undefined)
+      }
+
+      // Remove the scheduled release job if this was a scheduled order.
+      // Without this the worker fires at scheduledFor and sends a ghost notification
+      // to the restaurant for an already-cancelled order.
+      if (updated.scheduledReleaseJobId) {
+        this.scheduledOrderQueue
+          .getJob(updated.scheduledReleaseJobId)
+          .then((job) => job?.remove())
+          .catch(() => undefined)
+      }
     }
 
     // Side effects — fetch restaurant owner for targeted notifications
@@ -548,7 +758,9 @@ export class OrdersService {
     const customerId = order.customerId.toString()
     const orderIdStr = updated._id.toString()
 
-    Promise.all([
+    // Use allSettled so one failing side-effect doesn't silence the others.
+    // Each failure is already logged inside the individual service methods.
+    void Promise.allSettled([
       // Push notification to customer
       this.notificationsService.onOrderStatusChanged(
         customerId,
@@ -574,34 +786,23 @@ export class OrdersService {
             lat: updated.deliveryAddress.coordinates.coordinates[1],
           })
         : Promise.resolve(),
-      // On delivery: free up the rider, bump delivery count, credit their
-      // pending earnings. Rider takes 100% of delivery fee + tip.
+      // On delivery: free up the rider via RidersService (handles availability, delivery count, earnings)
       dto.status === OrderStatus.DELIVERED && updated.riderId
-        ? this.orderModel.db.db!.collection('riders').updateOne(
-            { _id: new Types.ObjectId(String(updated.riderId)) },
-            {
-              $set: { isAvailable: true },
-              $inc: {
-                totalDeliveries:        1,
-                'earnings.pendingKobo': updated.pricing.deliveryFee + (updated.pricing.tip ?? 0),
-                'earnings.totalKobo':   updated.pricing.deliveryFee + (updated.pricing.tip ?? 0),
-              },
-            },
+        ? this.ridersService.onDeliveryComplete(
+            String(updated.riderId),
+            updated.pricing.deliveryFee + (updated.pricing.tip ?? 0),
           )
         : Promise.resolve(),
       // On READY: push + socket to assigned rider so they know to go pick up the food
       dto.status === OrderStatus.READY && updated.riderId
-        ? this.orderModel.db.db!
-            .collection('riders')
-            .findOne({ _id: new Types.ObjectId(String(updated.riderId)) }, { projection: { userId: 1 } })
-            .then((riderDoc) => {
-              const riderUserId = riderDoc?.userId?.toString()
+        ? this.ridersService.getUserIdByRiderId(String(updated.riderId))
+            .then((riderUserId) => {
               if (!riderUserId) return
               this.trackingService.notifyRiderOrderReady(riderUserId, orderIdStr)
               return this.notificationsService.onOrderReady(riderUserId, updated.orderNumber, orderIdStr)
             })
         : Promise.resolve(),
-    ]).catch(() => undefined)
+    ])
 
     return updated
   }
@@ -640,11 +841,12 @@ export class OrdersService {
     if (requester.roles.includes(UserRole.RIDER)) {
       const riderAllowed: OrderStatus[] = [OrderStatus.PICKED_UP, OrderStatus.DELIVERED]
       if (riderAllowed.includes(dto.status)) {
-        // order.riderId is RiderDocument._id; requester.sub is UserDocument._id — look up the rider
-        const riderDoc = await this.orderModel.db.db!
-          .collection('riders')
-          .findOne({ userId: new Types.ObjectId(requester.sub) }, { projection: { _id: 1 } })
-        if (riderDoc && order.riderId?.toString() === riderDoc._id.toString()) return
+        try {
+          const riderProfile = await this.ridersService.getProfile(requester.sub)
+          if (order.riderId?.toString() === (riderProfile._id as Types.ObjectId).toString()) return
+        } catch {
+          // Rider profile not found — falls through to ForbiddenException below
+        }
       }
     }
 
@@ -710,6 +912,7 @@ export class OrdersService {
       orderId,
       {
         $set: {
+          status: OrderStatus.CONFIRMED,
           'payment.status': PaymentStatus.COMPLETED,
           'payment.reference': reference,
           'payment.paidAt': new Date(),
@@ -718,6 +921,21 @@ export class OrdersService {
       { new: true },
     )
     if (!order) throw new NotFoundException('Order not found')
+
+    // Payment confirmed — NOW notify the restaurant and dispatch a rider.
+    // This is the correct trigger point: Paystack webhook → charge.success → here.
+    const restaurant = await this.restaurantsService.findByIdRaw(order.restaurantId.toString())
+    const ownerId = restaurant.ownerId.toString()
+
+    Promise.all([
+      this.trackingService.notifyNewOrder(ownerId, order),
+      this.riderDispatchQueue.add('dispatch', {
+        orderId,
+        lat: order.deliveryAddress.coordinates.coordinates[1],
+        lng: order.deliveryAddress.coordinates.coordinates[0],
+      }),
+    ]).catch(() => undefined)
+
     return order
   }
 
@@ -758,24 +976,23 @@ export class OrdersService {
       throw new ForbiddenException('You do not have access to this order')
     }
 
-    // Look up the rider doc, then the underlying user for name + phone
-    const riderDoc = await this.orderModel.db.db!
-      .collection<{ _id: Types.ObjectId; userId: Types.ObjectId; vehicleType: string; vehiclePlate: string | null }>('riders')
-      .findOne({ _id: new Types.ObjectId(order.riderId.toString()) })
-    if (!riderDoc) throw new NotFoundException('Rider profile not found')
-
-    const userDoc = await this.orderModel.db.db!
-      .collection<{ _id: Types.ObjectId; firstName: string; lastName: string; phone: string | null }>('users')
-      .findOne({ _id: riderDoc.userId })
-    if (!userDoc) throw new NotFoundException('Rider account not found')
+    // Look up rider via service — returns populated userId with name+phone
+    const profile = await this.ridersService.getProfileById(order.riderId.toString())
+    const userInfo = profile['userId'] as {
+      _id: Types.ObjectId
+      firstName: string
+      lastName: string
+      phone: string | null
+    }
+    if (!userInfo) throw new NotFoundException('Rider account not found')
 
     return {
-      riderId: riderDoc._id.toString(),
-      firstName: userDoc.firstName,
-      lastName: userDoc.lastName,
-      phone: userDoc.phone,
-      vehicleType: riderDoc.vehicleType ?? null,
-      vehiclePlate: riderDoc.vehiclePlate ?? null,
+      riderId: order.riderId.toString(),
+      firstName: userInfo.firstName,
+      lastName: userInfo.lastName,
+      phone: userInfo.phone ?? null,
+      vehicleType: (profile['vehicleType'] as string) ?? null,
+      vehiclePlate: (profile['vehiclePlate'] as string | null) ?? null,
     }
   }
 
@@ -829,19 +1046,30 @@ export class OrdersService {
       .lean() as unknown as OrderDocument | null
   }
 
-  async getAvailableOrders(): Promise<OrderDocument[]> {
+  async getAvailableOrders(excludeUserId?: string): Promise<OrderDocument[]> {
     // Only show broadcast jobs from the last 45 minutes — prevents stale orders cluttering the rider's list
     const cutoff = new Date(Date.now() - 45 * 60 * 1000)
+    const filter: Record<string, unknown> = {
+      riderId: null,
+      status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY] },
+      createdAt: { $gte: cutoff },
+      systemClearedAt: null,
+    }
+    if (excludeUserId) {
+      filter['declinedBy'] = { $nin: [new Types.ObjectId(excludeUserId)] }
+    }
     return this.orderModel
-      .find({
-        riderId: null,
-        status: { $in: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY] },
-        createdAt: { $gte: cutoff },
-        systemClearedAt: null,
-      })
+      .find(filter)
       .sort({ createdAt: -1 })
       .limit(20)
       .lean() as unknown as OrderDocument[]
+  }
+
+  async recordDecline(orderId: string, userId: string): Promise<void> {
+    await this.orderModel.updateOne(
+      { _id: new Types.ObjectId(orderId) },
+      { $addToSet: { declinedBy: new Types.ObjectId(userId) } },
+    )
   }
 
   // Re-enqueue dispatch for any recent unassigned orders — called when a rider comes online
@@ -948,12 +1176,22 @@ export class OrdersService {
     const restaurant = await this.restaurantsService.findByIdRaw(order.restaurantId.toString())
     const ownerId = restaurant.ownerId.toString()
 
-    // Reuse the same "new order placed" notification path as immediate orders.
+    const customerId = order.customerId.toString()
+
+    // Notify restaurant (same path as an immediate order)
     this.notificationsService
-      .onOrderPlaced(order.customerId.toString(), ownerId, order.orderNumber, orderId)
+      .onOrderPlaced(customerId, ownerId, order.orderNumber, orderId)
       .catch(() => undefined)
 
     this.trackingService.notifyNewOrder(ownerId, order)
+
+    // Notify customer their scheduled order is now being sent to the restaurant
+    this.notificationsService
+      .onOrderStatusChanged(customerId, order.orderNumber, orderId, OrderStatus.PENDING)
+      .catch(() => undefined)
+    this.trackingService.notifyOrderStatusUpdate(
+      orderId, customerId, ownerId, OrderStatus.PENDING, order.estimatedTime ?? undefined,
+    )
   }
 
   async cancelIfTimedOut(orderId: string): Promise<void> {
@@ -966,20 +1204,36 @@ export class OrdersService {
     })
     if (!order) return // Already confirmed or cancelled — nothing to do
 
-    await this.orderModel.findByIdAndUpdate(orderId, {
+    const cancelled = await this.orderModel.findByIdAndUpdate(orderId, {
       $set: {
         status: OrderStatus.CANCELLED,
         cancelReason: 'Payment timeout — order auto-cancelled after 15 minutes',
       },
-    })
+    }, { new: true })
 
+    if (!cancelled) return
+
+    // Remove the scheduled release job so the restaurant never receives a ghost notification
+    if (cancelled.scheduledReleaseJobId) {
+      this.scheduledOrderQueue
+        .getJob(cancelled.scheduledReleaseJobId)
+        .then((job) => job?.remove())
+        .catch(() => undefined)
+    }
+
+    const customerId = order.customerId.toString()
     this.notificationsService
-      .onOrderStatusChanged(
-        order.customerId.toString(),
-        order.orderNumber,
-        orderId,
-        OrderStatus.CANCELLED,
-      )
+      .onOrderStatusChanged(customerId, order.orderNumber, orderId, OrderStatus.CANCELLED)
       .catch(() => undefined)
+
+    // Also notify the restaurant owner so they don't keep a slot open for a ghost order
+    try {
+      const restaurant = await this.restaurantsService.findByIdRaw(order.restaurantId.toString())
+      this.notificationsService
+        .onOrderStatusChanged(restaurant.ownerId.toString(), order.orderNumber, orderId, OrderStatus.CANCELLED)
+        .catch(() => undefined)
+    } catch {
+      // Non-critical — customer was already notified
+    }
   }
 }

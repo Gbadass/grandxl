@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MapPin, Clock, Bike, Zap, TrendingUp, ChevronRight } from 'lucide-react'
+import { MapPin, Clock, Bike, Zap, TrendingUp, ChevronRight, Volume2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { ridersApi } from '@grandxl/api-client'
 import type { Order } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
+import { useAuthStore } from '../store/auth.store'
+import { primeAudio, isAudioUnlocked } from '../lib/alertSound'
 
 const POLL_MS = 20_000
 const JOB_EXPIRE_SECONDS = 45
@@ -21,6 +23,8 @@ function OnlineMegaToggle() {
 
   async function toggle() {
     if (toggling) return
+    // Unlock AudioContext NOW — this is a guaranteed user gesture, before any job arrives
+    primeAudio()
     setToggling(true)
     try {
       await ridersApi.toggleOnline(!isOnline)
@@ -115,21 +119,44 @@ function OnlineMegaToggle() {
 
 // ── Job card with expiry countdown ───────────────────────────────────────────
 
-function JobCard({ order, onAccepted }: { order: Order; onAccepted: (o: Order) => void }) {
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o: Order) => void }>(
+  function JobCard({ order, onAccepted }, ref) {
   const { removePendingJob } = useRiderStore()
   const fee = order.pricing.deliveryFee + (order.pricing.tip ?? 0)
+
+  const distanceKm = (() => {
+    const pickup = order.restaurantPickupAddress?.coordinates?.coordinates
+    const drop = order.deliveryAddress?.coordinates?.coordinates
+    if (!pickup || !drop) return null
+    return haversineKm(pickup[1], pickup[0], drop[1], drop[0])
+  })()
   const [acting, setActing] = useState<'accept' | 'decline' | null>(null)
   const [timeLeft, setTimeLeft] = useState(JOB_EXPIRE_SECONDS)
 
-  // Countdown timer — job expires if not acted on
+  function sendDecline() {
+    removePendingJob(order._id)
+    // Record the decline on the backend — swallow errors so UI stays responsive
+    ridersApi.declineJob(order._id).catch(() => undefined)
+  }
+
+  // Countdown timer — auto-decline when timer hits zero
   useEffect(() => {
     if (timeLeft <= 0) {
-      removePendingJob(order._id)
+      sendDecline()
       return
     }
     const id = setInterval(() => setTimeLeft((t) => t - 1), 1000)
     return () => clearInterval(id)
-  }, [timeLeft, order._id, removePendingJob])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft])
 
   const urgency = timeLeft <= 10
 
@@ -150,11 +177,12 @@ function JobCard({ order, onAccepted }: { order: Order; onAccepted: (o: Order) =
 
   function decline() {
     setActing('decline')
-    setTimeout(() => removePendingJob(order._id), 150)
+    setTimeout(() => sendDecline(), 150)
   }
 
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, y: 28, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -207,13 +235,22 @@ function JobCard({ order, onAccepted }: { order: Order; onAccepted: (o: Order) =
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">Pick up</p>
-            <p className="text-sm text-zinc-300 leading-snug">Restaurant pickup point</p>
+            <p className="text-sm text-zinc-300 leading-snug">
+              {order.restaurantPickupAddress
+                ? `${order.restaurantPickupAddress.street}, ${order.restaurantPickupAddress.city}`
+                : 'Restaurant pickup point'}
+            </p>
           </div>
         </div>
 
-        {/* Connector */}
-        <div className="ml-3 flex items-center gap-1">
+        {/* Connector + distance badge */}
+        <div className="ml-3 flex items-center gap-2">
           <div className="w-px h-4 bg-zinc-700 ml-[9px]" />
+          {distanceKm !== null && (
+            <span className="ml-4 px-2 py-0.5 rounded-full bg-zinc-800 text-[10px] font-semibold text-zinc-400 border border-zinc-700/60">
+              {distanceKm.toFixed(1)} km
+            </span>
+          )}
         </div>
 
         <div className="flex items-start gap-3">
@@ -229,7 +266,7 @@ function JobCard({ order, onAccepted }: { order: Order; onAccepted: (o: Order) =
         </div>
 
         {/* Order meta */}
-        <div className="flex items-center gap-3 pt-0.5 border-t border-zinc-800/60">
+        <div className="flex items-center flex-wrap gap-x-3 gap-y-1 pt-0.5 border-t border-zinc-800/60">
           <span className="text-xs text-zinc-600 font-mono">{order.orderNumber}</span>
           <span className="text-zinc-800">·</span>
           <span className="text-xs text-zinc-600">
@@ -237,6 +274,12 @@ function JobCard({ order, onAccepted }: { order: Order; onAccepted: (o: Order) =
           </span>
           <span className="text-zinc-800">·</span>
           <span className="text-xs text-zinc-600">{formatMoney(order.pricing.subtotal, order.currency)} order</span>
+          {distanceKm !== null && (
+            <>
+              <span className="text-zinc-800">·</span>
+              <span className="text-xs font-semibold text-primary">{distanceKm.toFixed(1)} km trip</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -266,13 +309,15 @@ function JobCard({ order, onAccepted }: { order: Order; onAccepted: (o: Order) =
       </div>
     </motion.div>
   )
-}
+})
 
 // ── Today's earnings strip ────────────────────────────────────────────────────
 
 function TodayStrip() {
+  const navigate = useNavigate()
   const { rider } = useRiderStore()
-  const todayKobo = rider?.earnings.pendingKobo ?? 0
+  const pendingKobo  = rider?.earnings.pendingKobo ?? 0
+  const settledKobo  = rider?.earnings.totalKobo ?? 0
   const currency = 'NGN'
 
   return (
@@ -286,11 +331,15 @@ function TodayStrip() {
           <TrendingUp size={17} className="text-primary" />
         </div>
         <div>
-          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">Today's earnings</p>
-          <p className="font-display text-lg font-bold text-zinc-100">{formatMoney(todayKobo, currency)}</p>
+          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">Pending earnings</p>
+          <p className="font-display text-lg font-bold text-zinc-100">{formatMoney(pendingKobo, currency)}</p>
+          {settledKobo > 0 && (
+            <p className="text-[10px] text-zinc-600 mt-0.5">{formatMoney(settledKobo, currency)} settled</p>
+          )}
         </div>
       </div>
       <button
+        onClick={() => void navigate('/earnings')}
         className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
         style={{ touchAction: 'manipulation' }}
       >
@@ -305,6 +354,8 @@ function TodayStrip() {
 export default function AvailableJobsPage() {
   const navigate = useNavigate()
   const { pendingJobs, isOnline, addPendingJob, setActiveOrder, activeOrder } = useRiderStore()
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const [soundEnabled, setSoundEnabled] = useState(isAudioUnlocked())
 
   // If there's already an active delivery (restored after refresh), go straight to it
   useEffect(() => {
@@ -316,18 +367,16 @@ export default function AvailableJobsPage() {
   // Recovery poll: check for an in-progress job every 10 s even when there's no activeOrder in
   // the store. This handles cases where AuthInit's getActiveJob call failed or the rider
   // accepted a job but the app was killed before the in-memory store was saved.
+  // Navigation is handled by the useEffect above that watches activeOrder.
   useQuery({
     queryKey: ['active-job-recovery'],
     queryFn: async () => {
       const res = await ridersApi.getActiveJob()
       const order = res.data.data
-      if (order) {
-        setActiveOrder(order)
-        void navigate(`/delivery/${order._id}`, { replace: true })
-      }
+      if (order) setActiveOrder(order)
       return order
     },
-    enabled: !activeOrder,
+    enabled: isAuthenticated && !activeOrder,
     refetchInterval: 10_000,
     staleTime: 0,
     retry: false,
@@ -338,12 +387,14 @@ export default function AvailableJobsPage() {
     queryFn: async () => {
       const res = await ridersApi.getAvailableJobs()
       const jobs = res.data.data
+      // Use getState() to avoid stale closure — queryFn captures state at creation time
+      const currentPending = useRiderStore.getState().pendingJobs
       jobs.forEach((job) => {
-        if (!pendingJobs.find((p) => p._id === job._id)) addPendingJob(job)
+        if (!currentPending.find((p) => p._id === job._id)) addPendingJob(job)
       })
       return jobs
     },
-    enabled: isOnline,
+    enabled: isAuthenticated && isOnline,
     refetchInterval: POLL_MS,
     staleTime: POLL_MS / 2,
   })
@@ -355,6 +406,21 @@ export default function AvailableJobsPage() {
 
   return (
     <div className="min-h-full px-4 py-4 space-y-3">
+      {/* Enable sound alerts banner — only when online and AudioContext not yet unlocked */}
+      {isOnline && !soundEnabled && !isAudioUnlocked() && (
+        <button
+          onClick={() => {
+            primeAudio()
+            setSoundEnabled(true)
+          }}
+          className="bg-amber-500/15 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-center gap-3 mb-3 w-full text-left"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <Volume2 size={18} className="text-amber-400 shrink-0" />
+          <span className="text-sm font-semibold text-amber-300">Tap to enable sound alerts for new jobs</span>
+        </button>
+      )}
+
       {/* Today's earnings */}
       <TodayStrip />
 

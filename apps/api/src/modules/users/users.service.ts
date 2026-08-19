@@ -70,6 +70,10 @@ export class UsersService {
     return user
   }
 
+  async findAllByRole(role: string): Promise<UserDocument[]> {
+    return this.userModel.find({ roles: role }).lean() as unknown as UserDocument[]
+  }
+
   // ── Profile update ───────────────────────────────────────────────
 
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<UserDocument> {
@@ -216,12 +220,24 @@ export class UsersService {
     )
   }
 
+  // ── Preferences ──────────────────────────────────────────────────
+
+  async updatePreferences(userId: string, prefs: { smsOptIn?: boolean }): Promise<void> {
+    const update: Record<string, unknown> = {}
+    if (typeof prefs.smsOptIn === 'boolean') update['smsOptIn'] = prefs.smsOptIn
+    if (Object.keys(update).length === 0) return
+    await this.userModel.updateOne({ _id: userId }, { $set: update })
+  }
+
   // ── Admin ────────────────────────────────────────────────────────
 
   async listUsers(page: number, limit: number, search?: string) {
-    const filter: Record<string, unknown> = { roles: UserRole.CUSTOMER, deletedAt: null }
+    const filter: Record<string, unknown> = search
+      ? { deletedAt: null }
+      : { roles: UserRole.CUSTOMER, deletedAt: null }
     if (search) {
-      const re = new RegExp(search, 'i')
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(escaped, 'i')
       filter.$or = [{ firstName: re }, { lastName: re }, { email: re }, { phone: re }]
     }
     const skip = (page - 1) * limit

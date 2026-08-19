@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { BullModule } from '@nestjs/bullmq'
 import { OrderDocument, OrderSchema } from './schemas/order.schema'
@@ -7,6 +7,7 @@ import { OrdersService } from './orders.service'
 import { SettlementService } from './settlement.service'
 import { OrdersController } from './orders.controller'
 import { AdminOrdersController } from './admin-orders.controller'
+import { RidersModule } from '../riders/riders.module'
 import { MenuItemsModule } from '../menu-items/menu-items.module'
 import { RestaurantsModule } from '../restaurants/restaurants.module'
 import { TrackingModule } from '../tracking/tracking.module'
@@ -25,6 +26,7 @@ import { ORDER_TIMEOUT_QUEUE, RIDER_DISPATCH_QUEUE, SCHEDULED_ORDER_QUEUE } from
       { name: RIDER_DISPATCH_QUEUE },
       { name: SCHEDULED_ORDER_QUEUE },
     ),
+    forwardRef(() => RidersModule),
     MenuItemsModule,
     RestaurantsModule,
     TrackingModule,

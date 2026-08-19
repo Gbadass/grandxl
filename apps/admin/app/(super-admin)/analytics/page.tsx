@@ -1,44 +1,15 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { UserRole, OrderStatus, RestaurantApprovalStatus } from '@grandxl/types'
+import { UserRole } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
-import { adminOrdersApi, adminRestaurantsApi, adminRidersApi, adminUsersApi } from '@grandxl/api-client'
+import { analyticsApi } from '@grandxl/api-client'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { StatsCard } from '../../../src/components/ui/StatsCard'
 import '../../../src/lib/axios'
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function startOf(unit: 'day' | 'week' | 'month'): Date {
-  const d = new Date()
-  if (unit === 'day')   { d.setHours(0, 0, 0, 0); return d }
-  if (unit === 'week')  { d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); return d }
-  d.setDate(1); d.setHours(0, 0, 0, 0); return d
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  [OrderStatus.PENDING]:    'Pending',
-  [OrderStatus.CONFIRMED]:  'Confirmed',
-  [OrderStatus.PREPARING]:  'Preparing',
-  [OrderStatus.READY]:      'Ready',
-  [OrderStatus.PICKED_UP]:  'On the way',
-  [OrderStatus.DELIVERED]:  'Delivered',
-  [OrderStatus.CANCELLED]:  'Cancelled',
-}
-
-const STATUS_COLOR: Record<string, string> = {
-  [OrderStatus.PENDING]:    'bg-amber-500',
-  [OrderStatus.CONFIRMED]:  'bg-blue-500',
-  [OrderStatus.PREPARING]:  'bg-orange-500',
-  [OrderStatus.READY]:      'bg-teal-500',
-  [OrderStatus.PICKED_UP]:  'bg-violet-500',
-  [OrderStatus.DELIVERED]:  'bg-green-500',
-  [OrderStatus.CANCELLED]:  'bg-red-500',
-}
 
 // ── Simple bar chart using divs ────────────────────────────────────────────────
 
@@ -139,110 +110,60 @@ export default function AnalyticsPage() {
     if (!isAuthenticated || !user?.roles?.includes(UserRole.SUPER_ADMIN)) router.replace('/auth/login')
   }, [isAuthenticated, isInitializing, user, router])
 
-  // Fetch large slices — analytics computes from existing endpoints
-  const { data: ordersRes, isLoading: ordersLoading } = useQuery({
-    queryKey: ['analytics', 'orders'],
-    queryFn:  () => adminOrdersApi.list({ limit: 200 }).then((r) => r.data),
+  const { data: analyticsRes, isLoading, isError } = useQuery({
+    queryKey: ['analytics', 'platform'],
+    queryFn:  () => analyticsApi.getPlatform().then((r) => r.data),
     staleTime: 2 * 60_000,
+    enabled:  isAuthenticated,
   })
 
-  const { data: restaurantsRes, isLoading: restLoading } = useQuery({
-    queryKey: ['analytics', 'restaurants'],
-    queryFn:  () => adminRestaurantsApi.list({ limit: 200 }).then((r) => r.data),
-    staleTime: 5 * 60_000,
-  })
+  const analytics = analyticsRes?.data
 
-  const { data: ridersRes, isLoading: ridersLoading } = useQuery({
-    queryKey: ['analytics', 'riders'],
-    queryFn:  () => adminRidersApi.list({ limit: 200 }).then((r) => r.data),
-    staleTime: 5 * 60_000,
-  })
+  // ── Derived display values ─────────────────────────────────────────────────
 
-  const { data: usersRes, isLoading: usersLoading } = useQuery({
-    queryKey: ['analytics', 'users'],
-    queryFn:  () => adminUsersApi.list({ limit: 1 }).then((r) => r.data),
-    staleTime: 5 * 60_000,
-  })
+  const totalOrders     = analytics?.orders.total ?? 0
+  const completedOrders = analytics?.orders.completed ?? 0
+  const cancelledOrders = analytics?.orders.cancelled ?? 0
+  const completionRate  = analytics?.orders.completionRate ?? 0
+  const cancelRate      = totalOrders > 0
+    ? ((cancelledOrders / totalOrders) * 100).toFixed(1)
+    : '0'
 
-  const isLoading = ordersLoading || restLoading || ridersLoading || usersLoading
+  const totalRevenue      = analytics?.revenue.totalKobo ?? 0
+  const commissionRevenue = analytics?.revenue.commissionKobo ?? 0
 
-  const orders      = useMemo(() => ordersRes?.data?.data ?? [], [ordersRes])
-  const restaurants = useMemo(() => restaurantsRes?.data?.data ?? [], [restaurantsRes])
-  const riders      = useMemo(() => ridersRes?.data?.data ?? [], [ridersRes])
+  const totalRestaurants  = analytics?.restaurants.total ?? 0
+  const activeRestaurants = analytics?.restaurants.active ?? 0
+  const totalRiders       = analytics?.riders.total ?? 0
+  const activeRiders      = analytics?.riders.active ?? 0
 
-  // ── Derived metrics ──────────────────────────────────────────────────────────
-
-  const todayStart  = startOf('day')
-  const weekStart   = startOf('week')
-  const monthStart  = startOf('month')
-
-  const delivered = orders.filter((o) => o.status === OrderStatus.DELIVERED)
-
-  const grossRevenue      = delivered.reduce((s, o) => s + o.pricing.total, 0)
-  const platformRevenue   = delivered.reduce((s, o) => s + o.pricing.serviceFee, 0)
-  const todayRevenue      = delivered.filter((o) => new Date(o.createdAt) >= todayStart).reduce((s, o) => s + o.pricing.total, 0)
-  const weekRevenue       = delivered.filter((o) => new Date(o.createdAt) >= weekStart).reduce((s, o) => s + o.pricing.total, 0)
-  const monthRevenue      = delivered.filter((o) => new Date(o.createdAt) >= monthStart).reduce((s, o) => s + o.pricing.total, 0)
-
-  const cancelledCount    = orders.filter((o) => o.status === OrderStatus.CANCELLED).length
-  const cancelRate        = orders.length > 0 ? ((cancelledCount / orders.length) * 100).toFixed(1) : '0'
-
-  const avgOrderValue     = delivered.length > 0
-    ? Math.round(delivered.reduce((s, o) => s + o.pricing.total, 0) / delivered.length)
-    : 0
-
-  const approvedRests     = restaurants.filter((r) => r.approvalStatus === RestaurantApprovalStatus.APPROVED).length
-  const pendingRests      = restaurants.filter((r) => r.approvalStatus === RestaurantApprovalStatus.PENDING_REVIEW).length
-  const onlineRiders      = riders.filter((r) => r.isOnline).length
-  const verifiedRiders    = riders.filter((r) => r.isVerified).length
-
-  // Order status breakdown for donut
-  const statusCounts = Object.values(OrderStatus).map((s) => ({
-    label: STATUS_LABEL[s] ?? s,
-    value: orders.filter((o) => o.status === s).length,
-    color: STATUS_COLOR[s] ?? '#94a3b8',
+  // Daily orders chart — use _id (date string) as label, count as value
+  const dailyOrdersChart = (analytics?.dailyOrders ?? []).map((d) => ({
+    label: d._id.slice(5), // "MM-DD" from "YYYY-MM-DD"
+    value: d.count,
+    color: 'bg-orange-400' as const,
   }))
 
-  // Last 7 days order volume bar chart
-  const last7 = Array.from({ length: 7 }, (_, i) => {
-    const d    = new Date()
-    d.setDate(d.getDate() - (6 - i))
-    d.setHours(0, 0, 0, 0)
-    const next = new Date(d)
-    next.setDate(next.getDate() + 1)
-    return {
-      label: d.toLocaleDateString('en-NG', { weekday: 'short' }),
-      value: orders.filter((o) => {
-        const t = new Date(o.createdAt)
-        return t >= d && t < next
-      }).length,
-    }
-  })
+  // Daily revenue chart — revenue is in kobo, display as naira (÷100)
+  const dailyRevenueChart = (analytics?.dailyOrders ?? []).map((d) => ({
+    label: d._id.slice(5),
+    value: Math.round(d.revenue / 100),
+    color: 'bg-green-400' as const,
+  }))
 
-  // Last 7 days revenue bar chart
-  const last7Revenue = Array.from({ length: 7 }, (_, i) => {
-    const d    = new Date()
-    d.setDate(d.getDate() - (6 - i))
-    d.setHours(0, 0, 0, 0)
-    const next = new Date(d)
-    next.setDate(next.getDate() + 1)
-    return {
-      label: d.toLocaleDateString('en-NG', { weekday: 'short' }),
-      value: Math.round(
-        delivered
-          .filter((o) => { const t = new Date(o.createdAt); return t >= d && t < next })
-          .reduce((s, o) => s + o.pricing.total / 100, 0)
-      ),
-      color: 'bg-green-400',
-    }
-  })
+  // Order status donut
+  const statusSlices = [
+    { label: 'Completed', value: completedOrders, color: '#22c55e' },
+    { label: 'Cancelled', value: cancelledOrders, color: '#ef4444' },
+    {
+      label: 'Other',
+      value: Math.max(totalOrders - completedOrders - cancelledOrders, 0),
+      color: '#f59e0b',
+    },
+  ]
 
-  // Top restaurants by order count
-  const restOrderCount = restaurants.map((r) => ({
-    name: r.name,
-    count: orders.filter((o) => o.restaurantId === r._id).length,
-    revenue: delivered.filter((o) => o.restaurantId === r._id).reduce((s, o) => s + o.pricing.total, 0),
-  })).sort((a, b) => b.count - a.count).slice(0, 8)
+  // Top restaurants
+  const topRestaurants = analytics?.topRestaurants ?? []
 
   if (isInitializing) return null
 
@@ -253,73 +174,79 @@ export default function AnalyticsPage() {
         subtitle="Platform-wide performance metrics"
       />
 
+      {isError && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          Failed to load analytics data. Please refresh the page.
+        </div>
+      )}
+
       {/* ── Top KPI stats ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-6">
         <StatsCard
           title="Gross Revenue"
-          value={formatMoney(grossRevenue, 'NGN')}
-          sub={`${delivered.length} delivered orders`}
+          value={formatMoney(totalRevenue, 'NGN')}
+          sub={`${completedOrders} completed orders`}
           icon="revenue"
           loading={isLoading}
         />
         <StatsCard
-          title="Platform Revenue"
-          value={formatMoney(platformRevenue, 'NGN')}
-          sub="Service fees collected"
+          title="Platform Commission"
+          value={formatMoney(commissionRevenue, 'NGN')}
+          sub="Commission collected"
           icon="analytics"
           loading={isLoading}
         />
         <StatsCard
-          title="Avg Order Value"
-          value={formatMoney(avgOrderValue, 'NGN')}
+          title="Completion Rate"
+          value={`${completionRate.toFixed(1)}%`}
           sub={`Cancel rate: ${cancelRate}%`}
           icon="orders"
           loading={isLoading}
         />
         <StatsCard
-          title="Total Users"
-          value={usersRes?.data?.meta?.total?.toLocaleString() ?? '—'}
-          sub={`${approvedRests} active restaurants`}
+          title="Total Orders"
+          value={totalOrders.toLocaleString()}
+          sub={`${activeRestaurants} active restaurants`}
           icon="users"
           loading={isLoading}
         />
       </div>
 
-      {/* ── Time-period revenue ── */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      {/* ── Restaurant & Rider summary ── */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
         <StatsCard
-          title="Today's Revenue"
-          value={formatMoney(todayRevenue, 'NGN')}
-          icon="revenue"
+          title="Active Restaurants"
+          value={`${activeRestaurants} / ${totalRestaurants}`}
+          sub="Active vs total restaurants"
+          icon="restaurants"
           loading={isLoading}
         />
         <StatsCard
-          title="This Week"
-          value={formatMoney(weekRevenue, 'NGN')}
-          icon="revenue"
-          loading={isLoading}
-        />
-        <StatsCard
-          title="This Month"
-          value={formatMoney(monthRevenue, 'NGN')}
-          icon="revenue"
+          title="Active Riders"
+          value={`${activeRiders} / ${totalRiders}`}
+          sub="Active vs total riders"
+          icon="riders"
           loading={isLoading}
         />
       </div>
 
       {/* ── Charts row ── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-6">
-        <Card title="Order Volume — Last 7 Days">
+        <Card title="Order Volume — Daily Trend">
           {isLoading
             ? <div className="h-40 animate-pulse rounded-lg bg-gray-100" />
-            : <BarChart data={last7.map((d) => ({ ...d, color: 'bg-orange-400' }))} />
+            : dailyOrdersChart.length === 0
+              ? <div className="flex h-40 items-center justify-center text-sm text-gray-400">No data yet</div>
+              : <BarChart data={dailyOrdersChart} />
           }
         </Card>
 
-        <Card title="Revenue (₦) — Last 7 Days">
+        <Card title="Revenue (₦) — Daily Trend">
           {isLoading
             ? <div className="h-40 animate-pulse rounded-lg bg-gray-100" />
-            : <BarChart data={last7Revenue} />
+            : dailyRevenueChart.length === 0
+              ? <div className="flex h-40 items-center justify-center text-sm text-gray-400">No data yet</div>
+              : <BarChart data={dailyRevenueChart} />
           }
         </Card>
       </div>
@@ -329,7 +256,7 @@ export default function AnalyticsPage() {
         <Card title="Orders by Status">
           {isLoading
             ? <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
-            : <DonutChart slices={statusCounts} />
+            : <DonutChart slices={statusSlices} />
           }
         </Card>
 
@@ -339,9 +266,8 @@ export default function AnalyticsPage() {
             : (
               <div className="space-y-3">
                 {[
-                  { label: 'Approved & Active', value: approvedRests, color: '#22c55e' },
-                  { label: 'Pending Review',    value: pendingRests,  color: '#f59e0b' },
-                  { label: 'Rejected / Suspended', value: restaurants.length - approvedRests - pendingRests, color: '#ef4444' },
+                  { label: 'Active',    value: activeRestaurants,                    color: '#22c55e' },
+                  { label: 'Inactive',  value: totalRestaurants - activeRestaurants, color: '#f59e0b' },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center gap-3">
                     <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
@@ -352,7 +278,7 @@ export default function AnalyticsPage() {
                 <div className="border-t border-gray-100 pt-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-500">Total restaurants</span>
-                    <span className="font-bold text-gray-900">{restaurants.length}</span>
+                    <span className="font-bold text-gray-900">{totalRestaurants}</span>
                   </div>
                 </div>
               </div>
@@ -366,9 +292,8 @@ export default function AnalyticsPage() {
             : (
               <div className="space-y-3">
                 {[
-                  { label: 'Verified',    value: verifiedRiders,                    color: '#22c55e' },
-                  { label: 'Online now',  value: onlineRiders,                      color: '#3b82f6' },
-                  { label: 'Unverified',  value: riders.length - verifiedRiders,    color: '#f59e0b' },
+                  { label: 'Active',   value: activeRiders,                 color: '#3b82f6' },
+                  { label: 'Inactive', value: totalRiders - activeRiders,   color: '#f59e0b' },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center gap-3">
                     <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
@@ -379,7 +304,7 @@ export default function AnalyticsPage() {
                 <div className="border-t border-gray-100 pt-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-500">Total riders</span>
-                    <span className="font-bold text-gray-900">{riders.length}</span>
+                    <span className="font-bold text-gray-900">{totalRiders}</span>
                   </div>
                 </div>
               </div>
@@ -392,7 +317,7 @@ export default function AnalyticsPage() {
       <Card title="Top Restaurants by Orders">
         {isLoading
           ? <div className="h-48 animate-pulse rounded-lg bg-gray-100" />
-          : restOrderCount.length === 0
+          : topRestaurants.length === 0
             ? <p className="py-8 text-center text-sm text-gray-400">No order data yet</p>
             : (
               <div className="overflow-hidden rounded-lg border border-gray-100">
@@ -406,7 +331,7 @@ export default function AnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {restOrderCount.map((r, i) => (
+                    {topRestaurants.map((r, i) => (
                       <tr key={r.name} className="hover:bg-gray-50/50">
                         <td className="px-4 py-3 font-medium text-gray-900">
                           <div className="flex items-center gap-2">
@@ -416,18 +341,18 @@ export default function AnalyticsPage() {
                             {r.name}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right tabular-nums text-gray-700">{r.count}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-gray-700">{r.orderCount}</td>
                         <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatMoney(r.revenue, 'NGN')}</td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-100">
                               <div
                                 className="h-full rounded-full bg-orange-400"
-                                style={{ width: `${Math.round((r.count / Math.max(restOrderCount[0]?.count, 1)) * 100)}%` }}
+                                style={{ width: `${Math.round((r.orderCount / Math.max(topRestaurants[0]?.orderCount ?? 1, 1)) * 100)}%` }}
                               />
                             </div>
                             <span className="text-xs tabular-nums text-gray-400 w-8 text-right">
-                              {orders.length > 0 ? Math.round((r.count / orders.length) * 100) : 0}%
+                              {totalOrders > 0 ? Math.round((r.orderCount / totalOrders) * 100) : 0}%
                             </span>
                           </div>
                         </td>

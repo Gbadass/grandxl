@@ -6,7 +6,8 @@ import { PushProvider } from './push.provider'
 import { WebPushProvider } from './web-push.provider'
 import { UsersService } from '../users/users.service'
 import { TermiiProvider } from '../auth/providers/termii.provider'
-import { NotificationType, OrderStatus } from '@grandxl/types'
+import { TrackingGateway } from '../tracking/tracking.gateway'
+import { NotificationType, OrderStatus, UserRole } from '@grandxl/types'
 
 // Which statuses warrant an SMS to the customer. Non-transitional states are
 // omitted so we don't spam. Also kept short to fit inside a single SMS billed
@@ -26,10 +27,11 @@ export class NotificationsService {
   constructor(
     @InjectModel(NotificationDocument.name)
     private readonly notificationModel: Model<NotificationDocument>,
-    private readonly pushProvider:    PushProvider,
-    private readonly webPushProvider: WebPushProvider,
-    private readonly usersService:    UsersService,
-    private readonly termii:          TermiiProvider,
+    private readonly pushProvider:      PushProvider,
+    private readonly webPushProvider:   WebPushProvider,
+    private readonly usersService:      UsersService,
+    private readonly termii:            TermiiProvider,
+    private readonly trackingGateway:   TrackingGateway,
   ) {}
 
   // ── Core: save record + send push ───────────────────────────────
@@ -49,6 +51,9 @@ export class NotificationsService {
       body,
       data: data ?? null,
     })
+
+    // Emit real-time socket event so connected clients update instantly
+    this.trackingGateway.sendToUser(userId, 'notification:new', { title, body, type })
 
     // Send push — Expo (mobile) + Web Push (browser) in parallel.
     try {
@@ -148,12 +153,27 @@ export class NotificationsService {
       status,
     })
 
+    // After delivery send a separate in-app nudge asking for a rating.
+    // Delay 2 minutes so it doesn't fire at the same moment as the delivered push.
+    if (status === OrderStatus.DELIVERED) {
+      setTimeout(() => {
+        void this.send(
+          customerId,
+          NotificationType.ORDER_STATUS,
+          'How was your order?',
+          `Rate your experience for order ${orderNumber}. It helps us improve!`,
+          { orderId, action: 'rate_order' },
+        ).catch(() => undefined)
+      }, 2 * 60 * 1000)
+    }
+
     // SMS on key transitions. Fire-and-forget — an SMS provider outage must
     // never break the underlying status transition or the push we just sent.
+    // Respects user's smsOptIn preference (transactional; defaults true).
     const smsSuffix = SMS_STATUS_MESSAGES[status]
     if (smsSuffix) {
       const user = await this.usersService.findById(customerId).catch(() => null)
-      if (user?.phone) {
+      if (user?.phone && user.smsOptIn !== false) {
         void this.termii
           .sendTransactional(user.phone, `GrandXL: Order ${orderNumber} ${smsSuffix}`)
           .catch(() => undefined)
@@ -175,10 +195,84 @@ export class NotificationsService {
     await this.send(
       riderUserId,
       NotificationType.RIDER_JOB,
-      '🍽 Food is ready!',
+      'Food is ready!',
       `${orderNumber} is packed and waiting. Head to the restaurant to pick it up.`,
       { orderId },
     )
+  }
+
+  // ── Admin fan-out ────────────────────────────────────────────────
+
+  async sendToAdmins(
+    type: NotificationType,
+    title: string,
+    body: string,
+    data?: Record<string, unknown>,
+  ): Promise<void> {
+    const admins = await this.usersService.findAllByRole(UserRole.SUPER_ADMIN)
+    if (admins.length === 0) return
+    await Promise.allSettled(
+      admins.map((admin) => this.send(String(admin._id), type, title, body, data)),
+    )
+  }
+
+  // ── Business event triggers ──────────────────────────────────────
+
+  async onRestaurantApplied(restaurantId: string, restaurantName: string): Promise<void> {
+    void this.sendToAdmins(
+      NotificationType.RESTAURANT_APPLIED,
+      'New restaurant application',
+      `${restaurantName} has submitted for review. Check the restaurants panel.`,
+      { targetType: 'restaurant', restaurantId },
+    ).catch(() => undefined)
+  }
+
+  async onRiderRegistered(riderId: string, riderName: string): Promise<void> {
+    void this.sendToAdmins(
+      NotificationType.RIDER_REGISTERED,
+      'New rider registered',
+      `${riderName} has registered and is awaiting KYC review.`,
+      { targetType: 'rider', riderId },
+    ).catch(() => undefined)
+  }
+
+  async onAdminActionOnRestaurant(
+    ownerId: string,
+    restaurantName: string,
+    action: 'approved' | 'rejected' | 'suspended' | 'reinstated' | 'terminated' | 'info_requested',
+    detail?: string,
+  ): Promise<void> {
+    const messages: Record<typeof action, { title: string; body: string }> = {
+      approved:      { title: 'Restaurant approved!', body: `${restaurantName} has been approved and is now live on GrandXL.` },
+      rejected:      { title: 'Application rejected', body: `${restaurantName}: ${detail ?? 'Your application did not meet our requirements.'}` },
+      suspended:     { title: 'Restaurant suspended', body: `${restaurantName} has been suspended. Reason: ${detail ?? 'Contact support.'}` },
+      reinstated:    { title: 'Restaurant reinstated', body: `${restaurantName} has been reinstated and is live again.` },
+      terminated:    { title: 'Restaurant terminated', body: `${restaurantName} has been permanently removed from GrandXL.` },
+      info_requested:{ title: 'Information requested', body: `More details needed for ${restaurantName}: ${detail ?? 'Check your dashboard.'}` },
+    }
+    const msg = messages[action]
+    void this.send(ownerId, NotificationType.ADMIN_ACTION, msg.title, msg.body, {
+      targetType: 'restaurant',
+      action,
+    }).catch(() => undefined)
+  }
+
+  async onAdminActionOnRider(
+    riderUserId: string,
+    action: 'verified' | 'suspended' | 'reinstated' | 'terminated',
+    detail?: string,
+  ): Promise<void> {
+    const messages: Record<typeof action, { title: string; body: string }> = {
+      verified:   { title: 'Account verified!', body: 'Your rider account has been verified. You can now go online and accept deliveries.' },
+      suspended:  { title: 'Account suspended', body: `Your rider account has been suspended. Reason: ${detail ?? 'Contact support.'}` },
+      reinstated: { title: 'Account reinstated', body: 'Your rider account has been reinstated. You can now go online again.' },
+      terminated: { title: 'Account terminated', body: 'Your rider account has been permanently deactivated.' },
+    }
+    const msg = messages[action]
+    void this.send(riderUserId, NotificationType.ADMIN_ACTION, msg.title, msg.body, {
+      targetType: 'rider',
+      action,
+    }).catch(() => undefined)
   }
 
   // ── Customer — read notifications ────────────────────────────────

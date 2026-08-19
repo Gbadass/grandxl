@@ -8,6 +8,7 @@ export const ROUTES = {
   AVAILABLE_JOBS: '/jobs',
   JOB_DETAIL: '/jobs/:orderId',
   ACTIVE_DELIVERY: '/delivery/:orderId',
+  CHAT: '/delivery/:orderId/chat',
   EARNINGS: '/earnings',
   PAYOUTS: '/payouts',
   PROFILE: '/profile',

@@ -17,6 +17,9 @@ export class PlatformConfigDocument extends Document {
   @Prop({ default: 15 })
   platformCommissionPercent!: number // % of order subtotal kept by GrandXL
 
+  @Prop({ default: 5 }) // customer-facing service fee %
+  serviceFeePercent!: number
+
   @Prop({ default: 150_000 }) // ₦1,500 per master prompt spec
   serviceFeeCapKobo!: number
 

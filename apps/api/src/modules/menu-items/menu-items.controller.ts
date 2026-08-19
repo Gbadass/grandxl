@@ -22,8 +22,10 @@ import { CreateMenuCategoryDto, UpdateMenuCategoryDto } from './dto/menu-categor
 import { CreateMenuItemDto, UpdateMenuItemDto } from './dto/menu-item.dto'
 import { Public } from '../../common/decorators/public.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
+import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
 import { UserRole } from '@grandxl/types'
+import type { JwtPayload } from '@grandxl/types'
 
 @ApiTags('Menu')
 @Controller()
@@ -66,8 +68,9 @@ export class MenuItemsController {
   async createCategory(
     @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
     @Body() dto: CreateMenuCategoryDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.menuItemsService.createCategory(restaurantId, dto)
+    return this.menuItemsService.createCategory(restaurantId, dto, user.sub, user.roles.includes(UserRole.SUPER_ADMIN))
   }
 
   @Patch('restaurants/:restaurantId/categories/:id')
@@ -79,8 +82,9 @@ export class MenuItemsController {
     @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateMenuCategoryDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.menuItemsService.updateCategory(id, restaurantId, dto)
+    return this.menuItemsService.updateCategory(id, restaurantId, dto, user.sub, user.roles.includes(UserRole.SUPER_ADMIN))
   }
 
   @Delete('restaurants/:restaurantId/categories/:id')
@@ -92,8 +96,9 @@ export class MenuItemsController {
   async deleteCategory(
     @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
     @Param('id', ParseObjectIdPipe) id: string,
+    @CurrentUser() user: JwtPayload,
   ) {
-    await this.menuItemsService.deleteCategory(id, restaurantId)
+    await this.menuItemsService.deleteCategory(id, restaurantId, user.sub, user.roles.includes(UserRole.SUPER_ADMIN))
   }
 
   // ── Restaurant owner — manage items ──────────────────────────────
@@ -106,8 +111,9 @@ export class MenuItemsController {
   async createItem(
     @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
     @Body() dto: CreateMenuItemDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.menuItemsService.createItem(restaurantId, dto)
+    return this.menuItemsService.createItem(restaurantId, dto, user.sub, user.roles.includes(UserRole.SUPER_ADMIN))
   }
 
   @Patch('restaurants/:restaurantId/menu-items/:id')
@@ -119,8 +125,9 @@ export class MenuItemsController {
     @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateMenuItemDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.menuItemsService.updateItem(id, restaurantId, dto)
+    return this.menuItemsService.updateItem(id, restaurantId, dto, user.sub, user.roles.includes(UserRole.SUPER_ADMIN))
   }
 
   @Delete('restaurants/:restaurantId/menu-items/:id')
@@ -132,7 +139,8 @@ export class MenuItemsController {
   async deleteItem(
     @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
     @Param('id', ParseObjectIdPipe) id: string,
+    @CurrentUser() user: JwtPayload,
   ) {
-    await this.menuItemsService.deleteItem(id, restaurantId)
+    await this.menuItemsService.deleteItem(id, restaurantId, user.sub, user.roles.includes(UserRole.SUPER_ADMIN))
   }
 }

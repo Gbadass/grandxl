@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ShoppingBag, ChevronRight, Clock, RefreshCw, Bike, ArrowUpDown } from 'lucide-react'
+import { ShoppingBag, ChevronRight, Clock, RefreshCw, Bike, ArrowUpDown, RotateCcw } from 'lucide-react'
 import { OrderStatus } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useOrdersList, useActiveOrders, type OrderTab } from '../features/orders/hooks/useOrders'
+import { useCartStore } from '../features/cart/store/cart.store'
 
 // ── Status display maps ────────────────────────────────────────────────────────
 
@@ -123,6 +124,29 @@ function ActiveOrderCard({ order, index }: { order: Order; index: number }) {
 
 function OrderCard({ order, index }: { order: Order; index: number }) {
   const navigate = useNavigate()
+  const { addItem, clearCart } = useCartStore()
+  const isTerminal = order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED
+
+  function handleReorder(e: React.MouseEvent) {
+    e.stopPropagation()
+    // Rebuild cart from the order's items — clear existing cart first (different restaurant)
+    clearCart()
+    order.items.forEach((item) => {
+      addItem({
+        menuItemId: item.menuItemId,
+        restaurantId: order.restaurantId as unknown as string,
+        name: item.name,
+        image: item.image ?? null,
+        basePrice: item.basePrice ?? Math.round(item.itemTotal / item.quantity),
+        quantity: item.quantity,
+        selectedVariants: item.selectedVariants ?? [],
+        selectedAddOns: item.selectedAddOns ?? [],
+        itemTotal: item.itemTotal,
+        note: item.note ?? null,
+      })
+    })
+    void navigate('/cart')
+  }
 
   return (
     <motion.div
@@ -130,8 +154,11 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index, 6) * 0.05, duration: 0.2 }}
     >
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => void navigate(`/orders/${order._id}/tracking`)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') void navigate(`/orders/${order._id}/tracking`) }}
         className="w-full bg-white rounded-2xl shadow-sm p-4 text-left cursor-pointer hover:shadow-md transition-shadow"
         style={{ touchAction: 'manipulation' }}
       >
@@ -158,7 +185,19 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
                 <p className="font-semibold text-sm text-gray-900 truncate">{order.orderNumber}</p>
                 <p className="text-xs text-gray-500 mt-0.5 truncate">{itemSummary(order)}</p>
               </div>
-              <ChevronRight size={16} className="text-gray-400 shrink-0 mt-0.5" />
+              {isTerminal ? (
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={handleReorder}
+                  className="flex items-center gap-1 shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <RotateCcw size={11} />
+                  Reorder
+                </motion.button>
+              ) : (
+                <ChevronRight size={16} className="text-gray-400 shrink-0 mt-0.5" />
+              )}
             </div>
 
             <div className="mt-2 flex items-center gap-2 flex-wrap">
@@ -172,7 +211,7 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
             </div>
           </div>
         </div>
-      </button>
+      </div>
     </motion.div>
   )
 }

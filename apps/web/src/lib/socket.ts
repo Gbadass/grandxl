@@ -9,8 +9,9 @@ const socketUrl = (import.meta.env.VITE_API_URL as string ?? '').replace(/\/api\
 export const socket: Socket = io(socketUrl, {
   autoConnect: false,
   withCredentials: true,
-  reconnectionAttempts: 5,
+  reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
+  reconnectionDelayMax: 10000,
   timeout: 10000,
 })
 

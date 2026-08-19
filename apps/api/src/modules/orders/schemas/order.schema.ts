@@ -78,6 +78,11 @@ export class OrderDocument extends Document {
   @Prop({ type: Types.ObjectId, ref: 'RestaurantDocument', required: true })
   restaurantId!: Types.ObjectId
 
+  // Snapshotted at creation — used by TrackingGateway to notify the restaurant
+  // owner when the rider is nearby, without a separate restaurant collection lookup.
+  @Prop({ type: Types.ObjectId, ref: 'UserDocument', required: true })
+  restaurantOwnerId!: Types.ObjectId
+
   @Prop({ type: Types.ObjectId, ref: 'RiderDocument', default: null })
   riderId!: Types.ObjectId | null
 
@@ -115,6 +120,16 @@ export class OrderDocument extends Document {
   @Prop({ type: Date, default: null })
   actualDeliveryAt!: Date | null
 
+  // Customer rating submitted after delivery — 1–5 stars
+  @Prop({ type: Number, default: null, min: 1, max: 5 })
+  rating!: number | null
+
+  @Prop({ type: String, default: null, maxlength: 500 })
+  reviewText!: string | null
+
+  @Prop({ type: Date, default: null })
+  ratedAt!: Date | null
+
   @Prop({ type: String, default: null })
   cancelReason!: string | null
 
@@ -142,6 +157,10 @@ export class OrderDocument extends Document {
 
   @Prop({ required: true, default: 'NGN' })
   currency!: string
+
+  // Rider userIds who explicitly declined this broadcast — excluded from re-broadcasts
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'UserDocument' }], default: [] })
+  declinedBy!: Types.ObjectId[]
 
   @Prop({ type: Date, default: null })
   restaurantClearedAt!: Date | null

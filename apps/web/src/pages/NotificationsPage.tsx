@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, ShoppingBag, Bike, RefreshCw, CheckCheck } from 'lucide-react'
+import { Bell, BellOff, ShoppingBag, Bike, RefreshCw, CheckCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { NotificationType } from '@grandxl/types'
-import { notificationsApi } from '@grandxl/api-client'
+import { notificationsApi, usersApi } from '@grandxl/api-client'
 import type { Notification } from '@grandxl/api-client'
 
 // ── Relative time helper ───────────────────────────────────────────────────────
@@ -131,6 +131,16 @@ export default function NotificationsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported'
+    return Notification.permission
+  })
+  const [enablingPush, setEnablingPush] = useState(false)
+
+  useEffect(() => {
+    if (!('Notification' in window)) return
+    setPushPermission(Notification.permission)
+  }, [])
 
   // ── Data fetching ────────────────────────────────────────────────────────────
 
@@ -189,6 +199,39 @@ export default function NotificationsPage() {
     }
   }
 
+  async function enablePushNotifications() {
+    if (enablingPush || !('serviceWorker' in navigator) || !('PushManager' in window)) return
+    setEnablingPush(true)
+    try {
+      const permission = await Notification.requestPermission()
+      setPushPermission(permission)
+      if (permission !== 'granted') return
+
+      const reg = await navigator.serviceWorker.ready
+      const existing = await reg.pushManager.getSubscription()
+      if (existing) { toast.success('Push notifications are enabled!'); return }
+
+      const { data } = await notificationsApi.getVapidPublicKey()
+      const raw = data.data.publicKey
+      const padding = '='.repeat((4 - (raw.length % 4)) % 4)
+      const base64 = (raw + padding).replace(/-/g, '+').replace(/_/g, '/')
+      const rawData = window.atob(base64)
+      const key = new Uint8Array(rawData.length)
+      for (let i = 0; i < rawData.length; i++) key[i] = rawData.charCodeAt(i)
+
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key.buffer as ArrayBuffer })
+      const json = sub.toJSON()
+      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return
+
+      await usersApi.saveWebPushSubscription({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } })
+      toast.success('Push notifications enabled!')
+    } catch {
+      toast.error('Could not enable notifications.')
+    } finally {
+      setEnablingPush(false)
+    }
+  }
+
   function handleRefresh() {
     void refetch()
   }
@@ -238,6 +281,44 @@ export default function NotificationsPage() {
           </button>
         </div>
       </div>
+
+      {/* Push notification enable prompt */}
+      <AnimatePresence>
+        {pushPermission === 'default' && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="mb-3 flex items-center gap-3 bg-primary/8 border border-primary/20 rounded-2xl px-4 py-3"
+          >
+            <div className="h-9 w-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+              <Bell size={16} className="text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900">Get order updates</p>
+              <p className="text-xs text-gray-500 mt-0.5">Enable notifications to be alerted when your order status changes.</p>
+            </div>
+            <button
+              onClick={() => void enablePushNotifications()}
+              disabled={enablingPush}
+              className="shrink-0 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-white cursor-pointer hover:bg-primary/90 transition-colors disabled:opacity-60"
+              style={{ touchAction: 'manipulation', minHeight: '44px' }}
+            >
+              {enablingPush ? '…' : 'Enable'}
+            </button>
+          </motion.div>
+        )}
+        {pushPermission === 'denied' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mb-3 flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3"
+          >
+            <BellOff size={16} className="text-gray-400 shrink-0" />
+            <p className="text-xs text-gray-500">Notifications are blocked. Enable them in your browser settings to get order alerts.</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Unread count subtitle */}
       {unreadCount > 0 && (

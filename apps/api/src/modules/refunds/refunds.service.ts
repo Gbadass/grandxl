@@ -20,6 +20,13 @@ import {
 import { CreateRefundRequestDto } from './dto/create-refund-request.dto'
 
 const PAYSTACK_BASE = 'https://api.paystack.co'
+const PAYSTACK_TIMEOUT_MS = 10_000
+
+function paystackFetch(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PAYSTACK_TIMEOUT_MS)
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer))
+}
 
 @Injectable()
 export class RefundsService {
@@ -74,6 +81,8 @@ export class RefundsService {
   }
 
   async listForCustomer(customerId: string, page = 1, limit = 20) {
+    page  = Math.max(1, page)
+    limit = Math.min(100, Math.max(1, limit))
     const skip = (page - 1) * limit
     const filter = { customerId: new Types.ObjectId(customerId) }
     const [items, total] = await Promise.all([
@@ -86,6 +95,8 @@ export class RefundsService {
   // ── Admin-facing ─────────────────────────────────────────────────────
 
   async listForAdmin(status: RefundStatus | undefined, page = 1, limit = 20) {
+    page  = Math.max(1, page)
+    limit = Math.min(100, Math.max(1, limit))
     const skip = (page - 1) * limit
     const filter = status ? { status } : {}
     const [items, total] = await Promise.all([
@@ -125,7 +136,7 @@ export class RefundsService {
           referenceType: 'order',
           referenceId:   refund.orderId.toString(),
         })
-        refund.walletTransactionId = (txn as unknown as { _id?: unknown })?._id?.toString()
+        refund.walletTransactionId = txn.txnId
         refund.status              = RefundStatus.COMPLETED
         await refund.save()
       } else {
@@ -171,7 +182,7 @@ export class RefundsService {
       throw new BadRequestException('Order has no payment reference — cannot refund to source')
     }
 
-    const response = await fetch(`${PAYSTACK_BASE}/refund`, {
+    const response = await paystackFetch(`${PAYSTACK_BASE}/refund`, {
       method: 'POST',
       headers: {
         Authorization:  `Bearer ${this.paystackSecret}`,

@@ -5,9 +5,11 @@ import { useAuthStore } from '../../store/auth.store'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { Volume2 } from 'lucide-react'
 import { authApi, notificationsApi, type Notification } from '@grandxl/api-client'
 import { NAV_ICONS } from '../ui/Sidebar'
 import type { NavItem } from './AppShell'
+import { primeAudio, isAudioUnlocked } from '../../lib/alertSound'
 
 // ── Click-outside hook ────────────────────────────────────────────────────────
 
@@ -131,11 +133,13 @@ function CommandPalette({
 // ── Notifications hook (shared between bell badge + panel) ─────────────────────
 
 function useNotifications() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   return useQuery({
     queryKey: ['notifications'],
     queryFn: () => notificationsApi.getMine({ limit: 20 }),
-    refetchInterval: 60_000,
+    refetchInterval: 15_000,
     refetchOnWindowFocus: true,
+    enabled: isAuthenticated,
   })
 }
 
@@ -172,9 +176,17 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
 
   function handleClick(n: Notification) {
     if (!n.isRead) markRead.mutate(n._id)
-    const orderId = (n.data as { orderId?: string } | null)?.orderId
-    if (orderId) {
-      router.push(`/restaurant/orders/${orderId}`)
+    const data = n.data as { orderId?: string; restaurantId?: string; riderId?: string; targetType?: string } | null
+    let href: string | null = null
+    if (data?.targetType === 'restaurant' && data.restaurantId) {
+      href = `/restaurants/${data.restaurantId}`
+    } else if (data?.targetType === 'rider' && data.riderId) {
+      href = `/riders/${data.riderId}`
+    } else if (data?.orderId) {
+      href = `/orders/${data.orderId}`
+    }
+    if (href) {
+      router.push(href)
       onClose()
     }
   }
@@ -339,6 +351,7 @@ export function TopBar({ navItems, onMenuToggle }: Props) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [soundEnabled, setSoundEnabled] = useState(false)
 
   const { data: notifData } = useNotifications()
   const unreadCount = notifData?.data?.data?.unreadCount ?? 0
@@ -412,6 +425,20 @@ export function TopBar({ navItems, onMenuToggle }: Props) {
             <span className="hidden sm:inline">Search</span>
             <kbd className="hidden rounded border border-gray-200 bg-gray-100 px-1.5 py-0.5 font-sans text-[10px] text-gray-400 sm:inline">⌘K</kbd>
           </button>
+
+          {/* Enable Sounds — only shown when AudioContext is still suspended */}
+          {!soundEnabled && !isAudioUnlocked() && (
+            <button
+              onClick={() => {
+                primeAudio()
+                setSoundEnabled(true)
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
+            >
+              <Volume2 size={16} />
+              Enable Sounds
+            </button>
+          )}
 
           {/* Notifications */}
           <div className="relative">

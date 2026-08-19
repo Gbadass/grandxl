@@ -23,3 +23,13 @@ export const REDIS_PWD_RESET_PREFIX = 'pwd_reset:'
 export const REDIS_ADMIN_LOGIN_ATTEMPTS_PREFIX = 'admin_login_attempts:'
 export const REDIS_ADMIN_LOGIN_LOCKED_PREFIX = 'admin_login_locked:'
 export const REDIS_RIDER_ASSIGNMENT_PREFIX = 'rider_assignment:'
+export const REDIS_LOGIN_ATTEMPTS_PREFIX = 'login_attempts:'
+export const REDIS_LOGIN_LOCKED_PREFIX = 'login_locked:'
+
+export const LOGIN_MAX_ATTEMPTS = 10             // 10 wrong passwords before lockout
+export const LOGIN_LOCKOUT_SECONDS = 15 * 60     // 15 minute lockout
+
+export const REDIS_OTP_SEND_RATE_PREFIX = 'otp_send_rate:'
+export const OTP_SEND_COOLDOWN_SECONDS = 60      // 1 new OTP request per phone per minute
+
+export const MAX_ORDER_VALUE_KOBO = 500_000_00   // ₦500,000 per order sanity cap

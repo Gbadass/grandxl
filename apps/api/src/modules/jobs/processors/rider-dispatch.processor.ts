@@ -49,16 +49,18 @@ export class RiderDispatchProcessor extends WorkerHost {
       return
     }
 
-    // Phase 2 — no available riders: broadcast to all online+verified riders in 50 km
+    // Phase 2 — no available riders: broadcast to nearest online+verified riders.
+    // Cap at 10 to avoid a thundering-herd notification storm; the closest riders
+    // are most likely to accept and arrive fastest anyway.
     const customerId = order.customerId.toString()
     const nearby = await this.ridersService.findNearbyOnlineVerified(lng, lat)
-    if (nearby.length > 0) {
-      const userIds = nearby.map((r) => String(r.userId))
+    const broadcastTargets = nearby.slice(0, 10)
+    if (broadcastTargets.length > 0) {
+      const userIds = broadcastTargets.map((r) => String(r.userId))
       this.trackingService.broadcastOrderToRiders(userIds, order)
 
       // Push notifications — so riders with the app in background/closed still hear the ping.
-      // Fire-and-forget; one rider failing should not block the rest.
-      void Promise.all(
+      void Promise.allSettled(
         userIds.map((userId) =>
           this.notificationsService.send(
             userId,

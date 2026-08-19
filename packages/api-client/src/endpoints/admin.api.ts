@@ -259,6 +259,7 @@ export interface UpdateRestaurantDto {
   deliveryFeeFixed?: number
   estimatedDeliveryTime?: number
   coverImage?: string | null
+  logo?: string | null
   address?: {
     street: string
     city: string
@@ -306,6 +307,23 @@ export interface CreateCategoryDto {
   sortOrder?: number
 }
 
+export interface CreateMenuItemVariantOption {
+  name: string
+  priceAdjustment: number // in kobo
+}
+
+export interface CreateMenuItemVariant {
+  name: string
+  isRequired: boolean
+  options: CreateMenuItemVariantOption[]
+}
+
+export interface CreateMenuItemAddOn {
+  name: string
+  price: number // in kobo
+  isAvailable: boolean
+}
+
 export interface CreateMenuItemDto {
   name: string
   description?: string
@@ -318,6 +336,9 @@ export interface CreateMenuItemDto {
   prepTimeMinutes?: number
   stockCount?: number
   lowStockThreshold?: number
+  image?: string
+  variants?: CreateMenuItemVariant[]
+  addOns?: CreateMenuItemAddOn[]
 }
 
 export const menuManagementApi = {
@@ -340,3 +361,46 @@ export const menuManagementApi = {
     getClient().delete(`/restaurants/${restaurantId}/menu-items/${id}`),
 }
 
+// ── Analytics ────────────────────────────────────────────────────────────────
+
+export interface PlatformAnalyticsData {
+  orders: {
+    total: number
+    completed: number
+    cancelled: number
+    completionRate: number
+  }
+  revenue: {
+    totalKobo: number
+    commissionKobo: number
+  }
+  restaurants: { total: number; active: number }
+  riders: { total: number; active: number }
+  dailyOrders: Array<{ _id: string; count: number; revenue: number }>
+  topRestaurants: Array<{ name: string; orderCount: number; revenue: number }>
+}
+
+export interface RestaurantAnalyticsData {
+  orders: {
+    total: number
+    completed: number
+    cancelled: number
+    completionRate: number
+  }
+  revenue: {
+    totalKobo: number
+    avgOrderKobo: number
+  }
+  dailyOrders: Array<{ _id: string; count: number; revenue: number }>
+  topItems: Array<{ name: string; count: number; revenue: number }>
+}
+
+export const analyticsApi = {
+  getPlatform: () =>
+    getClient().get<ApiResponse<PlatformAnalyticsData>>('/admin/analytics'),
+
+  getRestaurant: (restaurantId: string) =>
+    getClient().get<ApiResponse<RestaurantAnalyticsData>>('/restaurant/analytics', {
+      params: { restaurantId },
+    }),
+}

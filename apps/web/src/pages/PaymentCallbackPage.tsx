@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { CheckCircle2, XCircle } from 'lucide-react'
+import { CheckCircle2, XCircle, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { paymentsApi } from '@grandxl/api-client'
 import { formatMoney } from '@grandxl/utils'
 
-type VerifyState = 'verifying' | 'success' | 'failed'
+type VerifyState = 'verifying' | 'success' | 'pending' | 'failed'
+
+const POLL_INTERVAL_MS  = 4_000
+const MAX_POLL_ATTEMPTS = 10 // 40 seconds total — Paystack webhooks arrive within 30s
 
 export default function PaymentCallbackPage() {
   const [searchParams] = useSearchParams()
@@ -15,6 +18,8 @@ export default function PaymentCallbackPage() {
   const [state, setState] = useState<VerifyState>('verifying')
   const [orderId, setOrderId] = useState<string | null>(null)
   const [amount, setAmount] = useState<number | null>(null)
+  const attemptsRef = useRef(0)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!reference) {
@@ -25,32 +30,53 @@ export default function PaymentCallbackPage() {
     let cancelled = false
 
     async function verify() {
+      if (cancelled) return
+      attemptsRef.current += 1
+
       try {
         const res = await paymentsApi.verify(reference!)
         if (cancelled) return
 
         const data = res.data.data
+
         if (data.verified) {
           setOrderId(data.orderId)
           setAmount(data.amount)
           setState('success')
           toast.success('Payment confirmed!')
-          // Auto-navigate to tracking after a short celebration delay
           if (data.orderId) {
-            setTimeout(() => {
+            timerRef.current = setTimeout(() => {
               void navigate(`/orders/${data.orderId}/tracking`, { replace: true })
             }, 2200)
           }
-        } else {
-          setState('failed')
+          return
         }
+
+        // Payment not yet confirmed — may still be pending
+        if (data.status === 'pending' && attemptsRef.current < MAX_POLL_ATTEMPTS) {
+          if (attemptsRef.current === 1) setState('pending')
+          timerRef.current = setTimeout(() => { void verify() }, POLL_INTERVAL_MS)
+          return
+        }
+
+        // Exhausted retries or payment genuinely failed
+        setState(data.status === 'pending' ? 'pending' : 'failed')
       } catch {
-        if (!cancelled) setState('failed')
+        if (cancelled) return
+        if (attemptsRef.current < MAX_POLL_ATTEMPTS) {
+          timerRef.current = setTimeout(() => { void verify() }, POLL_INTERVAL_MS)
+        } else {
+          setState('pending') // network error after retries — don't show "failed"
+        }
       }
     }
 
     void verify()
-    return () => { cancelled = true }
+
+    return () => {
+      cancelled = true
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
   }, [reference, navigate])
 
   return (
@@ -64,6 +90,42 @@ export default function PaymentCallbackPage() {
           <div className="h-14 w-14 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
           <p className="text-gray-600 font-medium">Verifying your payment…</p>
           <p className="text-xs text-gray-400">This only takes a moment</p>
+        </motion.div>
+      )}
+
+      {state === 'pending' && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-4"
+        >
+          <div className="h-20 w-20 rounded-full bg-amber-50 flex items-center justify-center">
+            <Clock size={44} className="text-amber-500" />
+          </div>
+          <h1 className="text-xl font-display font-bold text-gray-900">Payment processing</h1>
+          <p className="text-gray-500 text-sm max-w-xs">
+            Your payment is being confirmed. This can take up to a minute — we'll notify you the moment it's approved.
+          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+          <div className="flex flex-col gap-2 w-full max-w-xs mt-2">
+            <button
+              onClick={() => void navigate('/orders', { replace: true })}
+              className="w-full py-3.5 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors"
+              style={{ minHeight: '48px', touchAction: 'manipulation' }}
+            >
+              Check my orders
+            </button>
+            <button
+              onClick={() => void navigate('/', { replace: true })}
+              className="w-full py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium cursor-pointer hover:border-gray-300 transition-colors"
+            >
+              Back to home
+            </button>
+          </div>
         </motion.div>
       )}
 

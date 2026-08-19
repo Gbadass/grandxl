@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Star, Clock } from 'lucide-react'
+import { Star, Clock, Heart } from 'lucide-react'
 import type { Restaurant } from '@grandxl/types'
 import { formatMoney, isRestaurantOpen } from '@grandxl/utils'
 import type { RestaurantHours } from '@grandxl/utils'
+import { useAuthStore } from '../../../store/auth.store'
+import { useFavorites } from '../../../hooks/useFavorites'
 
 interface Props {
   restaurant: Restaurant
@@ -34,6 +36,8 @@ export function RestaurantCard({ restaurant }: Props) {
   const isFree = restaurant.deliveryFeeFixed === 0
   // Closed if manually toggled off, OR if outside today's opening hours schedule
   const isOpen = restaurant.isOpen && isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const { isFavorited, toggleFavorite } = useFavorites()
 
   return (
     <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.985 }} transition={{ duration: 0.15 }}>
@@ -79,14 +83,35 @@ export function RestaurantCard({ restaurant }: Props) {
               <div />
             )}
 
-            {/* Rating pill */}
-            {restaurant.ratingCount > 0 && (
-              <div className="flex items-center gap-1 bg-white/95 backdrop-blur-sm rounded-full px-2 py-1 shadow-sm">
-                <Star size={10} className="text-amber-400 fill-amber-400" />
-                <span className="text-[11px] font-bold text-gray-900">{restaurant.rating.toFixed(1)}</span>
-                <span className="text-[10px] text-gray-400">({restaurant.ratingCount})</span>
-              </div>
-            )}
+            {/* Right side: rating + heart */}
+            <div className="flex items-center gap-1.5">
+              {/* Rating pill */}
+              {restaurant.ratingCount > 0 && (
+                <div className="flex items-center gap-1 bg-white/95 backdrop-blur-sm rounded-full px-2 py-1 shadow-sm">
+                  <Star size={10} className="text-amber-400 fill-amber-400" />
+                  <span className="text-[11px] font-bold text-gray-900">{restaurant.rating.toFixed(1)}</span>
+                  <span className="text-[10px] text-gray-400">({restaurant.ratingCount})</span>
+                </div>
+              )}
+
+              {/* Heart / favorite button — only for authenticated users */}
+              {isAuthenticated && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    toggleFavorite(restaurant._id)
+                  }}
+                  className="h-7 w-7 flex items-center justify-center rounded-full bg-white/95 backdrop-blur-sm shadow-sm cursor-pointer transition-transform active:scale-90"
+                  aria-label={isFavorited(restaurant._id) ? 'Remove from favorites' : 'Save restaurant'}
+                >
+                  <Heart
+                    size={14}
+                    className={isFavorited(restaurant._id) ? 'fill-red-500 text-red-500' : 'text-gray-400'}
+                  />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Bottom: delivery time overlay */}

@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { PlatformConfigDocument } from './schemas/platform-config.schema'
 import { CouponDocument } from './schemas/coupon.schema'
+import { CouponUsageDocument } from './schemas/coupon-usage.schema'
 import type { UpdatePlatformConfigDto } from './dto/update-platform-config.dto'
 import type { CreateCouponDto } from './dto/create-coupon.dto'
 
@@ -18,6 +19,8 @@ export class PlatformConfigService implements OnModuleInit {
     private readonly configModel: Model<PlatformConfigDocument>,
     @InjectModel(CouponDocument.name)
     private readonly couponModel: Model<CouponDocument>,
+    @InjectModel(CouponUsageDocument.name)
+    private readonly couponUsageModel: Model<CouponUsageDocument>,
   ) {}
 
   // Ensure the singleton document exists at startup
@@ -40,6 +43,7 @@ export class PlatformConfigService implements OnModuleInit {
     const updates: Record<string, unknown> = {}
     if (dto.deliveryTiers !== undefined) updates.deliveryTiers = dto.deliveryTiers
     if (dto.platformCommissionPercent !== undefined) updates.platformCommissionPercent = dto.platformCommissionPercent
+    if (dto.serviceFeePercent !== undefined) updates.serviceFeePercent = dto.serviceFeePercent
     if (dto.serviceFeeCapKobo !== undefined) updates.serviceFeeCapKobo = dto.serviceFeeCapKobo
     if (dto.minRiderEarningKobo !== undefined) updates.minRiderEarningKobo = dto.minRiderEarningKobo
     if (dto.enabledServices !== undefined) updates.enabledServices = dto.enabledServices
@@ -166,6 +170,7 @@ export class PlatformConfigService implements OnModuleInit {
     code: string,
     restaurantId: string,
     subtotalKobo: number,
+    customerId?: string, // optional for preview calls that don't enforce per-user limit
   ): Promise<{ discountKobo: number; couponId: string }> {
     const coupon = await this.couponModel.findOne({
       code: code.toUpperCase(),
@@ -178,6 +183,21 @@ export class PlatformConfigService implements OnModuleInit {
 
     if (coupon.usageLimit > 0 && coupon.usageCount >= coupon.usageLimit) {
       throw new BadRequestException('Coupon usage limit has been reached')
+    }
+
+    // Per-user limit check — only enforced when called from order creation (customerId provided)
+    if (coupon.perUserLimit > 0 && customerId) {
+      const userUsageCount = await this.couponUsageModel.countDocuments({
+        couponId: coupon._id,
+        userId:   new Types.ObjectId(customerId),
+      })
+      if (userUsageCount >= coupon.perUserLimit) {
+        throw new BadRequestException(
+          coupon.perUserLimit === 1
+            ? 'You have already used this coupon'
+            : `You can only use this coupon ${coupon.perUserLimit} time${coupon.perUserLimit === 1 ? '' : 's'}`,
+        )
+      }
     }
 
     if (subtotalKobo < coupon.minOrderAmount) {
@@ -218,7 +238,22 @@ export class PlatformConfigService implements OnModuleInit {
     return this.couponModel.findOne({ code: code.toUpperCase() }).lean() as unknown as CouponDocument | null
   }
 
-  async incrementCouponUsage(couponId: string): Promise<void> {
-    await this.couponModel.findByIdAndUpdate(couponId, { $inc: { usageCount: 1 } })
+  async recordCouponUsage(couponId: string, customerId: string, orderId: string): Promise<void> {
+    await Promise.all([
+      this.couponModel.findByIdAndUpdate(couponId, { $inc: { usageCount: 1 } }),
+      this.couponUsageModel.create({
+        couponId: new Types.ObjectId(couponId),
+        userId:   new Types.ObjectId(customerId),
+        orderId:  new Types.ObjectId(orderId),
+      }),
+    ])
+  }
+
+  // Called when an order using a coupon is cancelled — restores the user's usage slot.
+  async revokeCouponUsage(orderId: string): Promise<void> {
+    const usage = await this.couponUsageModel.findOneAndDelete({ orderId: new Types.ObjectId(orderId) })
+    if (usage) {
+      await this.couponModel.findByIdAndUpdate(usage.couponId, { $inc: { usageCount: -1 } })
+    }
   }
 }
