@@ -44,10 +44,9 @@ export function useRiderSocket() {
     }
 
     function onDirectJob({ order }: { order: Order }) {
-      // Direct assignment — navigate immediately, rider cannot decline
       setActiveOrder(order)
       playJobAlert()
-      toast.success(`Delivery assigned — ${order.orderNumber}`, { duration: 5000 })
+      toast.success(`Delivery assigned — ${order.orderNumber}`, { id: `job-${order._id}`, duration: 5000 })
       void navigate(`/delivery/${order._id}`, { replace: true })
     }
 
@@ -64,18 +63,20 @@ export function useRiderSocket() {
       const updated: Order = { ...current, status }
       setActiveOrder(updated)
 
-      if (status === OrderStatus.READY) {
-        toast.success('Food is ready! Go pick it up.')
-      } else if (status === OrderStatus.PREPARING) {
-        toast('Restaurant is preparing the order.', { icon: '🍳' })
+      if (status === OrderStatus.PREPARING) {
+        // Stable ID prevents duplicates if rider:order_ready also fires
+        toast('Restaurant is preparing the order.', { id: `preparing-${orderId}` })
       }
+      // READY is handled exclusively by onOrderReady to avoid the double-toast
+      // when backend emits both order:status_update(READY) and rider:order_ready
     }
 
     function onOrderReady({ orderId }: { orderId: string }) {
       const current = activeOrderRef.current
       if (!current || current._id !== orderId) return
       setActiveOrder({ ...current, status: OrderStatus.READY })
-      toast.success('Food is ready — head in to pick up!')
+      // Stable ID deduplicates against onStatusUpdate firing simultaneously
+      toast.success('Food is ready — head in to pick up!', { id: `ready-${orderId}`, duration: 6000 })
     }
 
     socket.on('rider:new_job', onDirectJob)

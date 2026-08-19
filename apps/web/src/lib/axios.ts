@@ -74,7 +74,11 @@ instance.interceptors.response.use(
       } catch (err) {
         processQueue(err)
         useAuthStore.getState().clearAuth()
-        window.location.href = '/login'
+        // Inform the user before the redirect — silent redirects feel like bugs
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.error('Your session expired. Please log in again.', { id: 'session-expired', duration: 4000 })
+          setTimeout(() => { window.location.href = '/login' }, 800)
+        }).catch(() => { window.location.href = '/login' })
         return Promise.reject(err)
       } finally {
         isRefreshing = false

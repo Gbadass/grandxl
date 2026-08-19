@@ -390,10 +390,10 @@ function DeliveryAddressCard({ order }: { order: Order }) {
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Delivering to</p>
         <p className="text-sm font-semibold text-gray-900 truncate">
-          {order.deliveryAddress.street}
+          {order.deliveryAddress?.street}
         </p>
         <p className="text-xs text-gray-400">
-          {order.deliveryAddress.city}, {order.deliveryAddress.state}
+          {order.deliveryAddress?.city}, {order.deliveryAddress?.state}
         </p>
       </div>
     </motion.div>
@@ -420,7 +420,7 @@ function RiderCard({
 
   // All hooks must be called before any early return (Rules of Hooks)
   const deliveryCoords = useMemo<[number, number] | null>(() => {
-    const coords = order.deliveryAddress.coordinates?.coordinates
+    const coords = order.deliveryAddress?.coordinates?.coordinates
     if (!coords) return null
     return [coords[1], coords[0]]
   }, [order.deliveryAddress.coordinates])
@@ -526,7 +526,7 @@ function OrderSummaryCard({ order }: { order: Order }) {
       <h3 className="font-display font-bold text-base text-gray-900 mb-3">Your order</h3>
 
       <ul className="space-y-2 mb-3">
-        {order.items.map((item) => (
+        {(order.items ?? []).map((item) => (
           <div key={item.menuItemId} className="flex justify-between text-sm">
             <span className="text-gray-700">
               <span className="font-semibold text-gray-900">{item.quantity}×</span> {item.name}

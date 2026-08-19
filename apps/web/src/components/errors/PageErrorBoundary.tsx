@@ -1,4 +1,5 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react'
+import * as Sentry from '@sentry/react'
 import { ROUTES } from '../../router/routes'
 
 interface Props { children: ReactNode }
@@ -11,8 +12,12 @@ export class PageErrorBoundary extends Component<Props, State> {
     return { hasError: true }
   }
 
-  componentDidCatch(_error: Error, _info: ErrorInfo): void {
-    // Page-level errors are caught by RootErrorBoundary's Sentry handler
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    Sentry.captureException(error, {
+      level: 'warning',
+      tags: { boundary: 'page', path: window.location.pathname },
+      contexts: { react: { componentStack: info.componentStack ?? '' } },
+    })
   }
 
   render(): ReactNode {

@@ -4,14 +4,16 @@ import { Toaster } from 'react-hot-toast'
 import { queryClient } from './lib/queryClient'
 import { AppRouter } from './router/AppRouter'
 import { AuthInit } from './components/templates/AuthInit'
+import { RootErrorBoundary } from './components/errors/RootErrorBoundary'
 import './lib/axios' // register axios instance with api-client
 
 export function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthInit>
-          <AppRouter />
+    <RootErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthInit>
+            <AppRouter />
           <Toaster
             position="top-center"
             toastOptions={{
@@ -23,8 +25,9 @@ export function App() {
               },
             }}
           />
-        </AuthInit>
-      </BrowserRouter>
-    </QueryClientProvider>
+          </AuthInit>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </RootErrorBoundary>
   )
 }

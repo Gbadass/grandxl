@@ -14,8 +14,9 @@ out/
 # Environment variables (NEVER commit these)
 .env
 .env.*
-.env.example
-.env.production.example
+.env.local
+.env.production
+.env.staging
 
 # Logs
 *.log
@@ -84,3 +85,16 @@ FOLLOWUPS.md
 
 # Claude Code project instructions — internal, not for repo
 CLAUDE.md
+
+# Internal docs — deployment postmortems, planning notes, etc.
+docs/
+
+# Claude Code memory and skill output
+design-system/MASTER.md
+design-system/pages/
+
+# Temporary / scratch files
+*.tmp
+*.bak
+scratch/
+tmp/

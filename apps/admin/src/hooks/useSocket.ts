@@ -100,7 +100,7 @@ export function useSocket(): void {
       invalidateLiveOrders()
       void qc.invalidateQueries({ queryKey: ['order', orderId] })
       if (isRestaurantOwner) {
-        toast.success('A rider accepted the job!', { duration: 4000 })
+        toast.success('A rider accepted the job!', { id: `rider-accepted-${orderId}`, duration: 4000 })
       }
     }
 
