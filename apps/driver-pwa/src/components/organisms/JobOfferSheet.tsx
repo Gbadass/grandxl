@@ -22,17 +22,14 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
 
   useEffect(() => {
     intervalRef.current = setInterval(() => {
-      setSeconds((s) => {
-        if (s <= 1) {
-          clearInterval(intervalRef.current!)
-          dismiss()
-          return 0
-        }
-        return s - 1
-      })
+      setSeconds((s) => (s <= 1 ? 0 : s - 1))
     }, 1000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [dismiss])
+  }, [])
+
+  useEffect(() => {
+    if (seconds === 0) dismiss()
+  }, [seconds, dismiss])
 
   const acceptMutation = useMutation({
     mutationFn: () => ridersApi.acceptJob(order._id),

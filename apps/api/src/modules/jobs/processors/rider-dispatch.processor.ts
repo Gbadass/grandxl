@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq'
 import { Logger } from '@nestjs/common'
 import type { Job } from 'bullmq'
-import { RIDER_DISPATCH_QUEUE } from '../constants/queue.constants'
+import { RIDER_DISPATCH_QUEUE, RIDER_DISPATCH_MAX_ATTEMPTS } from '../constants/queue.constants'
 import { OrdersService } from '../../orders/orders.service'
 import { RidersService } from '../../riders/riders.service'
 import { TrackingService } from '../../tracking/tracking.service'
@@ -29,6 +29,7 @@ export class RiderDispatchProcessor extends WorkerHost {
 
   async process(job: Job<RiderDispatchJobData>): Promise<void> {
     const { orderId, lng, lat } = job.data
+    const isFinalAttempt = job.attemptsMade >= RIDER_DISPATCH_MAX_ATTEMPTS - 1
 
     const order = await this.ordersService.getOrderById(orderId)
     const stillNeedsRider = [
@@ -41,6 +42,8 @@ export class RiderDispatchProcessor extends WorkerHost {
       return
     }
 
+    const customerId = order.customerId.toString()
+
     // Phase 1 — auto-assign a nearby available rider
     const available = await this.ridersService.findNearestAvailable(lng, lat)
     if (available.length > 0) {
@@ -52,7 +55,6 @@ export class RiderDispatchProcessor extends WorkerHost {
     // Phase 2 — no available riders: broadcast to nearest online+verified riders.
     // Cap at 10 to avoid a thundering-herd notification storm; the closest riders
     // are most likely to accept and arrive fastest anyway.
-    const customerId = order.customerId.toString()
     const nearby = await this.ridersService.findNearbyOnlineVerified(lng, lat)
     const broadcastTargets = nearby.slice(0, 10)
     if (broadcastTargets.length > 0) {
@@ -72,13 +74,32 @@ export class RiderDispatchProcessor extends WorkerHost {
         ),
       )
 
-      // Tell the customer we're expanding the search
       this.trackingService.notifyDispatchUpdate(customerId, orderId, 'broadcast')
-      this.logger.warn(`No available riders for order ${orderId} — broadcast to ${userIds.length} online riders`)
-      return
+      this.logger.warn(`No available riders for order ${orderId} — broadcast to ${userIds.length} online riders (attempt ${job.attemptsMade + 1}/${RIDER_DISPATCH_MAX_ATTEMPTS})`)
+
+      if (isFinalAttempt) {
+        // All rounds exhausted — force-assign the nearest online rider as last resort
+        const [forceRider] = broadcastTargets
+        if (forceRider) {
+          try {
+            await this.ridersService.assignOrder(forceRider._id.toString(), orderId)
+            this.logger.warn(`Force-assigned rider ${String(forceRider._id)} to order ${orderId} after all broadcast rounds`)
+            return
+          } catch {
+            // Rider went offline between broadcast and force-assign — fall through to no_riders
+          }
+        }
+        this.trackingService.notifyDispatchUpdate(customerId, orderId, 'no_riders')
+        this.logger.error(`All dispatch rounds exhausted for order ${orderId} — no rider assigned`)
+        return
+      }
+
+      // Throw so BullMQ retries after the exponential backoff window.
+      // This gives broadcast riders time to accept before the next round fires.
+      throw new Error(`Broadcast sent to ${userIds.length} riders — waiting for acceptance`)
     }
 
-    // Phase 3 — no riders at all in region; retry
+    // Phase 3 — no riders at all in region
     this.trackingService.notifyDispatchUpdate(customerId, orderId, 'no_riders')
     this.logger.warn(`No riders in region for order ${orderId} — will retry`)
     throw new Error('No riders in region')
