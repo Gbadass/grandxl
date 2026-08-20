@@ -7,6 +7,7 @@ import { AppShell } from '../components/templates/AppShell'
 const LoginPage = lazy(() => import('../pages/LoginPage'))
 const OtpVerifyPage = lazy(() => import('../pages/OtpVerifyPage'))
 const RegisterRiderPage = lazy(() => import('../pages/RegisterRiderPage'))
+const RegisterDriverPage = lazy(() => import('../pages/RegisterDriverPage'))
 const KycUploadPage = lazy(() => import('../pages/KycUploadPage'))
 const PendingVerificationPage = lazy(() => import('../pages/PendingVerificationPage'))
 const HomePage = lazy(() => import('../pages/HomePage'))
@@ -38,6 +39,9 @@ export function AppRouter() {
         <Route path={ROUTES.LOGIN} element={wrap(<LoginPage />)} />
         <Route path={ROUTES.OTP_VERIFY} element={wrap(<OtpVerifyPage />)} />
       </Route>
+
+      {/* Public — driver registration (after OTP, before account exists) */}
+      <Route path={ROUTES.REGISTER_DRIVER} element={wrap(<RegisterDriverPage />)} />
 
       {/* Auth required — registration + KYC flow (no rider role or verified status required) */}
       <Route element={<ProtectedRoute />}>

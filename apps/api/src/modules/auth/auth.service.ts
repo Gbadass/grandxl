@@ -61,6 +61,7 @@ export interface AuthResponse {
   accessToken: string
   refreshToken: string
   user: Omit<UserDocument, 'passwordHash'>
+  isNewUser?: boolean
 }
 
 @Injectable()
@@ -235,11 +236,14 @@ export class AuthService {
     await this.redis.del(`${REDIS_OTP_PREFIX}${phone}`)
     await this.redis.del(attemptsKey)
 
-    // Mark user as verified (create stub user if they don't exist yet)
+    // OTP valid — look up user
     let user = await this.usersService.findByPhone(phone)
     if (!user) {
-      throw new BadRequestException('Please register before verifying your phone number')
+      // Phone is verified but no account exists yet — store proof for registration
+      await this.redis.set(`phone_verified:${phone}`, '1', 'EX', 600)
+      return { isNewUser: true } as AuthResponse
     }
+
     await this.usersService.markVerified(user._id.toString())
     user = await this.usersService.findByIdOrThrow(user._id.toString())
 
@@ -250,6 +254,38 @@ export class AuthService {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       user: await this.usersService.toSafeUser(user),
+    }
+  }
+
+  // ── Register Driver (phone already OTP-verified) ────────────────
+
+  async registerDriver(dto: {
+    phone: string
+    firstName: string
+    lastName: string
+  }): Promise<AuthResponse> {
+    const flag = await this.redis.get(`phone_verified:${dto.phone}`)
+    if (!flag) {
+      throw new BadRequestException('Phone verification expired. Please request a new OTP.')
+    }
+    await this.redis.del(`phone_verified:${dto.phone}`)
+
+    const user = await this.usersService.create({
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      phone: dto.phone,
+      roles: [UserRoleEnum.CUSTOMER],
+    })
+    await this.usersService.markVerified(user._id.toString())
+    const fresh = await this.usersService.findByIdOrThrow(user._id.toString())
+
+    const tokens = await this.issueTokens(fresh)
+    await this.storeRefreshToken(fresh._id.toString(), tokens.refreshToken)
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: await this.usersService.toSafeUser(fresh),
     }
   }
 

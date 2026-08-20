@@ -71,6 +71,23 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.verifyOtp(dto)
+    if (result.isNewUser) {
+      return { isNewUser: true }
+    }
+    res.cookie(COOKIE_NAME, result.refreshToken, COOKIE_OPTIONS)
+    return { accessToken: result.accessToken, refreshToken: result.refreshToken, user: result.user }
+  }
+
+  @Public()
+  @Throttle({ medium: { limit: 3, ttl: 60_000 } })
+  @Post('register-driver')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Complete driver registration after OTP verification' })
+  async registerDriver(
+    @Body() dto: { phone: string; firstName: string; lastName: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.registerDriver(dto)
     res.cookie(COOKIE_NAME, result.refreshToken, COOKIE_OPTIONS)
     return { accessToken: result.accessToken, refreshToken: result.refreshToken, user: result.user }
   }

@@ -9,6 +9,7 @@ export interface AuthTokens {
 
 export interface AuthResponse extends AuthTokens {
   user: User
+  isNewUser?: boolean
 }
 
 export interface RegisterDto {
@@ -84,6 +85,9 @@ export const authApi = {
 
   verifyOtp: (dto: VerifyOtpDto) =>
     getClient().post<ApiResponse<AuthResponse>>('/auth/verify-otp', dto),
+
+  registerDriver: (dto: { phone: string; firstName: string; lastName: string }) =>
+    getClient().post<ApiResponse<AuthResponse>>('/auth/register-driver', dto),
 
   forgotPassword: (dto: ForgotPasswordDto) =>
     getClient().post<ApiResponse<null>>('/auth/forgot-password', dto),

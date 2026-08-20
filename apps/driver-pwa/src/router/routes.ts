@@ -1,6 +1,7 @@
 export const ROUTES = {
   LOGIN: '/login',
   OTP_VERIFY: '/otp-verify',
+  REGISTER_DRIVER: '/register-driver',
   REGISTER_RIDER: '/register-rider',
   KYC_UPLOAD: '/kyc-upload',
   PENDING_VERIFICATION: '/pending-verification',

@@ -71,11 +71,15 @@ export default function OtpVerifyPage() {
     setIsError(false)
     try {
       const res = await authApi.verifyOtp({ phone, otp: code })
-      const { accessToken, user, refreshToken } = res.data.data
-      if (refreshToken) saveRiderToken(refreshToken)
-      setAuth(user, accessToken)
-      toast.success('Verified! Welcome back.')
-      void navigate(ROUTES.HOME, { replace: true })
+      const { accessToken, user, refreshToken, isNewUser } = res.data.data
+      if (isNewUser) {
+        void navigate(ROUTES.REGISTER_DRIVER, { replace: true, state: { phone } })
+      } else {
+        if (refreshToken) saveRiderToken(refreshToken)
+        setAuth(user!, accessToken!)
+        toast.success('Verified! Welcome back.')
+        void navigate(ROUTES.HOME, { replace: true })
+      }
     } catch {
       setIsError(true)
       setOtp(Array(OTP_LENGTH).fill(''))
