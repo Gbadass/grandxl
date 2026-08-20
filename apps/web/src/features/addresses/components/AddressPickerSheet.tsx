@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { MapPin, Home, Briefcase, Star, Plus, Navigation, Trash2, Check, X, AlertCircle } from 'lucide-react'
+import { MapPin, Home, Briefcase, Plus, Navigation, Trash2, Check, X, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Address } from '@grandxl/types'
 import { useAddresses, useAddAddress, useDeleteAddress } from '../hooks/useAddresses'
@@ -20,8 +20,8 @@ const LABEL_ICONS: Record<string, React.ReactNode> = {
   other:  <MapPin size={15} />,
 }
 
-function labelIcon(label: string) {
-  return LABEL_ICONS[label.toLowerCase()] ?? <MapPin size={15} />
+function labelIcon(label: string | undefined | null) {
+  return LABEL_ICONS[(label ?? '').toLowerCase()] ?? <MapPin size={15} />
 }
 
 function AddressCard({
@@ -88,8 +88,13 @@ interface AddFormState {
 
 function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => void; onCancel: () => void }) {
   const { mutate: addAddress, isPending } = useAddAddress()
-  const [form, setForm] = useState<AddFormState>({ label: 'home', street: '', city: 'Lagos', state: 'Lagos' })
+  const { city: detectedCity, state: detectedState, displayAddress, coordinates: detectedCoords } = useLocationStore()
+  const [form, setForm] = useState<AddFormState>({ label: 'home', street: '', city: '', state: '' })
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(
+    detectedCoords ? { lat: detectedCoords.lat, lng: detectedCoords.lng } : null,
+  )
   const [gpsLoading, setGpsLoading] = useState(false)
+  const [gpsDetected, setGpsDetected] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function set(key: keyof AddFormState, value: string) {
@@ -105,14 +110,17 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
     setGpsLoading(true)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        setGpsCoords(coords)
+        setGpsDetected(true)
         setGpsLoading(false)
-        // Coordinates captured — user still fills street manually
-        toast.success('Location detected! Fill in your street below.')
-        // Store coords for submission
-        ;(window as Window & { _gpsCoords?: { lat: number; lng: number } })._gpsCoords = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        }
+        // Auto-fill city and state — they're accurate from reverse geocoding
+        // Street is left blank; GPS text is just shown as a reference hint
+        setForm((f) => ({
+          ...f,
+          city: f.city || detectedCity || '',
+          state: f.state || detectedState || '',
+        }))
       },
       () => {
         setGpsLoading(false)
@@ -124,16 +132,15 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
 
   function submit() {
     if (!form.street.trim()) { setError('Street address is required'); return }
-    const coords = (window as Window & { _gpsCoords?: { lat: number; lng: number } })._gpsCoords ?? { lat: 6.5244, lng: 3.3792 }
 
     addAddress(
       {
         label: form.label,
         street: form.street.trim(),
-        city: form.city.trim() || 'Lagos',
-        state: form.state.trim() || 'Lagos',
+        city: form.city.trim(),
+        state: form.state.trim(),
         country: 'NG',
-        coordinates: coords,
+        ...(gpsCoords ? { coordinates: gpsCoords } : {}),
       },
       {
         onSuccess: (res) => {
@@ -173,33 +180,59 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
         ))}
       </div>
 
-      {/* GPS button */}
+      {/* GPS button — shows detected location once filled */}
       <button
         type="button"
         onClick={detectGPS}
         disabled={gpsLoading}
-        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-primary/40 text-primary text-sm font-medium cursor-pointer hover:bg-primary/5 transition-colors disabled:opacity-60"
+        className={`w-full flex items-center gap-3 py-2.5 px-4 rounded-xl border text-sm font-medium cursor-pointer transition-colors disabled:opacity-60 ${
+          gpsDetected
+            ? 'border-green-200 bg-green-50 text-green-700'
+            : 'border-dashed border-primary/40 text-primary hover:bg-primary/5'
+        }`}
       >
-        {gpsLoading
-          ? <span className="h-4 w-4 rounded-full border-2 border-primary/40 border-t-primary animate-spin" />
-          : <Navigation size={15} />
-        }
-        {gpsLoading ? 'Detecting location…' : 'Use my current location'}
+        <span className="shrink-0">
+          {gpsLoading
+            ? <span className="h-4 w-4 rounded-full border-2 border-primary/40 border-t-primary animate-spin block" />
+            : gpsDetected
+            ? <Check size={15} className="text-green-600" />
+            : <Navigation size={15} />
+          }
+        </span>
+        <span className="flex-1 text-left truncate">
+          {gpsLoading
+            ? 'Detecting location…'
+            : gpsDetected
+            ? `${detectedCity ?? 'Location'}, ${detectedState ?? ''} detected`
+            : 'Use my current location'
+          }
+        </span>
+        {gpsDetected && (
+          <span className="text-xs text-green-600 font-normal shrink-0">Tap to refresh</span>
+        )}
       </button>
 
       {/* Fields */}
-      <input
-        type="text"
-        value={form.street}
-        onChange={(e) => set('street', e.target.value)}
-        placeholder="Street address *"
-        className={`w-full px-4 py-3 rounded-2xl border text-sm text-gray-900 placeholder-gray-400 outline-none transition-all focus:ring-2 focus:ring-primary/20 focus:border-primary ${error ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}
-      />
-      {error && (
-        <p className="flex items-center gap-1.5 text-xs text-red-500">
-          <AlertCircle size={12} /> {error}
-        </p>
-      )}
+      <div>
+        <input
+          type="text"
+          value={form.street}
+          onChange={(e) => set('street', e.target.value)}
+          placeholder="Street address *"
+          className={`w-full px-4 py-3 rounded-2xl border text-sm text-gray-900 placeholder-gray-400 outline-none transition-all focus:ring-2 focus:ring-primary/20 focus:border-primary ${error ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}
+        />
+        {gpsDetected && displayAddress && !error && (
+          <p className="flex items-center gap-1 mt-1.5 text-xs text-gray-400">
+            <Navigation size={10} className="shrink-0" />
+            Near: {displayAddress}
+          </p>
+        )}
+        {error && (
+          <p className="flex items-center gap-1.5 mt-1.5 text-xs text-red-500">
+            <AlertCircle size={12} /> {error}
+          </p>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-2">
         <input

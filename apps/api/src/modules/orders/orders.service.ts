@@ -786,12 +786,16 @@ export class OrdersService {
             lat: updated.deliveryAddress.coordinates.coordinates[1],
           })
         : Promise.resolve(),
-      // On delivery: free up the rider via RidersService (handles availability, delivery count, earnings)
+      // On delivery: free up the rider and credit earnings
       dto.status === OrderStatus.DELIVERED && updated.riderId
         ? this.ridersService.onDeliveryComplete(
             String(updated.riderId),
             updated.pricing.deliveryFee + (updated.pricing.tip ?? 0),
           )
+        : Promise.resolve(),
+      // On cancellation: release the assigned rider (no earnings, no delivery count increment)
+      dto.status === OrderStatus.CANCELLED && updated.riderId
+        ? this.ridersService.releaseRider(String(updated.riderId))
         : Promise.resolve(),
       // On READY: push + socket to assigned rider so they know to go pick up the food
       dto.status === OrderStatus.READY && updated.riderId
@@ -1020,6 +1024,9 @@ export class OrdersService {
 
     Promise.all([
       this.notificationsService.onRiderAssigned(riderUserId, order.orderNumber, orderIdStr),
+      // Push + SMS to restaurant: "Rider X is on the way, have it ready"
+      // This fires even if no one has the admin dashboard open.
+      this.notificationsService.onRiderComingToPickup(ownerId, riderUserId, order.orderNumber, orderIdStr),
       this.trackingService.notifyRiderNewJob(riderUserId, order),
       // Tell the customer + restaurant their "Searching for rider" banner can flip to "Rider on the way"
       this.trackingService.notifyOrderStatusUpdate(orderIdStr, customerId, ownerId, order.status, order.estimatedTime ?? undefined),

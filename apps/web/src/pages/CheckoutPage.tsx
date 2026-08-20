@@ -60,6 +60,18 @@ export default function CheckoutPage() {
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(defaultAddress)
   const [addressSheetOpen, setAddressSheetOpen] = useState(false)
 
+  // Clear selected address if it was deleted from the saved list
+  useEffect(() => {
+    if (
+      selectedAddress &&
+      selectedAddress._id !== '__gps__' &&
+      !addresses.some((a) => a._id === selectedAddress._id)
+    ) {
+      setSelectedAddress(addresses[0] ?? gpsAddress ?? null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addresses])
+
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.PAYSTACK)
   const [customerNote, setCustomerNote] = useState('')
   const [deliveryInstructions, setDeliveryInstructions] = useState('')
@@ -174,10 +186,14 @@ export default function CheckoutPage() {
         street: selectedAddress.street,
         city: selectedAddress.city,
         state: selectedAddress.state,
-        coordinates: {
-          lat: selectedAddress.coordinates.coordinates[1],
-          lng: selectedAddress.coordinates.coordinates[0],
-        },
+        ...(selectedAddress.coordinates
+          ? {
+              coordinates: {
+                lat: selectedAddress.coordinates.coordinates[1],
+                lng: selectedAddress.coordinates.coordinates[0],
+              },
+            }
+          : {}),
       },
       paymentMethod,
       customerNote: customerNote.trim() || undefined,

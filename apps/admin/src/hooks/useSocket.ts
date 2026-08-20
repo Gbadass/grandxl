@@ -100,7 +100,17 @@ export function useSocket(): void {
       invalidateLiveOrders()
       void qc.invalidateQueries({ queryKey: ['order', orderId] })
       if (isRestaurantOwner) {
-        toast.success('A rider accepted the job!', { id: `rider-accepted-${orderId}`, duration: 4000 })
+        // If the new-order modal is open for THIS order, dismiss it — the rider
+        // coming to pick it up is all the confirmation the restaurant needs.
+        const currentPending = useRestaurantAlertStore.getState().pendingOrder
+        if (currentPending?._id === orderId) {
+          stopLoopAlarm()
+          setPendingOrder(null)
+        }
+        toast.success('🏍️ Rider accepted — on the way to pick up!', {
+          id: `rider-accepted-${orderId}`,
+          duration: 5000,
+        })
       }
     }
 

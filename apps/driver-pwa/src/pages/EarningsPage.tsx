@@ -14,36 +14,6 @@ const stagger = {
   visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.07, duration: 0.22 } }),
 }
 
-function StatCard({
-  label,
-  value,
-  sub,
-  accent = false,
-  delay = 0,
-}: {
-  label: string
-  value: string
-  sub?: string
-  accent?: boolean
-  delay?: number
-}) {
-  return (
-    <motion.div
-      custom={delay}
-      variants={stagger}
-      initial="hidden"
-      animate="visible"
-      className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4"
-    >
-      <p className="mb-1 text-xs text-zinc-500">{label}</p>
-      <p className={`font-display text-xl font-bold ${accent ? 'text-primary' : 'text-zinc-100'}`}>
-        {value}
-      </p>
-      {sub && <p className="mt-0.5 text-xs text-zinc-600">{sub}</p>}
-    </motion.div>
-  )
-}
-
 function formatRelativeDate(date: Date | string): string {
   const d = new Date(date)
   const diffMs = Date.now() - d.getTime()
@@ -54,6 +24,63 @@ function formatRelativeDate(date: Date | string): string {
   return d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
 }
 
+/** Builds a 7-bucket histogram (Mon–Sun of current week) from a list of completed orders */
+function buildWeeklyBars(orders: Order[]) {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const buckets = new Array<number>(7).fill(0)
+  const now = new Date()
+  const dayOfWeek = (now.getDay() + 6) % 7 // shift so Mon=0
+
+  orders.forEach((o) => {
+    const d = new Date(o.updatedAt)
+    const diff = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+    if (diff < 7) {
+      const bucket = (dayOfWeek - diff + 7) % 7
+      buckets[bucket] += o.pricing.deliveryFee + (o.pricing.tip ?? 0)
+    }
+  })
+
+  const max = Math.max(...buckets, 1)
+  return days.map((label, i) => ({
+    label,
+    amount: buckets[i],
+    height: buckets[i] / max,
+    isToday: i === dayOfWeek,
+  }))
+}
+
+function WeeklyBarChart({ orders }: { orders: Order[] }) {
+  const bars = buildWeeklyBars(orders)
+  const totalWeekKobo = bars.reduce((s, b) => s + b.amount, 0)
+
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">This week</p>
+        <p className="text-sm font-bold text-zinc-100">{formatMoney(totalWeekKobo, 'NGN')}</p>
+      </div>
+      <p className="text-[10px] text-zinc-600 mb-4">Your earnings by day</p>
+      <div className="flex items-end gap-1.5 h-16">
+        {bars.map((bar, i) => (
+          <div key={bar.label} className="flex-1 flex flex-col items-center gap-1">
+            <div className="w-full flex items-end justify-center" style={{ height: '48px' }}>
+              <motion.div
+                className={`w-full rounded-t-md ${bar.isToday ? 'bg-primary' : 'bg-zinc-700'}`}
+                initial={{ height: 0 }}
+                animate={{ height: `${Math.max(bar.height * 48, bar.amount > 0 ? 4 : 1)}px` }}
+                transition={{ duration: 0.6, delay: i * 0.06, ease: 'easeOut' }}
+              />
+            </div>
+            <p className={`text-[9px] font-medium ${bar.isToday ? 'text-primary' : 'text-zinc-600'}`}>
+              {bar.label}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function EarningsPage() {
   const { t } = useTranslation('rider')
   const navigate = useNavigate()
@@ -61,7 +88,6 @@ export default function EarningsPage() {
   const [historyPage, setHistoryPage] = useState(1)
   const [allDeliveries, setAllDeliveries] = useState<Order[]>([])
 
-  // Always fetch fresh profile on mount so earnings reflect the latest completed delivery
   const { data: freshProfile } = useQuery({
     queryKey: ['rider-profile'],
     queryFn: () => ridersApi.getProfile().then((r) => r.data.data),
@@ -69,7 +95,6 @@ export default function EarningsPage() {
     refetchOnMount: 'always',
   })
 
-  // Sync fresh profile into the store so other pages (AvailableJobs strip, Profile) also update
   useEffect(() => {
     if (freshProfile) setRider(freshProfile)
   }, [freshProfile, setRider])
@@ -109,20 +134,41 @@ export default function EarningsPage() {
         {t('earnings')}
       </motion.h1>
 
-      {/* Earnings summary */}
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <StatCard label={t('earnings_total')} value={formatMoney(totalKobo, currency)} delay={1} />
-        <StatCard label={t('earnings_pending')} value={formatMoney(pendingKobo, currency)} accent delay={2} sub="Processes weekly" />
-      </div>
+      {/* ── Earnings summary ── */}
+      <motion.div
+        custom={1} variants={stagger} initial="hidden" animate="visible"
+        className="mb-4 rounded-3xl border border-zinc-800 bg-zinc-900 p-5"
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1">{t('earnings_total')}</p>
+            <p className="font-display text-2xl font-bold text-zinc-100 tabular-nums">{formatMoney(totalKobo, currency)}</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">All-time settled</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1">{t('earnings_pending')}</p>
+            <p className="font-display text-2xl font-bold text-amber-400 tabular-nums">{formatMoney(pendingKobo, currency)}</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">Paid weekly</p>
+          </div>
+        </div>
+      </motion.div>
 
-      {/* Performance metrics */}
+      {/* ── Weekly bar chart ── */}
+      {allDeliveries.length > 0 && (
+        <motion.div
+          custom={2} variants={stagger} initial="hidden" animate="visible"
+          className="mb-4"
+        >
+          <WeeklyBarChart orders={allDeliveries} />
+        </motion.div>
+      )}
+
+      {/* ── 30-day performance metrics ── */}
       <motion.div
         custom={3} variants={stagger} initial="hidden" animate="visible"
         className="mb-4"
       >
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">
-          Last 30 days
-        </p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Last 30 days</p>
         {loadingMetrics ? (
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -177,19 +223,19 @@ export default function EarningsPage() {
         )}
       </motion.div>
 
-      {/* Payout CTA */}
+      {/* ── Payout CTA ── */}
       <motion.button
         custom={4} variants={stagger} initial="hidden" animate="visible"
         whileTap={{ scale: 0.97 }}
         onClick={() => void navigate('/payouts')}
-        className="w-full flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-4 cursor-pointer hover:border-zinc-700 transition-colors"
+        className="w-full flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-4 cursor-pointer hover:border-zinc-700 transition-colors mb-4"
         style={{ touchAction: 'manipulation' }}
       >
         <div className="h-10 w-10 rounded-xl bg-zinc-800 flex items-center justify-center shrink-0">
           <TrendingUp size={18} className="text-primary" />
         </div>
         <div className="flex-1 text-left">
-          <p className="text-sm font-medium text-zinc-200">Payouts</p>
+          <p className="text-sm font-medium text-zinc-200">Request payout</p>
           <p className="text-xs text-zinc-500 mt-0.5">
             {formatMoney(liveRider?.earnings.pendingKobo ?? 0, 'NGN')} pending · Tap to request
           </p>
@@ -197,41 +243,60 @@ export default function EarningsPage() {
         <ChevronRight size={16} className="text-zinc-600" />
       </motion.button>
 
-      {/* Delivery history */}
+      {/* ── Delivery history ── */}
       <motion.div
         custom={5} variants={stagger} initial="hidden" animate="visible"
-        className="mt-4"
       >
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">
-          Delivery history
-        </p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Delivery history</p>
 
         {allDeliveries.length === 0 && !historyFetching ? (
           <div className="flex flex-col items-center justify-center py-10 rounded-2xl border border-zinc-800 bg-zinc-900">
             <Package size={32} className="text-zinc-700 mb-2" />
             <p className="text-sm text-zinc-500">No deliveries yet</p>
+            <p className="text-xs text-zinc-600 mt-1">Completed deliveries will appear here</p>
           </div>
         ) : (
           <div className="space-y-2">
-            {allDeliveries.map((order) => (
-              <div
-                key={order._id}
-                className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3"
-              >
-                <div className="h-9 w-9 rounded-xl bg-zinc-800 flex items-center justify-center shrink-0">
-                  <Bike size={16} className="text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-zinc-200 truncate">{order.orderNumber}</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">{formatRelativeDate(order.updatedAt)}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold text-green-400">
-                    +{formatMoney(order.pricing.deliveryFee + (order.pricing.tip ?? 0), order.currency)}
+            {allDeliveries.map((order) => {
+              const earned = order.pricing.deliveryFee + (order.pricing.tip ?? 0)
+              const hasTip = (order.pricing.tip ?? 0) > 0
+              const itemCount = order.items.reduce((s, i) => s + i.quantity, 0)
+              return (
+                <div
+                  key={order._id}
+                  className="rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3.5"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0">
+                        <Bike size={13} className="text-primary" />
+                      </div>
+                      <span className="text-xs font-mono text-zinc-500">{order.orderNumber}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-green-400">
+                        +{formatMoney(earned, order.currency)}
+                      </p>
+                      {hasTip && (
+                        <p className="text-[10px] text-secondary mt-0.5">
+                          incl. tip {formatMoney(order.pricing.tip, order.currency)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-zinc-300 truncate mb-1">
+                    {order.deliveryAddress.street}, {order.deliveryAddress.city}
                   </p>
+
+                  <div className="flex items-center gap-2 text-[10px] text-zinc-600">
+                    <span>{formatRelativeDate(order.updatedAt)}</span>
+                    <span>·</span>
+                    <span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
 
             {historyData && historyPage < historyData.meta.totalPages && (
               <button

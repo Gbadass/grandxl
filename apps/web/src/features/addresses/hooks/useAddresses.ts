@@ -20,7 +20,12 @@ export function useAddAddress() {
     onSuccess: (res) => {
       const newAddress = res.data.data as Address
       if (user) {
-        updateUser({ addresses: [...user.addresses, newAddress] })
+        const updatedAddresses = [...user.addresses, newAddress]
+        updateUser({
+          addresses: updatedAddresses,
+          // auto-default: backend sets this when it's the first address
+          ...(user.addresses.length === 0 ? { defaultAddressId: newAddress._id } : {}),
+        })
       }
     },
   })

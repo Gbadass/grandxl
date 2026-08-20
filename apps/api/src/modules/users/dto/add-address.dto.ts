@@ -55,10 +55,11 @@ export class AddAddressDto {
   @IsString()
   country?: string
 
-  @ApiProperty({ type: CoordinatesDto })
+  @ApiPropertyOptional({ type: CoordinatesDto })
+  @IsOptional()
   @ValidateNested()
   @Type(() => CoordinatesDto)
-  coordinates!: CoordinatesDto
+  coordinates?: CoordinatesDto
 
   @ApiPropertyOptional({ example: 'Blue gate, call on arrival' })
   @IsOptional()

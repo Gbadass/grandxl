@@ -14,7 +14,7 @@ export interface AddAddressDto {
   city: string
   state: string
   country?: string
-  coordinates: { lat: number; lng: number }
+  coordinates?: { lat: number; lng: number }
   instructions?: string
 }
 

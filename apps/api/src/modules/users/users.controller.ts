@@ -69,13 +69,13 @@ export class UsersController {
 
   @Post('me/addresses')
   @ApiOperation({ summary: 'Add a delivery address' })
-  @ApiCreatedResponse({ description: 'Address added. Returns updated user profile.' })
+  @ApiCreatedResponse({ description: 'Address added. Returns the newly created address.' })
   async addAddress(
     @CurrentUser() user: JwtPayload,
     @Body() dto: AddAddressDto,
   ) {
     const doc = await this.usersService.addAddress(user.sub, dto)
-    return this.usersService.toSafeUser(doc)
+    return doc.addresses[doc.addresses.length - 1]
   }
 
   @Patch('me/addresses/:id')

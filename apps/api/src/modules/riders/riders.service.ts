@@ -160,6 +160,10 @@ export class RidersService {
     await this.riderModel.findByIdAndUpdate(riderId, { $set: { isAvailable: false } })
   }
 
+  async releaseRider(riderId: string): Promise<void> {
+    await this.riderModel.findByIdAndUpdate(riderId, { $set: { isAvailable: true } })
+  }
+
   async onDeliveryComplete(riderId: string, earningsKobo: number): Promise<void> {
     // Money enters pendingKobo (24h hold). Settlement will move it to totalKobo.
     // Do NOT increment totalKobo here — settlement.service does that atomically.
@@ -241,6 +245,18 @@ export class RidersService {
     if (!rider) throw new NotFoundException('Rider profile not found')
     if (!rider.isVerified) throw new ForbiddenException('Rider is not verified')
     if (!rider.isOnline)   throw new BadRequestException('Rider must be online to accept orders')
+
+    // Auto-heal: if the rider's isAvailable flag is stuck false (e.g. a previous order was
+    // cancelled or the delivery-complete flow never fired), reset it if they have no
+    // genuinely active order in the database. This prevents riders from being permanently
+    // locked out after edge-case failures without opening a race condition (the actual
+    // atomic claim below is still the TOCTOU guard).
+    if (!rider.isAvailable) {
+      const activeOrder = await this.ordersService.findActiveOrderByRider(String(rider._id))
+      if (!activeOrder) {
+        await this.riderModel.findByIdAndUpdate(rider._id, { $set: { isAvailable: true } })
+      }
+    }
 
     // Atomically mark rider as busy. If another concurrent request beat us here,
     // findOneAndUpdate returns null (no document matched isAvailable:true) and we surface

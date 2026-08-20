@@ -191,6 +191,38 @@ export class NotificationsService {
     )
   }
 
+  // Fired when a rider accepts a job — pushes a notification to the restaurant owner
+  // so they know to start preparing even if no one is watching the admin dashboard.
+  async onRiderComingToPickup(
+    restaurantOwnerId: string,
+    riderUserId: string,
+    orderNumber: string,
+    orderId: string,
+  ): Promise<void> {
+    // Look up rider's name for a personal, actionable message
+    const riderUser = await this.usersService.findById(riderUserId).catch(() => null)
+    const riderName = riderUser ? `${riderUser.firstName} ${riderUser.lastName}`.trim() : 'A rider'
+
+    await this.send(
+      restaurantOwnerId,
+      NotificationType.ORDER_STATUS,
+      '🏍️ Rider on the way!',
+      `${riderName} has accepted order ${orderNumber} and is heading to you. Please have it ready.`,
+      { orderId, action: 'rider_coming' },
+    )
+
+    // Also SMS the restaurant owner — covers the case where no one has the dashboard open
+    const owner = await this.usersService.findById(restaurantOwnerId).catch(() => null)
+    if (owner?.phone) {
+      void this.termii
+        .sendTransactional(
+          owner.phone,
+          `GrandXL: ${riderName} is on the way to pick up order ${orderNumber}. Please have it ready for collection.`,
+        )
+        .catch(() => undefined)
+    }
+  }
+
   async onOrderReady(riderUserId: string, orderNumber: string, orderId: string): Promise<void> {
     await this.send(
       riderUserId,

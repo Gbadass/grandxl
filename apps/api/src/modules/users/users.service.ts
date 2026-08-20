@@ -109,10 +109,9 @@ export class UsersService {
       city: dto.city,
       state: dto.state,
       country: dto.country ?? 'NG',
-      coordinates: {
-        type: 'Point',
-        coordinates: [dto.coordinates.lng, dto.coordinates.lat],
-      },
+      ...(dto.coordinates
+        ? { coordinates: { type: 'Point', coordinates: [dto.coordinates.lng, dto.coordinates.lat] } }
+        : {}),
       instructions: dto.instructions ?? null,
     } as never)
 
