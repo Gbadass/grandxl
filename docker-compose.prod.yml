@@ -82,6 +82,8 @@ services:
     networks:
       - internal
     env_file: .env.production
+    environment:
+      - PORT=3000
 
   driver:
     build:
