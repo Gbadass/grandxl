@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { MapPin, Navigation, Search, X, Check, Loader } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import { useLocationStore } from '../../store/location.store'
 import { reverseGeocode } from '../../hooks/useDetectLocation'
 
@@ -47,6 +48,7 @@ async function placeDetails(placeId: string): Promise<{ lat: number; lng: number
 
 export function LocationPickerSheet({ isOpen, onClose }: Props) {
   const { city, displayAddress, setLocation } = useLocationStore()
+  const { t } = useTranslation('restaurants')
   const [query, setQuery] = useState('')
   const [predictions, setPredictions] = useState<PlacePrediction[]>([])
   const [gpsLoading, setGpsLoading] = useState(false)
@@ -86,7 +88,7 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
 
   async function handleGPS() {
     if (!navigator.geolocation) {
-      toast.error('GPS not available on this browser')
+      toast.error(t('location.gpsNotAvailable'))
       return
     }
     setGpsLoading(true)
@@ -97,21 +99,21 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
           const geo = await reverseGeocode(latitude, longitude)
           if (geo) {
             setLocation({ lat: latitude, lng: longitude }, geo.city, geo.display, 'gps', geo.state)
-            toast.success(`Location set to ${geo.city}`)
+            toast.success(t('location.locationSetTo', { city: geo.city }))
           } else {
             setLocation({ lat: latitude, lng: longitude }, 'Your location', 'Location detected', 'gps', 'Benue')
-            toast.success('Location detected')
+            toast.success(t('location.locationDetected'))
           }
           onClose()
         } catch {
-          toast.error('Could not resolve location. Try searching manually.')
+          toast.error(t('location.locationResolveFailed'))
         } finally {
           setGpsLoading(false)
         }
       },
       () => {
         setGpsLoading(false)
-        toast.error('Location access denied. Please allow location in browser settings.')
+        toast.error(t('location.locationDenied'))
       },
       { timeout: 10000, maximumAge: 60000 },
     )
@@ -129,10 +131,10 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
         display,
         'manual',
       )
-      toast.success(`Delivery area set to ${cityName}`)
+      toast.success(t('location.deliveryAreaSetTo', { city: cityName }))
       onClose()
     } catch {
-      toast.error('Could not load location details. Try again.')
+      toast.error(t('location.locationDetailsFailed'))
     } finally {
       setSelected(null)
     }
@@ -166,14 +168,14 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
             {/* Header */}
             <div className="flex items-center justify-between mb-4 shrink-0">
               <div>
-                <h2 className="font-display font-bold text-lg text-gray-900">Set your location</h2>
-                <p className="text-xs text-gray-400 mt-0.5">So we can show restaurants near you</p>
+                <h2 className="font-display font-bold text-lg text-gray-900">{t('location.title')}</h2>
+                <p className="text-xs text-gray-400 mt-0.5">{t('location.subtitle')}</p>
               </div>
               <button
                 type="button"
                 onClick={onClose}
                 className="p-2 rounded-full hover:bg-gray-100 cursor-pointer transition-colors"
-                aria-label="Close"
+                aria-label={t('common:close')}
               >
                 <X size={18} className="text-gray-500" />
               </button>
@@ -188,7 +190,7 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
               >
                 <MapPin size={14} className="text-primary shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-medium text-primary/70 leading-none">Current area</p>
+                  <p className="text-[10px] font-medium text-primary/70 leading-none">{t('location.currentArea')}</p>
                   <p className="text-sm font-semibold text-primary truncate">{displayAddress ?? city}</p>
                 </div>
                 <Check size={14} className="text-primary shrink-0" />
@@ -211,9 +213,9 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
               </div>
               <div className="text-left">
                 <p className="text-sm font-semibold">
-                  {gpsLoading ? 'Detecting your location…' : 'Use my current location'}
+                  {gpsLoading ? t('location.detecting') : t('location.useCurrentLocation')}
                 </p>
-                <p className="text-xs text-primary/60">GPS auto-detect</p>
+                <p className="text-xs text-primary/60">{t('location.gpsAutoDetect')}</p>
               </div>
             </button>
 
@@ -225,7 +227,7 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search city or neighbourhood…"
+                placeholder={t('location.searchPlaceholder')}
                 className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-gray-200 bg-gray-50 text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
               />
               {searchLoading && (
@@ -274,14 +276,14 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
                   animate={{ opacity: 1 }}
                   className="text-center text-sm text-gray-400 py-8"
                 >
-                  No results for &ldquo;{query}&rdquo;
+                  {t('location.noResults', { query })}
                 </motion.p>
               )}
 
               {/* Popular cities */}
               {!query && predictions.length === 0 && (
                 <div className="pt-1">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">Cities in Benue</p>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">{t('location.citiesInBenue')}</p>
                   {[
                     { name: 'Makurdi', lat: 7.7322, lng: 8.5391 },
                     { name: 'Gboko', lat: 7.3267, lng: 8.9961 },
@@ -297,7 +299,7 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
                       type="button"
                       onClick={() => {
                         setLocation({ lat, lng }, name, `${name}, Benue`, 'manual')
-                        toast.success(`Delivery area set to ${name}`)
+                        toast.success(t('location.deliveryAreaSetTo', { city: name }))
                         onClose()
                       }}
                       className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left cursor-pointer hover:bg-gray-50 transition-colors"
@@ -308,7 +310,7 @@ export function LocationPickerSheet({ isOpen, onClose }: Props) {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-gray-900">{name}</p>
-                        <p className="text-xs text-gray-400">Benue State</p>
+                        <p className="text-xs text-gray-400">{t('location.benueState')}</p>
                       </div>
                     </motion.button>
                   ))}

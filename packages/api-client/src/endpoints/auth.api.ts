@@ -96,7 +96,7 @@ export const authApi = {
     getClient().post<ApiResponse<null>>('/auth/reset-password', dto),
 
   getMe: () =>
-    getClient().get<ApiResponse<User>>('/auth/me'),
+    getClient().get<ApiResponse<User>>('/users/me'),
 
   addRole: (role: UserRole) =>
     getClient().post<ApiResponse<AuthResponse>>('/auth/add-role', { role }),

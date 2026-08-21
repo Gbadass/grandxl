@@ -58,7 +58,7 @@ export default function LoginPage() {
         </div>
         <div className="text-center">
           <h1 className="font-display text-2xl font-bold text-zinc-100">GrandXL</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">Rider Partner App</p>
+          <p className="text-sm text-zinc-500 mt-0.5">{t('app_tagline')}</p>
         </div>
       </motion.div>
 
@@ -72,7 +72,7 @@ export default function LoginPage() {
             id="phone"
             type="tel"
             inputMode="tel"
-            placeholder="+2348012345678"
+            placeholder={t('phone_placeholder')}
             autoComplete="tel"
             className={`w-full rounded-2xl border bg-zinc-900 px-4 py-3.5 text-zinc-100 placeholder-zinc-600 outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20 ${
               errors.phone ? 'border-red-500 bg-red-950/20' : 'border-zinc-800'

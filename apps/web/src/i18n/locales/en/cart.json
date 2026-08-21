@@ -15,5 +15,12 @@
   "coupon": "Promo code",
   "applyCoupon": "Apply",
   "couponApplied": "Promo code applied",
-  "invalidCoupon": "Invalid or expired promo code"
+  "invalidCoupon": "Invalid or expired promo code",
+  "itemCount_one": "{{count}} item",
+  "itemCount_other": "{{count}} items",
+  "atCheckout": "At checkout",
+  "viewCart": "View Cart →",
+  "remove_item_label": "Remove item",
+  "decrease_qty_label": "Decrease quantity",
+  "increase_qty_label": "Increase quantity"
 }

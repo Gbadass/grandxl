@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { MapPin, Clock, Bike, Zap, TrendingUp, ChevronRight, Volume2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
@@ -19,6 +20,7 @@ const JOB_EXPIRE_SECONDS = 45
 function OnlineMegaToggle() {
   const { isOnline, setOnline, rider } = useRiderStore()
   const qc = useQueryClient()
+  const { t } = useTranslation('rider')
   const [toggling, setToggling] = useState(false)
 
   async function toggle() {
@@ -30,9 +32,9 @@ function OnlineMegaToggle() {
       await ridersApi.toggleOnline(!isOnline)
       setOnline(!isOnline)
       void qc.invalidateQueries({ queryKey: ['available-jobs'] })
-      toast.success(isOnline ? 'You are now offline' : 'You are online — jobs incoming!')
+      toast.success(isOnline ? t('offline_toast') : t('online_toast'))
     } catch {
-      toast.error('Could not update status')
+      toast.error(t('status_error'))
     } finally {
       setToggling(false)
     }
@@ -76,10 +78,10 @@ function OnlineMegaToggle() {
 
         <div className="flex-1 min-w-0">
           <p className={`font-display text-lg font-bold leading-tight transition-colors ${isOnline ? 'text-green-400' : 'text-zinc-400'}`}>
-            {isOnline ? 'You\'re Online' : 'You\'re Offline'}
+            {isOnline ? t('you_are_online') : t('you_are_offline')}
           </p>
           <p className="text-xs text-zinc-500 mt-0.5">
-            {isOnline ? 'Receiving delivery requests' : 'Tap to start receiving jobs'}
+            {isOnline ? t('receiving_requests') : t('tap_to_start')}
           </p>
           {rider && (
             <p className="text-xs text-zinc-600 mt-1">
@@ -97,7 +99,7 @@ function OnlineMegaToggle() {
             isOnline ? 'bg-green-500' : 'bg-zinc-700'
           }`}
           style={{ touchAction: 'manipulation' }}
-          aria-label={isOnline ? 'Go offline' : 'Go online'}
+          aria-label={isOnline ? t('go_offline') : t('go_online')}
         >
           {toggling ? (
             <span className="absolute inset-0 flex items-center justify-center">
@@ -130,6 +132,7 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o: Order) => void }>(
   function JobCard({ order, onAccepted }, ref) {
   const { removePendingJob } = useRiderStore()
+  const { t } = useTranslation('rider')
   const fee = order.pricing.deliveryFee + (order.pricing.tip ?? 0)
 
   const distanceKm = (() => {
@@ -166,10 +169,10 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
     onSuccess: () => {
       removePendingJob(order._id)
       onAccepted(order)
-      toast.success('Job accepted! Head to the restaurant.')
+      toast.success(t('job_accepted'))
     },
     onError: () => {
-      toast.error('Job already taken — keep looking!')
+      toast.error(t('job_taken'))
       removePendingJob(order._id)
     },
     onSettled: () => setActing(null),
@@ -197,7 +200,7 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
             <Zap size={16} className="text-primary" />
           </div>
           <div>
-            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Your earnings</p>
+            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">{t('your_earnings')}</p>
             <p className="font-display text-xl font-bold text-primary leading-tight">
               {formatMoney(fee, order.currency)}
             </p>
@@ -223,7 +226,7 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
               {timeLeft}s
             </span>
           </div>
-          <p className="text-[9px] mt-0.5 font-medium">expires</p>
+          <p className="text-[9px] mt-0.5 font-medium">{t('expires')}</p>
         </div>
       </div>
 
@@ -234,11 +237,11 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
             <MapPin size={12} className="text-green-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">Pick up</p>
+            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">{t('pick_up')}</p>
             <p className="text-sm text-zinc-300 leading-snug">
               {order.restaurantPickupAddress
                 ? `${order.restaurantPickupAddress.street}, ${order.restaurantPickupAddress.city}`
-                : 'Restaurant pickup point'}
+                : t('restaurant_pickup')}
             </p>
           </div>
         </div>
@@ -258,7 +261,7 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
             <MapPin size={12} className="text-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">Deliver to</p>
+            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">{t('deliver_to')}</p>
             <p className="text-sm text-zinc-300 leading-snug truncate">
               {order.deliveryAddress.street}, {order.deliveryAddress.city}
             </p>
@@ -292,7 +295,7 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
           className="flex-1 rounded-2xl border border-zinc-700 py-3.5 text-sm font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-40 cursor-pointer"
           style={{ minHeight: '52px', touchAction: 'manipulation' }}
         >
-          {acting === 'decline' ? '…' : 'Decline'}
+          {acting === 'decline' ? '…' : t('decline')}
         </motion.button>
         <motion.button
           whileTap={{ scale: 0.97 }}
@@ -304,7 +307,7 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
           {acting === 'accept' && (
             <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
           )}
-          {acting === 'accept' ? 'Accepting…' : 'Accept job'}
+          {acting === 'accept' ? t('accepting') : t('accept_job')}
         </motion.button>
       </div>
     </motion.div>
@@ -315,6 +318,7 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
 
 function TodayStrip() {
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { rider } = useRiderStore()
   const pendingKobo  = rider?.earnings.pendingKobo ?? 0
   const settledKobo  = rider?.earnings.totalKobo ?? 0
@@ -331,10 +335,10 @@ function TodayStrip() {
           <TrendingUp size={17} className="text-primary" />
         </div>
         <div>
-          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">Pending earnings</p>
+          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">{t('pending_earnings')}</p>
           <p className="font-display text-lg font-bold text-zinc-100">{formatMoney(pendingKobo, currency)}</p>
           {settledKobo > 0 && (
-            <p className="text-[10px] text-zinc-600 mt-0.5">{formatMoney(settledKobo, currency)} settled</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">{formatMoney(settledKobo, currency)} {t('settled')}</p>
           )}
         </div>
       </div>
@@ -343,7 +347,7 @@ function TodayStrip() {
         className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
         style={{ touchAction: 'manipulation' }}
       >
-        Details <ChevronRight size={13} />
+        {t('details')} <ChevronRight size={13} />
       </button>
     </motion.div>
   )
@@ -353,6 +357,7 @@ function TodayStrip() {
 
 export default function AvailableJobsPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { pendingJobs, isOnline, addPendingJob, setActiveOrder, activeOrder } = useRiderStore()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const [soundEnabled, setSoundEnabled] = useState(isAudioUnlocked())
@@ -382,7 +387,7 @@ export default function AvailableJobsPage() {
     retry: false,
   })
 
-  useQuery({
+  const { isError: jobsFeedError } = useQuery({
     queryKey: ['available-jobs'],
     queryFn: async () => {
       const res = await ridersApi.getAvailableJobs()
@@ -397,6 +402,7 @@ export default function AvailableJobsPage() {
     enabled: isAuthenticated && isOnline,
     refetchInterval: POLL_MS,
     staleTime: POLL_MS / 2,
+    retry: 2,
   })
 
   function handleJobAccepted(order: Order) {
@@ -417,8 +423,18 @@ export default function AvailableJobsPage() {
           style={{ touchAction: 'manipulation' }}
         >
           <Volume2 size={18} className="text-amber-400 shrink-0" />
-          <span className="text-sm font-semibold text-amber-300">Tap to enable sound alerts for new jobs</span>
+          <span className="text-sm font-semibold text-amber-300">{t('enable_sound')}</span>
         </button>
+      )}
+
+      {/* Jobs feed error banner */}
+      {jobsFeedError && isOnline && (
+        <div className="flex items-center gap-3 rounded-2xl border border-red-500/30 bg-red-500/8 px-4 py-3">
+          <div className="h-7 w-7 rounded-xl bg-red-500/15 flex items-center justify-center shrink-0">
+            <Volume2 size={14} className="text-red-400" />
+          </div>
+          <p className="text-sm font-medium text-red-400">{t('jobs_feed_error')}</p>
+        </div>
       )}
 
       {/* Today's earnings */}
@@ -441,8 +457,8 @@ export default function AvailableJobsPage() {
               <Bike size={30} className="text-zinc-600" />
             </div>
             <div className="text-center px-4">
-              <p className="text-sm font-semibold text-zinc-400">You're offline</p>
-              <p className="text-xs text-zinc-600 mt-1">Toggle online above to start receiving delivery jobs</p>
+              <p className="text-sm font-semibold text-zinc-400">{t('offline_title')}</p>
+              <p className="text-xs text-zinc-600 mt-1">{t('offline_hint')}</p>
             </div>
           </motion.div>
         )}
@@ -466,8 +482,8 @@ export default function AvailableJobsPage() {
               </div>
             </div>
             <div className="text-center px-4">
-              <p className="text-sm font-semibold text-zinc-400">Looking for orders…</p>
-              <p className="text-xs text-zinc-600 mt-1">Jobs will appear here instantly when available</p>
+              <p className="text-sm font-semibold text-zinc-400">{t('waiting_title')}</p>
+              <p className="text-xs text-zinc-600 mt-1">{t('waiting_hint')}</p>
             </div>
           </motion.div>
         )}

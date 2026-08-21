@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mail, ArrowLeft } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { forgotPasswordSchema, type ForgotPasswordFormValues } from '@grandxl/validators'
 import { useForgotPassword } from '../../features/auth/hooks/useForgotPassword'
 import { AuthLayout } from '../../features/auth/components/AuthLayout'
@@ -11,6 +12,7 @@ import { FormField } from '../../features/auth/components/FormField'
 import { ROUTES } from '../../router/routes'
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation('auth')
   const [submitted, setSubmitted] = useState(false)
   const [sentEmail, setSentEmail] = useState('')
   const { mutate: forgotPassword, isPending } = useForgotPassword()
@@ -29,7 +31,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <AuthLayout title="Forgot password?" subtitle="We'll send a reset link to your email">
+    <AuthLayout title={t('forgotPassword.title')} subtitle={t('forgotPassword.subtitle')}>
       <AnimatePresence mode="wait">
         {submitted ? (
           <motion.div
@@ -43,16 +45,18 @@ export default function ForgotPasswordPage() {
             <div className="h-20 w-20 rounded-full bg-green-50 flex items-center justify-center mb-5">
               <Mail size={36} className="text-green-500" />
             </div>
-            <h2 className="font-display font-bold text-xl text-gray-900 mb-2">Check your inbox</h2>
+            <h2 className="font-display font-bold text-xl text-gray-900 mb-2">{t('forgotPassword.checkInbox')}</h2>
             <p className="text-sm text-gray-500 max-w-xs">
-              If <span className="font-medium text-gray-700">{sentEmail}</span> is registered, you'll receive a reset link shortly. Check your spam folder too.
+              {t('forgotPassword.sentPrefix')}{' '}
+              <span className="font-medium text-gray-700">{sentEmail}</span>{' '}
+              {t('forgotPassword.sentSuffix')}
             </p>
             <Link
               to={ROUTES.LOGIN}
               className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline cursor-pointer"
             >
               <ArrowLeft size={15} />
-              Back to login
+              {t('forgotPassword.backToLogin')}
             </Link>
           </motion.div>
         ) : (
@@ -71,10 +75,10 @@ export default function ForgotPasswordPage() {
                 <FormField
                   {...register('email')}
                   id="email"
-                  label="Email address"
+                  label={t('forgotPassword.emailLabel')}
                   type="email"
                   inputMode="email"
-                  placeholder="you@example.com"
+                  placeholder={t('forgotPassword.emailPlaceholder')}
                   autoComplete="email"
                   error={errors.email?.message}
                 />
@@ -97,7 +101,7 @@ export default function ForgotPasswordPage() {
                   {isPending && (
                     <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
                   )}
-                  {isPending ? 'Sending…' : 'Send reset link'}
+                  {isPending ? t('forgotPassword.sending') : t('forgotPassword.submit')}
                 </motion.button>
               </motion.div>
             </form>
@@ -108,7 +112,7 @@ export default function ForgotPasswordPage() {
                 className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-primary transition-colors cursor-pointer"
               >
                 <ArrowLeft size={15} />
-                Back to login
+                {t('forgotPassword.backToLogin')}
               </Link>
             </p>
           </motion.div>

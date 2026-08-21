@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import { useRiderStore } from '../../store/rider.store'
 import { ridersApi } from '@grandxl/api-client'
 import { formatMoney } from '@grandxl/utils'
@@ -11,6 +12,7 @@ const OFFER_SECONDS = 45
 
 function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { setActiveOrder, removePendingJob } = useRiderStore()
   const [seconds, setSeconds] = useState(OFFER_SECONDS)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -43,9 +45,9 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : ''
       if (message.includes('409') || message.includes('conflict')) {
-        toast.error('Job was already taken by another rider.')
+        toast.error(t('job_taken_error'))
       } else {
-        toast.error('Could not accept job — try again.')
+        toast.error(t('job_accept_error'))
       }
       dismiss()
     },
@@ -80,7 +82,7 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3">
           <div>
-            <p className="text-lg font-bold text-white">New Job Offer</p>
+            <p className="text-lg font-bold text-white">{t('new_job_offer')}</p>
             <p className="text-sm text-zinc-400">#{order.orderNumber} · {seconds}s left</p>
           </div>
           <div className="rounded-xl bg-primary/15 px-3 py-1.5">
@@ -96,7 +98,7 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
               <div className="h-2.5 w-2.5 rounded-full bg-orange-500" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Pickup</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t('pickup_label')}</p>
               <p className="truncate text-sm font-medium text-white">
                 {pickup ? `${pickup.street}, ${pickup.city}` : 'Restaurant address'}
               </p>
@@ -107,7 +109,7 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
               <div className="h-2.5 w-2.5 rounded-full bg-green-500" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Drop-off</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t('dropoff_label')}</p>
               <p className="truncate text-sm font-medium text-white">
                 {dropoff.street}, {dropoff.city}
               </p>
@@ -117,7 +119,7 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
 
         {/* Items */}
         <div className="mx-5 mb-5">
-          <p className="text-xs text-zinc-500 mb-1.5">{order.items.length} item{order.items.length !== 1 ? 's' : ''}</p>
+          <p className="text-xs text-zinc-500 mb-1.5">{t('item_count', { count: order.items.length })}</p>
           <div className="flex flex-wrap gap-1.5">
             {order.items.slice(0, 4).map((item, i) => (
               <span key={i} className="rounded-full bg-zinc-800 border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300">
@@ -126,7 +128,7 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
             ))}
             {order.items.length > 4 && (
               <span className="rounded-full bg-zinc-800 border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400">
-                +{order.items.length - 4} more
+                {t('more_items', { count: order.items.length - 4 })}
               </span>
             )}
           </div>
@@ -139,14 +141,14 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
             disabled={acceptMutation.isPending}
             className="flex-1 rounded-2xl border border-zinc-600 py-4 text-base font-bold text-zinc-300 transition-colors hover:bg-zinc-800 active:bg-zinc-700 disabled:opacity-50"
           >
-            Decline
+            {t('decline')}
           </button>
           <button
             onClick={() => acceptMutation.mutate()}
             disabled={acceptMutation.isPending}
             className="flex-[2] rounded-2xl bg-primary py-4 text-base font-bold text-white shadow-lg shadow-primary/30 transition-colors hover:bg-primary/90 active:bg-primary/80 disabled:opacity-50"
           >
-            {acceptMutation.isPending ? 'Accepting…' : 'Accept Job'}
+            {acceptMutation.isPending ? t('accepting') : t('accept_job')}
           </button>
         </div>
       </div>

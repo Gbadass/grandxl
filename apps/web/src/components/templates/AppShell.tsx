@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import { NavBar } from '../organisms/NavBar'
 import { BottomNav } from '../organisms/BottomNav'
 import { CartFab } from '../organisms/CartFab'
+import { ActiveOrderBanner } from '../organisms/ActiveOrderBanner'
 import { useDetectLocation } from '../../hooks/useDetectLocation'
 import { useWebPush } from '../../hooks/useWebPush'
 import { useSocket } from '../../hooks/useSocket'
@@ -20,6 +21,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <CartFab />
+      <ActiveOrderBanner />
       <BottomNav />
     </div>
   )

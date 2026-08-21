@@ -65,6 +65,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   // Tracks orders for which we've already sent the "rider approaching" alert so
   // we don't spam the restaurant on every subsequent location tick.
   private readonly proximityAlertSent = new Set<string>()
+  private readonly customerProximityAlertSent = new Set<string>()
 
   constructor(
     private readonly jwtService: JwtService,
@@ -118,34 +119,58 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     // Proximity alert: when rider gets within 300m of the restaurant pickup point,
     // emit a WS event to the restaurant owner's room so the kitchen knows to have
     // the food at the counter. Fires once per order (de-duped via proximityAlertSent).
-    if (!this.proximityAlertSent.has(data.orderId)) {
+    const needsRestaurantCheck = !this.proximityAlertSent.has(data.orderId)
+    const needsCustomerCheck   = !this.customerProximityAlertSent.has(data.orderId)
+    if (needsRestaurantCheck || needsCustomerCheck) {
       void this.orderModel
         .findById(data.orderId, {
           restaurantPickupAddress: 1,
           restaurantOwnerId:       1,
+          deliveryAddress:         1,
           status:                  1,
         })
         .lean()
         .then((order) => {
           if (!order) return
-          // Only during the pickup leg (order accepted but not yet picked up)
+          const status = order['status'] as string
+
+          // ── Restaurant approach (pickup leg: confirmed/preparing/ready) ──
           const pickupStatuses = new Set(['confirmed', 'preparing', 'ready'])
-          if (!pickupStatuses.has(order['status'] as string)) return
+          if (needsRestaurantCheck && pickupStatuses.has(status)) {
+            const coords = (order['restaurantPickupAddress'] as { coordinates: { coordinates: [number, number] } })
+              ?.coordinates?.coordinates
+            if (coords) {
+              const [restLng, restLat] = coords
+              const dist = haversineMetres(data.lat, data.lng, restLat, restLng)
+              if (dist <= 300) {
+                this.proximityAlertSent.add(data.orderId!)
+                const ownerId = (order['restaurantOwnerId'] as Types.ObjectId).toString()
+                this.server.to(`user_${ownerId}`).emit('rider:approaching_restaurant', {
+                  orderId: data.orderId,
+                  distanceMetres: Math.round(dist),
+                })
+                this.logger.debug(`Restaurant proximity alert for order=${data.orderId} dist=${Math.round(dist)}m`)
+              }
+            }
+          }
 
-          const coords = (order['restaurantPickupAddress'] as { coordinates: { coordinates: [number, number] } })
-            ?.coordinates?.coordinates
-          if (!coords) return
-          const [restLng, restLat] = coords
-          const dist = haversineMetres(data.lat, data.lng, restLat, restLng)
-
-          if (dist <= 300) {
-            this.proximityAlertSent.add(data.orderId!)
-            const ownerId = (order['restaurantOwnerId'] as Types.ObjectId).toString()
-            this.server.to(`user_${ownerId}`).emit('rider:approaching_restaurant', {
-              orderId: data.orderId,
-              distanceMetres: Math.round(dist),
-            })
-            this.logger.debug(`Proximity alert fired for order=${data.orderId} dist=${Math.round(dist)}m`)
+          // ── Customer approach (delivery leg: picked_up) ──
+          if (needsCustomerCheck && status === 'picked_up') {
+            const delivCoords = (order['deliveryAddress'] as { coordinates: { coordinates: [number, number] } })
+              ?.coordinates?.coordinates
+            if (delivCoords) {
+              const [delivLng, delivLat] = delivCoords
+              const dist = haversineMetres(data.lat, data.lng, delivLat, delivLng)
+              if (dist <= 500) {
+                this.customerProximityAlertSent.add(data.orderId!)
+                // Send to order room — customer is joined to order_{orderId}
+                this.server.to(`order_${data.orderId}`).emit('rider:approaching_customer', {
+                  orderId: data.orderId,
+                  distanceMetres: Math.round(dist),
+                })
+                this.logger.debug(`Customer proximity alert for order=${data.orderId} dist=${Math.round(dist)}m`)
+              }
+            }
           }
         })
         .catch(() => undefined)
@@ -210,5 +235,6 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   // if the rider later accepts another order near the same restaurant.
   clearProximityAlert(orderId: string): void {
     this.proximityAlertSent.delete(orderId)
+    this.customerProximityAlertSent.delete(orderId)
   }
 }

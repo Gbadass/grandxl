@@ -264,36 +264,36 @@ export default function ProfilePage() {
       {/* Menu sections */}
       <div className="mt-3 mx-4 bg-white rounded-2xl shadow-sm overflow-hidden">
         <div className="px-4 py-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">My account</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('sectionAccount')}</p>
         </div>
         <Divider />
         <MenuItem
           icon={ShoppingBag}
-          label="My orders"
-          sublabel="Track and reorder"
+          label={t('menuOrders')}
+          sublabel={t('menuOrdersSub')}
           onClick={() => void navigate(ROUTES.ORDERS)}
           delay={0.05}
         />
         <Divider />
         <MenuItem
           icon={MapPin}
-          label="Saved addresses"
-          sublabel="Manage delivery locations"
+          label={t('menuAddresses')}
+          sublabel={t('menuAddressesSub')}
           onClick={() => void navigate(ROUTES.ADDRESSES)}
           delay={0.1}
         />
         <Divider />
         <MenuItem
           icon={Wallet}
-          label="Wallet"
-          sublabel="Balance & transactions"
+          label={t('menuWallet')}
+          sublabel={t('menuWalletSub')}
           onClick={() => void navigate(ROUTES.WALLET)}
           delay={0.15}
         />
         <Divider />
         <MenuItem
           icon={Bell}
-          label="Notifications"
+          label={t('menuNotifications')}
           onClick={() => void navigate(ROUTES.NOTIFICATIONS)}
           delay={0.2}
         />
@@ -301,26 +301,26 @@ export default function ProfilePage() {
 
       <div className="mt-3 mx-4 bg-white rounded-2xl shadow-sm overflow-hidden">
         <div className="px-4 py-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Support</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('sectionSupport')}</p>
         </div>
         <Divider />
         <MenuItem
           icon={HelpCircle}
-          label="Help & Support"
+          label={t('menuHelp')}
           onClick={() => {}}
           delay={0.25}
         />
         <Divider />
         <MenuItem
           icon={Shield}
-          label="Privacy Policy"
+          label={t('menuPrivacy')}
           onClick={() => {}}
           delay={0.28}
         />
         <Divider />
         <MenuItem
           icon={User}
-          label="Terms of Service"
+          label={t('menuTerms')}
           onClick={() => {}}
           delay={0.31}
         />
@@ -343,7 +343,7 @@ export default function ProfilePage() {
             }
           </div>
           <span className="text-sm font-medium text-red-500">
-            {loggingOut ? 'Signing out…' : 'Sign out'}
+            {loggingOut ? t('signingOut') : t('signOut')}
           </span>
         </motion.button>
       </div>
@@ -354,7 +354,7 @@ export default function ProfilePage() {
         transition={{ delay: 0.4 }}
         className="mt-6 text-center text-xs text-gray-400"
       >
-        GrandXL v1.0 · Made with love for Nigeria
+        {t('version')}
       </motion.p>
     </div>
   )

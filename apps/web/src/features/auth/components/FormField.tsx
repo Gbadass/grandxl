@@ -1,4 +1,5 @@
 import { forwardRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Eye, EyeOff, AlertCircle } from 'lucide-react'
 
@@ -10,6 +11,7 @@ interface FormFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
 
 export const FormField = forwardRef<HTMLInputElement, FormFieldProps>(
   ({ label, error, hint, type, className, ...props }, ref) => {
+    const { t } = useTranslation('auth')
     const [showPassword, setShowPassword] = useState(false)
     const isPassword = type === 'password'
     const resolvedType = isPassword ? (showPassword ? 'text' : 'password') : type
@@ -36,7 +38,7 @@ export const FormField = forwardRef<HTMLInputElement, FormFieldProps>(
               type="button"
               onClick={() => setShowPassword((v) => !v)}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t('formField.hidePassword') : t('formField.showPassword')}
             >
               {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
             </button>

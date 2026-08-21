@@ -20,8 +20,10 @@ RUN pnpm --filter @grandxl/ui build
 RUN pnpm --filter @grandxl/api-client build
 ARG VITE_API_URL
 ARG VITE_SENTRY_DSN_WEB
+ARG VITE_GOOGLE_MAPS_KEY
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SENTRY_DSN_WEB=$VITE_SENTRY_DSN_WEB
+ENV VITE_GOOGLE_MAPS_KEY=$VITE_GOOGLE_MAPS_KEY
 RUN pnpm --filter @grandxl/web build
 
 FROM nginx:alpine AS runner

@@ -18,40 +18,19 @@ import { ROUTES } from '../router/routes'
 
 // ── Greeting ──────────────────────────────────────────────────────────────────
 
-function getGreeting(): string {
+function greetingKey(): string {
   const h = new Date().getHours()
-  if (h < 12) return 'Good morning'
-  if (h < 17) return 'Good afternoon'
-  return 'Good evening'
+  if (h < 12) return 'good_morning'
+  if (h < 17) return 'good_afternoon'
+  return 'good_evening'
 }
 
 // ── Promo banners ─────────────────────────────────────────────────────────────
 
 const PROMOS = [
-  {
-    id: 'free-delivery',
-    title: 'Free delivery',
-    subtitle: 'On your very first order',
-    accent: 'from-primary to-rose-600',
-    badge: 'NEW',
-    filter: undefined as string | undefined,
-  },
-  {
-    id: 'fast-food',
-    title: '25 min or less',
-    subtitle: 'Fast food near you',
-    accent: 'from-amber-500 to-orange-600',
-    badge: 'FAST',
-    filter: undefined as string | undefined,
-  },
-  {
-    id: 'top-rated',
-    title: 'Top rated',
-    subtitle: 'Curated picks · 4.5+',
-    accent: 'from-violet-500 to-purple-700',
-    badge: 'TOP',
-    filter: undefined as string | undefined,
-  },
+  { id: 'free-delivery', titleKey: 'promo_free_title', subtitleKey: 'promo_free_sub', accent: 'from-primary to-rose-600',        badge: 'NEW'  },
+  { id: 'fast-food',     titleKey: 'promo_fast_title', subtitleKey: 'promo_fast_sub', accent: 'from-amber-500 to-orange-600',   badge: 'FAST' },
+  { id: 'top-rated',     titleKey: 'promo_top_title',  subtitleKey: 'promo_top_sub',  accent: 'from-violet-500 to-purple-700',  badge: 'TOP'  },
 ]
 
 // ── Category icon map ─────────────────────────────────────────────────────────
@@ -202,6 +181,7 @@ function SectionHeader({
   title: string
   onSeeAll?: () => void
 }) {
+  const { t } = useTranslation('restaurants')
   return (
     <div className="flex items-center justify-between mb-3">
       <h2 className="font-display font-bold text-gray-900 text-[17px]">{title}</h2>
@@ -211,7 +191,7 @@ function SectionHeader({
           className="flex items-center gap-0.5 text-xs font-semibold text-primary cursor-pointer"
           style={{ touchAction: 'manipulation' }}
         >
-          See all <ChevronRight size={13} />
+          {t('see_all')} <ChevronRight size={13} />
         </button>
       )}
     </div>
@@ -230,7 +210,7 @@ const fadeUp: Variants = {
 }
 
 export default function HomePage() {
-  const { t } = useTranslation('restaurants')
+  const { t } = useTranslation(['restaurants', 'common'])
   const navigate = useNavigate()
   const city = useLocationStore((s) => s.city)
   const [activeCuisine, setActiveCuisine] = useState<string | null>(null)
@@ -256,16 +236,16 @@ export default function HomePage() {
         {/* Greeting + delivery location */}
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-medium text-gray-400 leading-none">{getGreeting()}</p>
+            <p className="text-[11px] font-medium text-gray-400 leading-none">{t(greetingKey())}</p>
             <button
               type="button"
               onClick={() => setLocationSheetOpen(true)}
               className="flex items-center gap-1 cursor-pointer group mt-0.5"
-              aria-label="Change delivery location"
+              aria-label={t('changeDeliveryLocation')}
             >
               <MapPin size={13} className="text-primary shrink-0" />
               <span className="text-sm font-bold text-gray-900 group-hover:text-primary transition-colors duration-150 leading-tight">
-                {city ?? 'Set location'}
+                {city ?? t('common:nav.location')}
               </span>
               <ChevronDown size={13} className="text-gray-400" />
             </button>
@@ -278,19 +258,19 @@ export default function HomePage() {
               animate={{ scale: [1, 1.5, 1], opacity: [1, 0.4, 1] }}
               transition={{ duration: 2, repeat: Infinity }}
             />
-            <span className="text-[10px] font-semibold text-green-700">Delivering</span>
+            <span className="text-[10px] font-semibold text-green-700">{t('delivering')}</span>
           </div>
         </div>
 
         {/* Search bar */}
         <button
           type="button"
-          onClick={() => void navigate(ROUTES.RESTAURANTS)}
+          onClick={() => void navigate(ROUTES.SEARCH)}
           className="w-full flex items-center gap-3 bg-gray-100 rounded-2xl px-4 py-3 cursor-pointer hover:bg-gray-200/80 transition-colors duration-150 min-h-[44px]"
           style={{ touchAction: 'manipulation' }}
         >
           <Search size={16} className="text-gray-400 shrink-0" />
-          <span className="text-gray-400 text-sm font-medium">{t('search', 'Search restaurants and food')}</span>
+          <span className="text-gray-400 text-sm font-medium">{t('search')}</span>
         </button>
       </div>
 
@@ -316,8 +296,8 @@ export default function HomePage() {
                 {promo.id === 'top-rated' && <Star size={9} className="fill-white text-white" />}
                 {promo.badge}
               </div>
-              <p className="font-display font-bold text-white text-[18px] leading-tight">{promo.title}</p>
-              <p className="text-white/75 text-xs mt-1 font-medium">{promo.subtitle}</p>
+              <p className="font-display font-bold text-white text-[18px] leading-tight">{t(promo.titleKey)}</p>
+              <p className="text-white/75 text-xs mt-1 font-medium">{t(promo.subtitleKey)}</p>
             </motion.div>
           ))}
         </div>
@@ -329,10 +309,10 @@ export default function HomePage() {
           custom={1} variants={fadeUp} initial="hidden" animate="visible"
           className="px-4 pt-5"
         >
-          <SectionHeader title="What are you craving?" />
+          <SectionHeader title={t('craving')} />
           <div className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden">
             <CategoryChip
-              label="All"
+              label={t('all_categories')}
               slug={null}
               active={activeCuisine === null}
               onClick={() => setActiveCuisine(null)}
@@ -358,7 +338,7 @@ export default function HomePage() {
         >
           <div className="px-4">
             <SectionHeader
-              title="Top rated near you"
+              title={t('top_rated_near')}
               onSeeAll={() => void navigate(ROUTES.RESTAURANTS)}
             />
           </div>
@@ -383,7 +363,7 @@ export default function HomePage() {
         className="px-4 pt-5"
       >
         <SectionHeader
-          title={activeCuisine ? t('all', 'All restaurants') : 'Restaurants near you'}
+          title={activeCuisine ? t('all') : t('nearby')}
           onSeeAll={!activeCuisine ? () => void navigate(ROUTES.RESTAURANTS) : undefined}
         />
 
@@ -398,8 +378,8 @@ export default function HomePage() {
             <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center mb-3">
               <UtensilsCrossed size={28} className="text-gray-300" />
             </div>
-            <p className="font-semibold text-gray-700 text-sm">{t('common:noResults', 'No restaurants found')}</p>
-            <p className="text-gray-400 text-xs mt-1">Try a different category or location</p>
+            <p className="font-semibold text-gray-700 text-sm">{t('common:noResults')}</p>
+            <p className="text-gray-400 text-xs mt-1">{t('try_different')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

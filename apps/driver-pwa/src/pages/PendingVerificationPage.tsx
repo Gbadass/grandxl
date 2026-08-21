@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { Clock, Shield, Bell, CheckCircle2, FileText, Upload, LogOut } from 'lucide-react'
 import { ridersApi, authApi } from '@grandxl/api-client'
@@ -9,6 +10,7 @@ import { ROUTES } from '../router/routes'
 
 export default function PendingVerificationPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { rider, setRider } = useRiderStore()
   const { clearAuth } = useAuthStore()
   const [loading, setLoading] = useState(true)
@@ -78,9 +80,9 @@ export default function PendingVerificationPage() {
     rider?.documents?.vehiclePhoto
 
   const STEPS = [
-    { Icon: FileText,     label: 'Documents submitted',  done: !!hasDocuments },
-    { Icon: Shield,       label: 'Identity verification', done: false },
-    { Icon: CheckCircle2, label: 'Account activated',    done: false },
+    { Icon: FileText,     labelKey: 'step_documents_submitted',  done: !!hasDocuments },
+    { Icon: Shield,       labelKey: 'step_identity_verification', done: false },
+    { Icon: CheckCircle2, labelKey: 'step_account_activated',    done: false },
   ]
 
   if (loading) {
@@ -100,7 +102,7 @@ export default function PendingVerificationPage() {
         style={{ touchAction: 'manipulation' }}
       >
         <LogOut size={13} />
-        Sign out
+        {t('pending_sign_out')}
       </button>
 
       {/* Animated clock icon */}
@@ -128,11 +130,10 @@ export default function PendingVerificationPage() {
         className="text-center mb-8"
       >
         <h1 className="font-display text-2xl font-bold text-zinc-100 mb-2">
-          Under review
+          {t('under_review')}
         </h1>
         <p className="text-sm text-zinc-500 leading-relaxed max-w-xs">
-          Our team is reviewing your documents. This usually takes up to{' '}
-          <span className="text-amber-400 font-semibold">24 hours</span>.
+          {t('under_review_desc')}
         </p>
       </motion.div>
 
@@ -143,8 +144,8 @@ export default function PendingVerificationPage() {
         transition={{ delay: 0.18 }}
         className="w-full mb-6 rounded-3xl border border-zinc-800 bg-zinc-900 p-5 space-y-4"
       >
-        {STEPS.map(({ Icon, label, done }, i) => (
-          <div key={label} className="flex items-center gap-3">
+        {STEPS.map(({ Icon, labelKey, done }, i) => (
+          <div key={labelKey} className="flex items-center gap-3">
             <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors ${
               done
                 ? 'bg-green-500 border-green-500'
@@ -169,10 +170,10 @@ export default function PendingVerificationPage() {
               <p className={`text-sm font-medium ${
                 done ? 'text-green-400' : i === 1 ? 'text-amber-400' : 'text-zinc-600'
               }`}>
-                {label}
+                {t(labelKey)}
               </p>
               {i === 1 && (
-                <p className="text-xs text-zinc-600 mt-0.5">Checking your documents…</p>
+                <p className="text-xs text-zinc-600 mt-0.5">{t('step_checking')}</p>
               )}
             </div>
           </div>
@@ -191,9 +192,9 @@ export default function PendingVerificationPage() {
             <Bell size={15} className="text-blue-400" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-zinc-200">We'll notify you</p>
+            <p className="text-sm font-semibold text-zinc-200">{t('notify_title')}</p>
             <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-              Once approved, you can log in and start accepting deliveries immediately.
+              {t('notify_desc')}
             </p>
           </div>
         </div>
@@ -202,9 +203,9 @@ export default function PendingVerificationPage() {
             <Shield size={15} className="text-green-400" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-zinc-200">Why we verify</p>
+            <p className="text-sm font-semibold text-zinc-200">{t('verify_why_title')}</p>
             <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-              Verification keeps our platform safe for customers, restaurants, and riders alike.
+              {t('verify_why_desc')}
             </p>
           </div>
         </div>
@@ -219,8 +220,8 @@ export default function PendingVerificationPage() {
             <Upload size={15} className="text-primary" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-zinc-200">Update documents</p>
-            <p className="text-xs text-zinc-500 mt-0.5">Re-upload if you need to replace a document</p>
+            <p className="text-sm font-semibold text-zinc-200">{t('update_docs')}</p>
+            <p className="text-xs text-zinc-500 mt-0.5">{t('update_docs_sub')}</p>
           </div>
         </button>
       </motion.div>
@@ -232,7 +233,7 @@ export default function PendingVerificationPage() {
         transition={{ delay: 0.4 }}
         className="text-xs text-zinc-700 text-center"
       >
-        Checks for updates automatically every 30 seconds
+        {t('auto_check_hint')}
       </motion.p>
     </div>
   )

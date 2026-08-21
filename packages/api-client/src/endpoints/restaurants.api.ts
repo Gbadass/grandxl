@@ -18,7 +18,7 @@ export const restaurantsApi = {
     getClient().get<ApiResponse<Restaurant>>(`/restaurants/${id}`),
 
   getNearby: (params: { lat: number; lng: number; radius?: number }) =>
-    getClient().get<PaginatedResponse<Restaurant>>('/restaurants/nearby', { params }),
+    getClient().get<PaginatedResponse<Restaurant>>('/restaurants', { params }),
 
   search: (q: string, params?: { lat?: number; lng?: number }) =>
     getClient().get<ApiResponse<{ restaurants: Restaurant[] }>>('/search', {

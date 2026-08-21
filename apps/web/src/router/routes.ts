@@ -22,4 +22,5 @@ export const ROUTES = {
   ADDRESSES: '/profile/addresses',
   PAYMENT_CALLBACK: '/payment/callback',
   FAVORITES: '/favorites',
+  SEARCH: '/search',
 } as const

@@ -3,6 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { e164Phone } from '@grandxl/validators'
 import { useRegister } from '../../features/auth/hooks/useRegister'
 import { AuthLayout } from '../../features/auth/components/AuthLayout'
@@ -34,6 +35,7 @@ const item = {
 
 export default function RegisterPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('auth')
   const { mutate: register, isPending, isError } = useRegister()
 
   const { register: field, handleSubmit, control, formState: { errors } } = useForm<Fields>({
@@ -59,25 +61,25 @@ export default function RegisterPage() {
   }
 
   return (
-    <AuthLayout title="Create account" subtitle="Join GrandXL and start ordering in minutes">
+    <AuthLayout title={t('register.title')} subtitle={t('register.subtitle')}>
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
         {/* Name row */}
         <motion.div custom={0} variants={item} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3">
           <FormField
             {...field('firstName')}
             id="firstName"
-            label="First name"
+            label={t('register.firstName')}
             type="text"
-            placeholder="Chidi"
+            placeholder={t('register.firstNamePlaceholder')}
             autoComplete="given-name"
             error={errors.firstName?.message}
           />
           <FormField
             {...field('lastName')}
             id="lastName"
-            label="Last name"
+            label={t('register.lastName')}
             type="text"
-            placeholder="Okafor"
+            placeholder={t('register.lastNamePlaceholder')}
             autoComplete="family-name"
             error={errors.lastName?.message}
           />
@@ -87,12 +89,12 @@ export default function RegisterPage() {
           <FormField
             {...field('phone')}
             id="phone"
-            label="Phone number"
+            label={t('register.phoneLabel')}
             type="tel"
             inputMode="tel"
-            placeholder="+2348012345678"
+            placeholder={t('register.phonePlaceholder')}
             autoComplete="tel"
-            hint="Include country code, e.g. +2348012345678"
+            hint={t('register.phoneHint')}
             error={errors.phone?.message}
           />
         </motion.div>
@@ -101,10 +103,10 @@ export default function RegisterPage() {
           <FormField
             {...field('email')}
             id="email"
-            label="Email (optional)"
+            label={t('register.emailLabel')}
             type="email"
             inputMode="email"
-            placeholder="you@example.com"
+            placeholder={t('register.emailPlaceholder')}
             autoComplete="email"
             error={errors.email?.message}
           />
@@ -114,9 +116,9 @@ export default function RegisterPage() {
           <FormField
             {...field('password')}
             id="password"
-            label="Password"
+            label={t('register.passwordLabel')}
             type="password"
-            placeholder="Min. 8 chars, 1 uppercase, 1 number"
+            placeholder={t('register.passwordPlaceholder')}
             autoComplete="new-password"
             error={errors.password?.message}
           />
@@ -132,10 +134,10 @@ export default function RegisterPage() {
             className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
           />
           <label htmlFor="consent" className="text-xs text-gray-500 cursor-pointer leading-relaxed">
-            I agree to GrandXL's{' '}
-            <a href="/privacy" className="text-primary hover:underline font-medium">Privacy Policy</a>
-            {' '}and{' '}
-            <a href="/terms" className="text-primary hover:underline font-medium">Terms of Service</a>
+            {t('register.consentAgree')}{' '}
+            <a href="/privacy" className="text-primary hover:underline font-medium">{t('register.privacyPolicy')}</a>
+            {' '}{t('register.consentAnd')}{' '}
+            <a href="/terms" className="text-primary hover:underline font-medium">{t('register.termsOfService')}</a>
           </label>
         </motion.div>
         {errors.consentGiven && (
@@ -154,7 +156,7 @@ export default function RegisterPage() {
             animate={{ opacity: 1, y: 0 }}
             className="text-sm text-red-500 text-center py-2.5 bg-red-50 rounded-2xl px-3"
           >
-            Something went wrong. This phone number may already be registered.
+            {t('register.errorPhone')}
           </motion.p>
         )}
 
@@ -170,7 +172,7 @@ export default function RegisterPage() {
             {isPending && (
               <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
             )}
-            {isPending ? 'Creating account…' : 'Create account'}
+            {isPending ? t('register.creatingAccount') : t('register.submit')}
           </motion.button>
         </motion.div>
       </form>
@@ -179,9 +181,9 @@ export default function RegisterPage() {
         custom={6} variants={item} initial="hidden" animate="visible"
         className="mt-7 text-center text-sm text-gray-500"
       >
-        Already have an account?{' '}
+        {t('register.hasAccount')}{' '}
         <Link to={ROUTES.LOGIN} className="font-semibold text-primary hover:underline cursor-pointer">
-          Sign in
+          {t('register.login')}
         </Link>
       </motion.p>
     </AuthLayout>

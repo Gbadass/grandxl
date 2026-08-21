@@ -75,10 +75,10 @@ export default function RegisterRiderPage() {
         }
       }
 
-      toast.success('Vehicle registered! Now upload your documents.')
+      toast.success(t('register_success'))
       void navigate(ROUTES.KYC_UPLOAD, { replace: true })
     } catch {
-      toast.error('Could not submit. Please try again.')
+      toast.error(t('register_error'))
     } finally {
       setLoading(false)
     }
@@ -189,7 +189,7 @@ export default function RegisterRiderPage() {
           type="text"
           value={plate}
           onChange={(e) => { setPlate(e.target.value); setPlateError(null) }}
-          placeholder="e.g. ABC-123-XY"
+          placeholder={t('plate_number_placeholder')}
           className={`w-full rounded-2xl border bg-zinc-900 px-4 py-4 font-mono text-sm tracking-widest text-zinc-100 placeholder-zinc-700 outline-none transition-all duration-200 focus:ring-2 ${
             plateError
               ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'

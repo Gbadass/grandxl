@@ -16,7 +16,7 @@ export interface CreateOrderDto {
     street: string
     city: string
     state: string
-    coordinates: { lat: number; lng: number }
+    coordinates?: { lat: number; lng: number }
   }
   paymentMethod: PaymentMethod
   couponCode?: string
@@ -40,6 +40,13 @@ export interface RiderContact {
   phone: string | null
   vehicleType: string | null
   vehiclePlate: string | null
+}
+
+export interface CustomerContact {
+  customerId: string
+  firstName: string
+  lastName: string
+  phone: string | null
 }
 
 export const ordersApi = {
@@ -69,4 +76,7 @@ export const ordersApi = {
 
   getRiderContact: (id: string) =>
     getClient().get<ApiResponse<RiderContact>>(`/orders/${id}/rider-contact`),
+
+  getCustomerContact: (id: string) =>
+    getClient().get<ApiResponse<CustomerContact>>(`/orders/${id}/customer-contact`),
 }

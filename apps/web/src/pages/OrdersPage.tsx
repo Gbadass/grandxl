@@ -219,7 +219,7 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function OrdersPage() {
-  const { t } = useTranslation('orders')
+  const { t } = useTranslation(['orders', 'common'])
   const [tab, setTab] = useState<OrderTab>('all')
   const [page, setPage] = useState(1)
   const [sortNewest, setSortNewest] = useState(true)
@@ -283,7 +283,7 @@ export default function OrdersPage() {
           <button
             onClick={handleRefresh}
             className="p-2 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
-            aria-label="Refresh orders"
+            aria-label={t('common:refresh')}
           >
             <RefreshCw size={16} className="text-gray-500" />
           </button>
@@ -341,13 +341,13 @@ export default function OrdersPage() {
             <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-red-50">
               <RefreshCw size={36} className="text-red-300" />
             </div>
-            <h2 className="font-semibold text-gray-900">{"Couldn't load orders"}</h2>
-            <p className="mt-1 text-sm text-gray-500">Check your connection and try again</p>
+            <h2 className="font-semibold text-gray-900">{t('loadError')}</h2>
+            <p className="mt-1 text-sm text-gray-500">{t('loadErrorSub')}</p>
             <button
               onClick={handleRefresh}
               className="mt-4 px-4 py-2 text-sm font-medium text-white bg-primary rounded-xl cursor-pointer"
             >
-              Retry
+              {t('common:retry')}
             </button>
           </motion.div>
         ) : displayOrders.length === 0 ? (
@@ -361,17 +361,17 @@ export default function OrdersPage() {
               <ShoppingBag size={36} className="text-gray-300" />
             </div>
             <h2 className="font-semibold text-gray-900">
-              {tab === 'active' ? 'No active orders' : tab === 'cancelled' ? 'No cancelled orders' : t('empty')}
+              {tab === 'active' ? t('emptyActive') : tab === 'cancelled' ? t('emptyCancelled') : t('empty')}
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              {tab === 'active' ? 'Your in-progress orders will appear here' : t('emptySubtitle')}
+              {tab === 'active' ? t('emptyActiveSub') : t('emptySubtitle')}
             </p>
           </motion.div>
         ) : (
           <motion.div key={`list-${tab}-${page}-${sortNewest}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {/* Section header for "All" tab past orders */}
             {showActiveSection && orders.length > 0 && (
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Past orders</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{t('pastOrders')}</p>
             )}
 
             <div className="space-y-3">

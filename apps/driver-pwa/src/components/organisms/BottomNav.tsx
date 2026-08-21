@@ -1,17 +1,19 @@
 import { NavLink } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Briefcase, TrendingUp, User } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { ROUTES } from '../../router/routes'
 import { useRiderStore } from '../../store/rider.store'
 
 export function BottomNav() {
   const pendingCount = useRiderStore((s) => s.pendingJobs.length)
+  const { t } = useTranslation('rider')
 
   const navItems = [
-    { to: ROUTES.HOME,           label: 'Home',     Icon: Home,       badge: 0 },
-    { to: ROUTES.AVAILABLE_JOBS, label: 'Jobs',     Icon: Briefcase,  badge: pendingCount },
-    { to: ROUTES.EARNINGS,       label: 'Earnings', Icon: TrendingUp, badge: 0 },
-    { to: ROUTES.PROFILE,        label: 'Profile',  Icon: User,       badge: 0 },
+    { to: ROUTES.HOME,           label: t('home'),     Icon: Home,       badge: 0 },
+    { to: ROUTES.AVAILABLE_JOBS, label: t('jobs'),     Icon: Briefcase,  badge: pendingCount },
+    { to: ROUTES.EARNINGS,       label: t('earnings'), Icon: TrendingUp, badge: 0 },
+    { to: ROUTES.PROFILE,        label: t('profile'),  Icon: User,       badge: 0 },
   ]
 
   return (

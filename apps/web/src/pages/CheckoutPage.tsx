@@ -29,7 +29,7 @@ const TIP_PRESETS = [
 ]
 
 export default function CheckoutPage() {
-  const { t } = useTranslation(['cart', 'common'])
+  const { t } = useTranslation(['cart', 'common', 'checkout'])
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
@@ -140,7 +140,7 @@ export default function CheckoutPage() {
   async function applyCoupon() {
     if (!couponCode.trim()) return
     if (!restaurantId) {
-      toast.error('Cannot apply coupon: no restaurant selected')
+      toast.error(t('checkout:couponNoRestaurant'))
       return
     }
     setCouponLoading(true)
@@ -151,10 +151,10 @@ export default function CheckoutPage() {
         subtotalKobo: subtotal,
       })
       setAppliedCoupon(res.data.data)
-      toast.success('Coupon applied!')
+      toast.success(t('checkout:couponApplied'))
     } catch (err: unknown) {
       setAppliedCoupon(null)
-      toast.error(getApiErrorMessage(err, 'Invalid or expired coupon'))
+      toast.error(getApiErrorMessage(err, t('checkout:invalidCoupon')))
     } finally {
       setCouponLoading(false)
     }
@@ -167,7 +167,7 @@ export default function CheckoutPage() {
       return
     }
     if (!selectedAddress) {
-      toast.error('Please add a delivery address first')
+      toast.error(t('checkout:addAddressFirst'))
       setAddressSheetOpen(true)
       return
     }
@@ -253,14 +253,14 @@ export default function CheckoutPage() {
           >
             <ChevronLeft size={18} className="text-gray-700" />
           </button>
-          <h1 className="font-display font-bold text-xl text-gray-900">Checkout</h1>
+          <h1 className="font-display font-bold text-xl text-gray-900">{t('checkout:title')}</h1>
         </div>
 
         {/* Delivery address — tap to open picker */}
         <section className="mb-4">
           <div className="flex items-center gap-2 mb-2.5">
             <MapPin size={16} className="text-primary" />
-            <h2 className="font-semibold text-sm text-gray-900">Delivery address</h2>
+            <h2 className="font-semibold text-sm text-gray-900">{t('checkout:deliveryAddress')}</h2>
           </div>
 
           <AnimatePresence mode="wait">
@@ -284,7 +284,7 @@ export default function CheckoutPage() {
                   <p className="text-xs text-gray-400">{selectedAddress.city}, {selectedAddress.state}</p>
                 </div>
                 <div className="flex items-center gap-1 text-xs text-primary font-medium shrink-0 mt-1">
-                  Change <ChevronRight size={13} />
+                  {t('checkout:changeAddress')} <ChevronRight size={13} />
                 </div>
               </motion.button>
             ) : (
@@ -301,7 +301,7 @@ export default function CheckoutPage() {
                 <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                   <Plus size={16} className="text-primary" />
                 </div>
-                <p className="text-sm font-medium text-primary">Add delivery address</p>
+                <p className="text-sm font-medium text-primary">{t('checkout:addAddress')}</p>
               </motion.button>
             )}
           </AnimatePresence>
@@ -311,12 +311,12 @@ export default function CheckoutPage() {
         <section className="mb-4">
           <div className="flex items-center gap-2 mb-2.5">
             <Navigation size={16} className="text-primary" />
-            <h2 className="font-semibold text-sm text-gray-900">Delivery instructions</h2>
+            <h2 className="font-semibold text-sm text-gray-900">{t('checkout:instructions')}</h2>
           </div>
           <textarea
             value={deliveryInstructions}
             onChange={(e) => setDeliveryInstructions(e.target.value)}
-            placeholder="e.g. Flat 3B, ring bell twice, leave at door"
+            placeholder={t('checkout:instructionsPlaceholder')}
             rows={2}
             maxLength={300}
             className="w-full px-4 py-3 bg-white rounded-2xl shadow-sm text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary/20 transition resize-none"
@@ -327,7 +327,7 @@ export default function CheckoutPage() {
         <section className="mb-4">
           <div className="flex items-center gap-2 mb-2.5">
             <Tag size={16} className="text-primary" />
-            <h2 className="font-semibold text-sm text-gray-900">Coupon code</h2>
+            <h2 className="font-semibold text-sm text-gray-900">{t('checkout:couponCode')}</h2>
           </div>
           <div className="bg-white rounded-2xl shadow-sm p-4">
             {appliedCoupon ? (
@@ -347,7 +347,7 @@ export default function CheckoutPage() {
                   type="button"
                   onClick={() => { setAppliedCoupon(null); setCouponCode('') }}
                   className="h-7 w-7 rounded-full bg-gray-100 flex items-center justify-center shrink-0 hover:bg-gray-200 transition-colors cursor-pointer"
-                  aria-label="Remove coupon"
+                  aria-label={t('checkout:removeCoupon')}
                 >
                   <X size={13} className="text-gray-500" />
                 </button>
@@ -359,7 +359,7 @@ export default function CheckoutPage() {
                   value={couponCode}
                   onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                   onKeyDown={(e) => { if (e.key === 'Enter') void applyCoupon() }}
-                  placeholder="Enter coupon code"
+                  placeholder={t('checkout:couponPlaceholder')}
                   className="flex-1 min-w-0 px-3 py-2 bg-gray-50 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary/20 transition"
                 />
                 <button
@@ -372,7 +372,7 @@ export default function CheckoutPage() {
                   {couponLoading ? (
                     <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin inline-block" />
                   ) : (
-                    'Apply'
+                    t('checkout:apply')
                   )}
                 </button>
               </div>
@@ -384,13 +384,13 @@ export default function CheckoutPage() {
         <section className="mb-4">
           <div className="flex items-center gap-2 mb-2.5">
             <CreditCard size={16} className="text-primary" />
-            <h2 className="font-semibold text-sm text-gray-900">Payment method</h2>
+            <h2 className="font-semibold text-sm text-gray-900">{t('checkout:paymentMethod')}</h2>
           </div>
           <div className="bg-white rounded-2xl shadow-sm divide-y divide-gray-50">
             {[
-              { method: PaymentMethod.PAYSTACK, icon: CreditCard, label: 'Card / Bank Transfer', sub: 'Powered by Paystack' },
-              { method: PaymentMethod.WALLET,   icon: Wallet,     label: 'Wallet',               sub: 'Use your GrandXL balance' },
-              { method: PaymentMethod.CASH,     icon: Banknote,   label: 'Cash on delivery',     sub: 'Pay when your order arrives' },
+              { method: PaymentMethod.PAYSTACK, icon: CreditCard, label: t('checkout:paymentCard'),   sub: t('checkout:paymentCardSub') },
+              { method: PaymentMethod.WALLET,   icon: Wallet,     label: t('checkout:paymentWallet'), sub: t('checkout:paymentWalletSub') },
+              { method: PaymentMethod.CASH,     icon: Banknote,   label: t('checkout:paymentCash'),   sub: t('checkout:paymentCashSub') },
             ].map(({ method, icon: Icon, label, sub }) => (
               <button
                 key={method}
@@ -417,12 +417,12 @@ export default function CheckoutPage() {
         {/* Note to restaurant */}
         <section className="mb-4">
           <label className="text-xs font-medium text-gray-500 block mb-1.5">
-            Note to restaurant <span className="text-gray-400">(optional)</span>
+            {t('checkout:noteToRestaurant')} <span className="text-gray-400">{t('checkout:optional')}</span>
           </label>
           <textarea
             value={customerNote}
             onChange={(e) => setCustomerNote(e.target.value)}
-            placeholder="e.g. No onions please"
+            placeholder={t('checkout:notePlaceholder')}
             rows={2}
             className="w-full px-4 py-3 bg-white rounded-2xl shadow-sm text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-primary/20 transition resize-none"
           />
@@ -432,7 +432,7 @@ export default function CheckoutPage() {
         <section className="mb-4">
           <div className="bg-white rounded-2xl shadow-sm p-4">
             <p className="text-sm font-semibold text-gray-900 mb-3">
-              Tip your rider <span className="text-gray-400 font-normal">(optional)</span>
+              {t('checkout:tipRider')} <span className="text-gray-400 font-normal">{t('checkout:optional')}</span>
             </p>
             <div className="flex gap-2">
               {TIP_PRESETS.map(({ label, kobo }) => (
@@ -459,7 +459,7 @@ export default function CheckoutPage() {
           <div className="flex items-center gap-2 mb-2.5">
             <Calendar size={16} className="text-primary" />
             <h2 className="font-semibold text-sm text-gray-900">
-              Schedule delivery <span className="text-gray-400 font-normal text-xs">(optional)</span>
+              {t('checkout:scheduleDelivery')} <span className="text-gray-400 font-normal text-xs">{t('checkout:optional')}</span>
             </h2>
           </div>
           <div className="bg-white rounded-2xl shadow-sm p-4">
@@ -476,7 +476,7 @@ export default function CheckoutPage() {
                 onClick={() => setScheduledFor('')}
                 className="mt-2 text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer flex items-center gap-1"
               >
-                <X size={11} /> Clear — deliver ASAP
+                <X size={11} /> {t('checkout:clearSchedule')}
               </button>
             )}
           </div>
@@ -495,8 +495,8 @@ export default function CheckoutPage() {
                 <Gift size={16} className="text-green-600" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-green-800">Your first order — delivery is FREE!</p>
-                <p className="text-xs text-green-600 mt-0.5">We're covering your delivery fee this time.</p>
+                <p className="text-sm font-semibold text-green-800">{t('checkout:firstOrderFree')}</p>
+                <p className="text-xs text-green-600 mt-0.5">{t('checkout:firstOrderFreeSub')}</p>
               </div>
             </motion.div>
           )}
@@ -526,14 +526,14 @@ export default function CheckoutPage() {
           {discount > 0 && (
             <div className="flex justify-between text-sm text-green-600">
               <span className="flex items-center gap-1">
-                <Tag size={12} /> Coupon discount
+                <Tag size={12} /> {t('checkout:couponDiscount')}
               </span>
               <span className="font-medium">-{formatMoney(discount, currency)}</span>
             </div>
           )}
           {tipKobo > 0 && (
             <div className="flex justify-between text-sm text-gray-600">
-              <span>Rider tip</span>
+              <span>{t('checkout:riderTip')}</span>
               <span>{formatMoney(tipKobo, currency)}</span>
             </div>
           )}
@@ -556,10 +556,10 @@ export default function CheckoutPage() {
         >
           {isSubmitting && <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />}
           {isSubmitting
-            ? 'Placing order…'
+            ? t('checkout:placingOrder')
             : !user
-            ? 'Sign in to place order'
-            : `Place order · ${formatMoney(total, currency)}`}
+            ? t('checkout:signInToOrder')
+            : t('checkout:placeOrder', { amount: formatMoney(total, currency) })}
         </motion.button>
       </div>
 

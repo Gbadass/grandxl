@@ -1,0 +1,17 @@
+{
+  "verifying": "Verifying your payment…",
+  "verifyingDesc": "This only takes a moment",
+  "pendingTitle": "Payment processing",
+  "pendingDesc": "Your payment is being confirmed. This can take up to a minute — we'll notify you the moment it's approved.",
+  "checkOrders": "Check my orders",
+  "backToHome": "Back to home",
+  "successTitle": "Payment successful!",
+  "paid": "{{amount}} paid",
+  "redirecting": "Taking you to your order…",
+  "trackOrder": "Track your order",
+  "failedTitle": "Payment failed",
+  "failedDesc": "We could not confirm your payment. Your order has not been placed.",
+  "browseRestaurants": "Browse restaurants",
+  "viewOrders": "View my orders",
+  "confirmed": "Payment confirmed!"
+}

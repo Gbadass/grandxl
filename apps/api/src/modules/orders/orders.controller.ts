@@ -166,4 +166,16 @@ export class OrdersController {
   ) {
     return this.ordersService.getRiderContactForOrder(id, user)
   }
+
+  // Customer contact — rider only, for tap-to-call on active delivery
+  @Get(':id/customer-contact')
+  @Roles(UserRole.RIDER)
+  @ApiOperation({ summary: 'Get the customer\'s contact info for tap-to-call (rider only)' })
+  @ApiOkResponse({ description: 'Customer name and phone' })
+  async getCustomerContact(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
+    return this.ordersService.getCustomerContactForOrder(id, user.sub)
+  }
 }

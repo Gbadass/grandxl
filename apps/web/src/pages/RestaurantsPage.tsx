@@ -37,7 +37,7 @@ export default function RestaurantsPage() {
   )
   const allRestaurants: Restaurant[] = restaurantPage?.data ?? []
 
-  const { data: searchResults, isLoading: searchLoading } = useQuery({
+  const { data: searchResults, isLoading: searchLoading, isError: searchError } = useQuery({
     queryKey: ['restaurant-search', query],
     queryFn: () =>
       restaurantsApi
@@ -131,7 +131,17 @@ export default function RestaurantsPage() {
       )}
 
       {/* Grid */}
-      {showLoading ? (
+      {searchError ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <p className="text-gray-500 text-sm">{t('common:error')}</p>
+          <button
+            onClick={() => setQuery('')}
+            className="mt-3 text-sm text-primary cursor-pointer hover:underline"
+          >
+            {t('common:retry')}
+          </button>
+        </div>
+      ) : showLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <RestaurantSkeleton key={i} />

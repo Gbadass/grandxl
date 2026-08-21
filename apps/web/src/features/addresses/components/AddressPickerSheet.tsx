@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { MapPin, Home, Briefcase, Plus, Navigation, Trash2, Check, X, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import type { Address } from '@grandxl/types'
 import { useAddresses, useAddAddress, useDeleteAddress } from '../hooks/useAddresses'
 import { useLocationStore } from '../../../store/location.store'
@@ -37,6 +38,7 @@ function AddressCard({
   onSelect: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation('addresses')
   return (
     <motion.div
       layout
@@ -58,7 +60,7 @@ function AddressCard({
           <p className="text-sm font-semibold text-gray-900 capitalize">{address.label}</p>
           {isDefault && (
             <span className="text-[10px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-              Default
+              {t('default')}
             </span>
           )}
         </div>
@@ -70,7 +72,7 @@ function AddressCard({
         type="button"
         onClick={(e) => { e.stopPropagation(); onDelete() }}
         className="mt-0.5 p-1.5 rounded-full text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors cursor-pointer"
-        aria-label="Delete address"
+        aria-label={t('deleteAddress')}
         style={{ touchAction: 'manipulation' }}
       >
         <Trash2 size={13} />
@@ -88,6 +90,7 @@ interface AddFormState {
 
 function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => void; onCancel: () => void }) {
   const { mutate: addAddress, isPending } = useAddAddress()
+  const { t } = useTranslation('addresses')
   const { city: detectedCity, state: detectedState, displayAddress, coordinates: detectedCoords } = useLocationStore()
   const [form, setForm] = useState<AddFormState>({ label: 'home', street: '', city: '', state: '' })
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(
@@ -104,7 +107,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
 
   function detectGPS() {
     if (!navigator.geolocation) {
-      toast.error('GPS not available on this device')
+      toast.error(t('gpsNotAvailable'))
       return
     }
     setGpsLoading(true)
@@ -124,14 +127,14 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
       },
       () => {
         setGpsLoading(false)
-        toast.error('Could not get location. Please enter manually.')
+        toast.error(t('gpsLocationError'))
       },
       { timeout: 8000 },
     )
   }
 
   function submit() {
-    if (!form.street.trim()) { setError('Street address is required'); return }
+    if (!form.street.trim()) { setError(t('streetRequired')); return }
 
     addAddress(
       {
@@ -144,10 +147,10 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
       },
       {
         onSuccess: (res) => {
-          toast.success('Address saved!')
+          toast.success(t('addressSaved'))
           onSaved(res.data.data as Address)
         },
-        onError: () => toast.error('Could not save address. Try again.'),
+        onError: () => toast.error(t('addressSaveError')),
       },
     )
   }
@@ -161,7 +164,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
       exit={{ opacity: 0 }}
       className="space-y-3 pt-3 border-t border-gray-100"
     >
-      <p className="text-sm font-semibold text-gray-900">New address</p>
+      <p className="text-sm font-semibold text-gray-900">{t('newAddress')}</p>
 
       {/* Label selector */}
       <div className="flex gap-2">
@@ -201,14 +204,14 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
         </span>
         <span className="flex-1 text-left truncate">
           {gpsLoading
-            ? 'Detecting location…'
+            ? t('detecting')
             : gpsDetected
-            ? `${detectedCity ?? 'Location'}, ${detectedState ?? ''} detected`
-            : 'Use my current location'
+            ? t('locationDetected', { city: detectedCity ?? 'Location', state: detectedState ?? '' })
+            : t('useCurrentLocation')
           }
         </span>
         {gpsDetected && (
-          <span className="text-xs text-green-600 font-normal shrink-0">Tap to refresh</span>
+          <span className="text-xs text-green-600 font-normal shrink-0">{t('tapToRefresh')}</span>
         )}
       </button>
 
@@ -218,13 +221,13 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           type="text"
           value={form.street}
           onChange={(e) => set('street', e.target.value)}
-          placeholder="Street address *"
+          placeholder={t('streetPlaceholder')}
           className={`w-full px-4 py-3 rounded-2xl border text-sm text-gray-900 placeholder-gray-400 outline-none transition-all focus:ring-2 focus:ring-primary/20 focus:border-primary ${error ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}
         />
         {gpsDetected && displayAddress && !error && (
           <p className="flex items-center gap-1 mt-1.5 text-xs text-gray-400">
             <Navigation size={10} className="shrink-0" />
-            Near: {displayAddress}
+            {t('nearLabel')} {displayAddress}
           </p>
         )}
         {error && (
@@ -239,14 +242,14 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           type="text"
           value={form.city}
           onChange={(e) => set('city', e.target.value)}
-          placeholder="City"
+          placeholder={t('cityPlaceholder')}
           className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
         />
         <input
           type="text"
           value={form.state}
           onChange={(e) => set('state', e.target.value)}
-          placeholder="State"
+          placeholder={t('statePlaceholder')}
           className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
         />
       </div>
@@ -257,7 +260,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           onClick={onCancel}
           className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-medium text-gray-500 cursor-pointer hover:bg-gray-50 transition-colors"
         >
-          Cancel
+          {t('common:cancel')}
         </button>
         <motion.button
           type="button"
@@ -268,7 +271,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           style={{ touchAction: 'manipulation' }}
         >
           {isPending && <span className="h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />}
-          {isPending ? 'Saving…' : 'Save address'}
+          {isPending ? t('saving') : t('saveAddress')}
         </motion.button>
       </div>
     </motion.div>
@@ -278,6 +281,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
 export function AddressPickerSheet({ isOpen, onClose, selected, onSelect }: Props) {
   const { addresses, defaultAddressId } = useAddresses()
   const { mutate: deleteAddress } = useDeleteAddress()
+  const { t } = useTranslation('addresses')
   const { coordinates, city, state: locationState, displayAddress } = useLocationStore()
   const [showAddForm, setShowAddForm] = useState(false)
 
@@ -301,7 +305,7 @@ export function AddressPickerSheet({ isOpen, onClose, selected, onSelect }: Prop
 
   function handleDelete(id: string) {
     deleteAddress(id)
-    toast.success('Address removed')
+    toast.success(t('removed'))
   }
 
   function handleSaved(addr: Address) {
@@ -336,12 +340,12 @@ export function AddressPickerSheet({ isOpen, onClose, selected, onSelect }: Prop
 
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display font-bold text-lg text-gray-900">Deliver to</h2>
+              <h2 className="font-display font-bold text-lg text-gray-900">{t('deliverTo')}</h2>
               <button
                 type="button"
                 onClick={onClose}
                 className="p-2 rounded-full hover:bg-gray-100 cursor-pointer transition-colors"
-                aria-label="Close"
+                aria-label={t('common:close')}
               >
                 <X size={18} className="text-gray-500" />
               </button>
@@ -361,11 +365,11 @@ export function AddressPickerSheet({ isOpen, onClose, selected, onSelect }: Prop
                   <Navigation size={16} className="text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-primary/70 leading-none mb-0.5">Deliver here</p>
+                  <p className="text-xs font-semibold text-primary/70 leading-none mb-0.5">{t('deliverHere')}</p>
                   <p className="text-sm font-bold text-gray-900 truncate">{displayAddress ?? city}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Your detected location</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t('yourDetectedLocation')}</p>
                 </div>
-                <div className="text-xs text-primary font-semibold shrink-0">Use this</div>
+                <div className="text-xs text-primary font-semibold shrink-0">{t('useThis')}</div>
               </motion.button>
             )}
 
@@ -409,7 +413,7 @@ export function AddressPickerSheet({ isOpen, onClose, selected, onSelect }: Prop
                   <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
                     <Plus size={16} />
                   </div>
-                  <span className="text-sm font-medium">Add new address</span>
+                  <span className="text-sm font-medium">{t('addNewAddress')}</span>
                 </motion.button>
               )}
             </AnimatePresence>

@@ -43,7 +43,9 @@ import type { RestaurantHours } from '@grandxl/utils'
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PENDING]:    [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
   [OrderStatus.CONFIRMED]:  [OrderStatus.PREPARING, OrderStatus.CANCELLED],
-  [OrderStatus.PREPARING]:  [OrderStatus.READY],
+  // PICKED_UP allowed directly from PREPARING — rider can confirm pickup without
+  // waiting for the restaurant to mark READY (handles unattended restaurant screens).
+  [OrderStatus.PREPARING]:  [OrderStatus.READY, OrderStatus.PICKED_UP],
   [OrderStatus.READY]:      [OrderStatus.PICKED_UP],
   [OrderStatus.PICKED_UP]:  [OrderStatus.DELIVERED],
   [OrderStatus.DELIVERED]:  [],
@@ -843,6 +845,8 @@ export class OrdersService {
     }
 
     if (requester.roles.includes(UserRole.RIDER)) {
+      // Rider drives PICKED_UP and DELIVERED. PICKED_UP is reachable from both PREPARING
+      // (restaurant didn't mark READY) and READY (restaurant did mark it).
       const riderAllowed: OrderStatus[] = [OrderStatus.PICKED_UP, OrderStatus.DELIVERED]
       if (riderAllowed.includes(dto.status)) {
         try {
@@ -949,6 +953,38 @@ export class OrdersService {
     })
   }
 
+  // ── Customer contact for tap-to-call (rider only) ────────────────
+
+  async getCustomerContactForOrder(
+    orderId: string,
+    riderUserId: string,
+  ): Promise<{ customerId: string; firstName: string; lastName: string; phone: string | null }> {
+    if (!Types.ObjectId.isValid(orderId)) throw new NotFoundException('Order not found')
+
+    const order = await this.orderModel
+      .findById(orderId, { customerId: 1, riderId: 1 })
+      .populate<{ customerId: { _id: Types.ObjectId; firstName: string; lastName: string; phone: string | null } }>(
+        'customerId',
+        'firstName lastName phone',
+      )
+      .lean()
+
+    if (!order) throw new NotFoundException('Order not found')
+
+    // Only the assigned rider may fetch the customer's contact
+    if (!order.riderId || order.riderId.toString() !== riderUserId) {
+      throw new ForbiddenException('You are not the assigned rider for this order')
+    }
+
+    const customer = order.customerId as { _id: Types.ObjectId; firstName: string; lastName: string; phone: string | null }
+    return {
+      customerId: customer._id.toString(),
+      firstName: customer.firstName,
+      lastName: customer.lastName,
+      phone: customer.phone ?? null,
+    }
+  }
+
   // ── Rider contact for tap-to-call (customer/restaurant) ──────────
 
   async getRiderContactForOrder(
@@ -1022,15 +1058,27 @@ export class OrdersService {
     const restaurant = await this.restaurantsService.findByIdRaw(order.restaurantId.toString())
     const ownerId = restaurant.ownerId.toString()
 
-    Promise.all([
-      this.notificationsService.onRiderAssigned(riderUserId, order.orderNumber, orderIdStr),
+    // Auto-advance to PREPARING so the customer sees "Restaurant is preparing your order"
+    // immediately — no need for restaurant staff to be watching their screen.
+    // Only advance if still CONFIRMED (guard against double-fire on concurrent calls).
+    const preparing = await this.orderModel.findOneAndUpdate(
+      { _id: order._id, status: OrderStatus.CONFIRMED },
+      { $set: { status: OrderStatus.PREPARING } },
+      { new: true },
+    )
+    const liveOrder = preparing ?? order
+
+    void Promise.all([
+      this.notificationsService.onRiderAssigned(riderUserId, liveOrder.orderNumber, orderIdStr),
       // Push + SMS to restaurant: "Rider X is on the way, have it ready"
       // This fires even if no one has the admin dashboard open.
-      this.notificationsService.onRiderComingToPickup(ownerId, riderUserId, order.orderNumber, orderIdStr),
-      this.trackingService.notifyRiderNewJob(riderUserId, order),
-      // Tell the customer + restaurant their "Searching for rider" banner can flip to "Rider on the way"
-      this.trackingService.notifyOrderStatusUpdate(orderIdStr, customerId, ownerId, order.status, order.estimatedTime ?? undefined),
-      // Richer payload so dashboards can populate the rider chip without an extra fetch
+      this.notificationsService.onRiderComingToPickup(ownerId, riderUserId, liveOrder.orderNumber, orderIdStr),
+      // Notify customer of the PREPARING status so their tracking screen updates
+      preparing
+        ? this.notificationsService.onOrderStatusChanged(customerId, liveOrder.orderNumber, orderIdStr, OrderStatus.PREPARING)
+        : Promise.resolve(),
+      this.trackingService.notifyRiderNewJob(riderUserId, liveOrder),
+      this.trackingService.notifyOrderStatusUpdate(orderIdStr, customerId, ownerId, liveOrder.status, liveOrder.estimatedTime ?? undefined),
       this.trackingService.notifyRiderAssigned(ownerId, customerId, {
         orderId: orderIdStr,
         riderId,
@@ -1038,7 +1086,7 @@ export class OrdersService {
       }),
     ]).catch(() => undefined)
 
-    return order
+    return liveOrder
   }
 
   // ── Used by TrackingGateway (removed — orderId now comes from client) ──

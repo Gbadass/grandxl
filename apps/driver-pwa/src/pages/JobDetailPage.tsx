@@ -22,7 +22,7 @@ export default function JobDetailPage() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <AlertCircle size={32} className="text-zinc-600" />
-        <p className="text-sm text-zinc-400">This job is no longer available</p>
+        <p className="text-sm text-zinc-400">{t('job_unavailable')}</p>
         <button
           onClick={() => void navigate(ROUTES.AVAILABLE_JOBS)}
           className="text-sm text-primary underline cursor-pointer"
@@ -50,7 +50,7 @@ export default function JobDetailPage() {
       void navigate(`/delivery/${order!._id}`, { replace: true })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg ?? 'Could not accept job. Try again.')
+      toast.error(msg ?? t('job_accept_error'))
       setLoading(null)
     }
   }
@@ -86,11 +86,11 @@ export default function JobDetailPage() {
           <p className="text-2xl font-display font-bold text-primary mt-0.5">
             {formatMoney(fee, order.currency)}
           </p>
-          <p className="text-xs text-zinc-600 mt-0.5">you earn on this delivery</p>
+          <p className="text-xs text-zinc-600 mt-0.5">{t('you_earn_on_delivery')}</p>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2">
           <Package size={12} className="text-zinc-500" />
-          {itemCount} {itemCount === 1 ? 'item' : 'items'}
+          {t('item_count', { count: itemCount })}
         </div>
       </div>
 
@@ -106,7 +106,7 @@ export default function JobDetailPage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-0.5">
-              Pick up from
+              {t('pick_up_from')}
             </p>
             <p className="text-sm text-zinc-200 leading-snug">{pickupAddress}</p>
           </div>
@@ -121,7 +121,7 @@ export default function JobDetailPage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-0.5">
-              Deliver to
+              {t('deliver_to')}
             </p>
             <p className="text-sm text-zinc-200 leading-snug">
               {order.deliveryAddress.street}, {order.deliveryAddress.city}
@@ -144,7 +144,7 @@ export default function JobDetailPage() {
             <span className="flex items-center gap-1.5">
               {t('tip')}
               <span className="text-[10px] text-secondary font-semibold bg-secondary/10 px-1.5 py-0.5 rounded-full">
-                Customer tip
+                {t('customer_tip_badge')}
               </span>
             </span>
             <span className="text-secondary font-semibold">
@@ -153,7 +153,7 @@ export default function JobDetailPage() {
           </div>
         )}
         <div className="mt-2 flex justify-between border-t border-zinc-800 pt-2.5 font-bold text-zinc-100">
-          <span>You earn</span>
+          <span>{t('you_earn')}</span>
           <span className="text-primary text-base">{formatMoney(fee, order.currency)}</span>
         </div>
       </div>
@@ -163,7 +163,7 @@ export default function JobDetailPage() {
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3">
           <Clock size={14} className="text-zinc-500 shrink-0" />
           <p className="text-xs text-zinc-400">
-            Estimated delivery time: <span className="text-zinc-200 font-medium">{order.estimatedTime} min</span>
+            {t('estimated_delivery_time', { minutes: order.estimatedTime })}
           </p>
         </div>
       )}

@@ -65,6 +65,10 @@ export function useSocket(): void {
       void qc.invalidateQueries({ queryKey: ['notifications'] })
 
       if (isRestaurantOwner) {
+        // Guard against duplicate events: a user with both RESTAURANT_OWNER and
+        // SUPER_ADMIN roles joins two socket rooms and would receive order:new twice.
+        const current = useRestaurantAlertStore.getState().pendingOrder
+        if (current?._id?.toString() === order._id?.toString()) return
         setPendingOrder(order)
         startLoopAlarm()
         showBrowserNotification(`New order · ${order.orderNumber}`, {
@@ -76,6 +80,7 @@ export function useSocket(): void {
             window.location.assign(`/restaurant/orders/${order._id}`)
           },
         })
+        return
       }
 
       if (isSuperAdmin) {
@@ -90,24 +95,32 @@ export function useSocket(): void {
       }
     }
 
-    function onStatusUpdate({ orderId }: { orderId: string }) {
+    function onStatusUpdate({ orderId, status }: { orderId: string; status: string }) {
       invalidateLiveOrders()
       void qc.invalidateQueries({ queryKey: ['order', orderId] })
       void qc.invalidateQueries({ queryKey: ['notifications'] })
+      // Fallback dismissal: when rider accepts, assignRider auto-advances the order
+      // to PREPARING and fires order:status_update. Dismiss the modal here too so
+      // the restaurant isn't stuck waiting for order:rider_assigned if it arrives first.
+      if (isRestaurantOwner && status && status !== 'pending' && status !== 'confirmed') {
+        const currentPending = useRestaurantAlertStore.getState().pendingOrder
+        if (currentPending?._id?.toString() === orderId) {
+          stopLoopAlarm()
+          setPendingOrder(null)
+        }
+      }
     }
 
     function onRiderAssigned({ orderId }: { orderId: string }) {
       invalidateLiveOrders()
       void qc.invalidateQueries({ queryKey: ['order', orderId] })
       if (isRestaurantOwner) {
-        // If the new-order modal is open for THIS order, dismiss it — the rider
-        // coming to pick it up is all the confirmation the restaurant needs.
         const currentPending = useRestaurantAlertStore.getState().pendingOrder
-        if (currentPending?._id === orderId) {
+        if (currentPending?._id?.toString() === orderId) {
           stopLoopAlarm()
           setPendingOrder(null)
         }
-        toast.success('🏍️ Rider accepted — on the way to pick up!', {
+        toast.success('Rider accepted — on the way to pick up!', {
           id: `rider-accepted-${orderId}`,
           duration: 5000,
         })

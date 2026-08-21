@@ -85,14 +85,20 @@ export default function RestaurantOrderDetailPage() {
     onError: () => toast.error('Failed to cancel order'),
   })
 
-  // Auto-refresh this order when any status change arrives (e.g. rider accepts)
+  // Auto-refresh this order on status change OR rider assignment
   useEffect(() => {
     if (!id) return
-    function onStatusUpdate(data: { orderId: string }) {
+    function refresh(data: { orderId: string }) {
       if (data.orderId === id) void qc.invalidateQueries({ queryKey: ['order', id] })
     }
-    socket.on('order:status_update', onStatusUpdate)
-    return () => { socket.off('order:status_update', onStatusUpdate) }
+    socket.on('order:status_update', refresh)
+    // Rider acceptance emits rider_assigned (not status_update) — without this
+    // the page never re-fetches and order.riderId stays null → false warning
+    socket.on('order:rider_assigned', refresh)
+    return () => {
+      socket.off('order:status_update', refresh)
+      socket.off('order:rider_assigned', refresh)
+    }
   }, [id, qc])
 
   if (isInitializing || isLoading) {

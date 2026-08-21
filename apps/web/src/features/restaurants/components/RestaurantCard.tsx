@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Star, Clock, Heart } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { Restaurant } from '@grandxl/types'
 import { formatMoney, isRestaurantOpen } from '@grandxl/utils'
 import type { RestaurantHours } from '@grandxl/utils'
@@ -38,6 +39,7 @@ export function RestaurantCard({ restaurant }: Props) {
   const isOpen = restaurant.isOpen && isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const { isFavorited, toggleFavorite } = useFavorites()
+  const { t } = useTranslation('restaurants')
 
   return (
     <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.985 }} transition={{ duration: 0.15 }}>
@@ -73,11 +75,11 @@ export function RestaurantCard({ restaurant }: Props) {
             {/* Closed badge */}
             {!isOpen ? (
               <div className="bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
-                CLOSED
+                {t('card.closedBadge')}
               </div>
             ) : isOpen && isFree ? (
               <div className="bg-green-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
-                FREE DELIVERY
+                {t('card.freeDeliveryBadge')}
               </div>
             ) : (
               <div />
@@ -103,7 +105,7 @@ export function RestaurantCard({ restaurant }: Props) {
                     toggleFavorite(restaurant._id)
                   }}
                   className="h-7 w-7 flex items-center justify-center rounded-full bg-white/95 backdrop-blur-sm shadow-sm cursor-pointer transition-transform active:scale-90"
-                  aria-label={isFavorited(restaurant._id) ? 'Remove from favorites' : 'Save restaurant'}
+                  aria-label={isFavorited(restaurant._id) ? t('card.removeFavorite') : t('card.saveRestaurant')}
                 >
                   <Heart
                     size={14}
@@ -150,7 +152,7 @@ export function RestaurantCard({ restaurant }: Props) {
           {/* Delivery fee row */}
           <div className="mt-2 flex items-center gap-2 text-[11px]">
             <span className={isFree ? 'font-semibold text-green-600' : 'text-gray-500'}>
-              {isFree ? 'Free delivery' : `${formatMoney(restaurant.deliveryFeeFixed, restaurant.currency)} delivery`}
+              {isFree ? t('freeDelivery') : `${formatMoney(restaurant.deliveryFeeFixed, restaurant.currency)} delivery`}
             </span>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { useVerifyOtp } from '../../features/auth/hooks/useVerifyOtp'
 import { useSendOtp } from '../../features/auth/hooks/useSendOtp'
 import { AuthLayout } from '../../features/auth/components/AuthLayout'
@@ -26,6 +27,7 @@ const shakeVariants = {
 export default function VerifyOtpPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { t } = useTranslation('auth')
   const [searchParams] = useSearchParams()
 
   // Phone comes from navigate state (RegisterPage) or query param fallback
@@ -138,7 +140,7 @@ export default function VerifyOtpPage() {
   function handleVerify() {
     if (!isComplete || isVerifying) return
     if (!phone) {
-      triggerShake('Phone number is missing. Please go back and try again.')
+      triggerShake(t('otp.phoneMissing'))
       return
     }
 
@@ -149,7 +151,7 @@ export default function VerifyOtpPage() {
           void navigate(ROUTES.HOME, { replace: true })
         },
         onError: () => {
-          triggerShake('The code you entered is incorrect. Please try again.')
+          triggerShake(t('otp.incorrectCode'))
           setDigits(Array(OTP_LENGTH).fill(''))
           setTimeout(() => focusAt(0), 50)
         },
@@ -171,8 +173,8 @@ export default function VerifyOtpPage() {
 
   return (
     <AuthLayout
-      title="Verify your number"
-      subtitle={phone ? `We sent a 6-digit code to ${phone}` : 'Enter the 6-digit code we sent you'}
+      title={t('otp.title')}
+      subtitle={phone ? t('otp.subtitle', { phone }) : t('otp.subtitleFallback')}
     >
       <div className="space-y-6">
         {/* OTP inputs */}
@@ -198,7 +200,7 @@ export default function VerifyOtpPage() {
                 onChange={(e) => handleChange(index, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(index, e)}
                 onPaste={handlePaste}
-                aria-label={`OTP digit ${index + 1}`}
+                aria-label={t('otp.digitLabel', { number: index + 1 })}
                 className={`
                   h-14 w-12 rounded-2xl border-2 text-center text-xl font-bold
                   transition-all duration-150 outline-none
@@ -243,7 +245,7 @@ export default function VerifyOtpPage() {
             {isVerifying && (
               <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
             )}
-            {isVerifying ? 'Verifying…' : 'Verify'}
+            {isVerifying ? t('otp.verifying') : t('otp.submit')}
           </motion.button>
         </motion.div>
 
@@ -257,8 +259,7 @@ export default function VerifyOtpPage() {
         >
           {cooldown > 0 ? (
             <p className="text-sm text-gray-500">
-              Resend code in{' '}
-              <span className="font-semibold text-gray-700 tabular-nums">{cooldown}s</span>
+              {t('otp.resendIn', { seconds: cooldown })}
             </p>
           ) : (
             <button
@@ -268,7 +269,7 @@ export default function VerifyOtpPage() {
               className="text-sm font-semibold text-primary hover:underline cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               style={{ touchAction: 'manipulation' }}
             >
-              {isSending ? 'Sending…' : 'Resend code'}
+              {isSending ? t('otp.sending') : t('otp.resend')}
             </button>
           )}
         </motion.div>
@@ -281,14 +282,14 @@ export default function VerifyOtpPage() {
           animate="visible"
           className="text-center text-sm text-gray-500"
         >
-          Wrong number?{' '}
+          {t('otp.wrongNumber')}{' '}
           <button
             type="button"
             onClick={() => void navigate(-1)}
             className="font-semibold text-primary hover:underline cursor-pointer"
             style={{ touchAction: 'manipulation' }}
           >
-            Go back
+            {t('otp.goBack')}
           </button>
         </motion.p>
       </div>

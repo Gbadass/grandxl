@@ -65,6 +65,9 @@ export function AppRouter() {
       </Route>
 
       <Route path={ROUTES.UNAUTHORIZED} element={wrap(<PendingVerificationPage />)} />
+
+      {/* Catch-all: redirect unknown paths to home */}
+      <Route path="*" element={wrap(<HomePage />)} />
     </Routes>
   )
 }

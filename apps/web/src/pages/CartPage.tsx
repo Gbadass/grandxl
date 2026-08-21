@@ -66,7 +66,7 @@ export default function CartPage() {
       <div className="py-4">
         <h1 className="font-display font-bold text-xl text-gray-900">{t('cart:title')}</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          {items.length} {items.length === 1 ? 'item' : 'items'}
+          {t('cart:itemCount', { count: items.length })}
         </p>
       </div>
 
@@ -119,7 +119,7 @@ export default function CartPage() {
                   }
                   className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 cursor-pointer text-gray-600 hover:border-red-400 hover:text-red-500 transition-colors"
                   style={{ touchAction: 'manipulation' }}
-                  aria-label={item.quantity === 1 ? 'Remove item' : 'Decrease quantity'}
+                  aria-label={item.quantity === 1 ? t('remove_item_label') : t('decrease_qty_label')}
                 >
                   {item.quantity === 1 ? <Trash2 size={13} /> : <Minus size={13} />}
                 </motion.button>
@@ -134,7 +134,7 @@ export default function CartPage() {
                   onClick={() => updateQuantity(item.menuItemId, item.quantity + 1)}
                   className="flex h-8 w-8 items-center justify-center rounded-full bg-primary cursor-pointer text-white hover:bg-primary/90 transition-colors"
                   style={{ touchAction: 'manipulation' }}
-                  aria-label="Increase quantity"
+                  aria-label={t('increase_qty_label')}
                 >
                   <Plus size={13} />
                 </motion.button>
@@ -186,7 +186,7 @@ export default function CartPage() {
         </div>
         <div className="flex justify-between text-sm text-gray-500">
           <span>{t('cart:deliveryFee')}</span>
-          <span className="text-gray-400 text-xs italic">At checkout</span>
+          <span className="text-gray-400 text-xs italic">{t('cart:atCheckout')}</span>
         </div>
         {discount > 0 && (
           <motion.div

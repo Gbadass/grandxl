@@ -28,6 +28,7 @@ const NotificationsPage   = lazy(() => import('../pages/NotificationsPage'))
 const AddressesPage       = lazy(() => import('../pages/AddressesPage'))
 const PaymentCallbackPage = lazy(() => import('../pages/PaymentCallbackPage'))
 const FavoritesPage       = lazy(() => import('../pages/FavoritesPage'))
+const SearchPage          = lazy(() => import('../pages/SearchPage'))
 const NotFoundPage        = lazy(() => import('../components/errors/NotFoundPage'))
 
 function PageSkeleton() {
@@ -64,6 +65,7 @@ export function AppRouter() {
             <Route path={ROUTES.RESTAURANTS}      element={wrap(<RestaurantsPage />)} />
             <Route path="/restaurants/:id"        element={wrap(<RestaurantPage />)} />
             <Route path={ROUTES.PAYMENT_CALLBACK} element={wrap(<PaymentCallbackPage />)} />
+            <Route path={ROUTES.SEARCH}           element={wrap(<SearchPage />)} />
 
             {/* Protected app pages */}
             <Route element={<ProtectedRoute />}>

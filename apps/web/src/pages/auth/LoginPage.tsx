@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Phone, Mail } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useLogin } from '../../features/auth/hooks/useLogin'
 import { AuthLayout } from '../../features/auth/components/AuthLayout'
 import { FormField } from '../../features/auth/components/FormField'
@@ -26,6 +27,7 @@ const item = {
 export default function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { t } = useTranslation('auth')
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? ROUTES.HOME
   const { mutate: login, isPending, isError } = useLogin()
   const [mode, setMode] = useState<Mode>('phone')
@@ -43,7 +45,7 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthLayout title="Welcome back" subtitle="Sign in to continue ordering">
+    <AuthLayout title={t('login.title')} subtitle={t('login.subtitle')}>
       {/* Phone / Email segmented toggle */}
       <motion.div
         custom={0} variants={item} initial="hidden" animate="visible"
@@ -60,7 +62,7 @@ export default function LoginPage() {
             style={{ touchAction: 'manipulation' }}
           >
             {m === 'phone' ? <Phone size={14} /> : <Mail size={14} />}
-            {m === 'phone' ? 'Phone' : 'Email'}
+            {m === 'phone' ? t('login.phoneTab') : t('login.emailTab')}
           </button>
         ))}
       </motion.div>
@@ -70,10 +72,10 @@ export default function LoginPage() {
           <FormField
             {...register('identifier')}
             id="identifier"
-            label={mode === 'phone' ? 'Phone number' : 'Email address'}
+            label={mode === 'phone' ? t('login.phoneLabel') : t('login.emailLabel')}
             type={mode === 'email' ? 'email' : 'tel'}
             inputMode={mode === 'phone' ? 'tel' : 'email'}
-            placeholder={mode === 'phone' ? '+2348012345678' : 'you@example.com'}
+            placeholder={mode === 'phone' ? t('login.phonePlaceholder') : t('login.emailPlaceholder')}
             autoComplete={mode === 'phone' ? 'tel' : 'email'}
             error={errors.identifier?.message}
           />
@@ -83,15 +85,15 @@ export default function LoginPage() {
           <FormField
             {...register('password')}
             id="password"
-            label="Password"
+            label={t('login.passwordLabel')}
             type="password"
-            placeholder="Your password"
+            placeholder={t('login.passwordPlaceholder')}
             autoComplete="current-password"
             error={errors.password?.message}
           />
           <div className="text-right">
             <Link to={ROUTES.FORGOT_PASSWORD} className="text-xs text-primary font-medium hover:underline cursor-pointer">
-              Forgot password?
+              {t('login.forgotPassword')}
             </Link>
           </div>
         </motion.div>
@@ -102,7 +104,7 @@ export default function LoginPage() {
             animate={{ opacity: 1, y: 0 }}
             className="text-sm text-red-500 text-center py-2.5 bg-red-50 rounded-2xl px-3"
           >
-            Incorrect credentials. Please try again.
+            {t('login.errorCredentials')}
           </motion.p>
         )}
 
@@ -118,7 +120,7 @@ export default function LoginPage() {
             {isPending && (
               <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
             )}
-            {isPending ? 'Signing in…' : 'Sign in'}
+            {isPending ? t('login.signingIn') : t('login.submit')}
           </motion.button>
         </motion.div>
       </form>
@@ -127,9 +129,9 @@ export default function LoginPage() {
         custom={4} variants={item} initial="hidden" animate="visible"
         className="mt-7 text-center text-sm text-gray-500"
       >
-        New to GrandXL?{' '}
+        {t('login.newTo')}{' '}
         <Link to={ROUTES.REGISTER} className="font-semibold text-primary hover:underline cursor-pointer">
-          Create account
+          {t('login.createAccount')}
         </Link>
       </motion.p>
     </AuthLayout>

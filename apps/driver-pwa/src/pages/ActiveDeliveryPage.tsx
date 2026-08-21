@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MapPin, Navigation, CheckCircle2, Package, Bike, Phone, Zap, AlertTriangle, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -8,7 +9,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useQuery } from '@tanstack/react-query'
 import { ordersApi, ridersApi, chatApi } from '@grandxl/api-client'
-import type { ChatMessage } from '@grandxl/api-client'
+import type { ChatMessage, CustomerContact } from '@grandxl/api-client'
 import { OrderStatus } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
@@ -48,13 +49,14 @@ function FitBounds({ points }: { points: [number, number][] }) {
 }
 
 const STEPS = [
-  { key: 'heading',    label: 'Head to\nrestaurant', Icon: Bike,          activeFor: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY] },
-  { key: 'pickup',     label: 'Pick up\norder',       Icon: Package,       activeFor: [OrderStatus.READY] },
-  { key: 'delivering', label: 'Deliver to\ncustomer',  Icon: Navigation,   activeFor: [OrderStatus.PICKED_UP] },
-  { key: 'done',       label: 'Delivered!',            Icon: CheckCircle2, activeFor: [OrderStatus.DELIVERED] },
+  { key: 'heading',    labelKey: 'step_head',       Icon: Bike,          activeFor: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY] },
+  { key: 'pickup',     labelKey: 'step_pickup',     Icon: Package,       activeFor: [OrderStatus.READY] },
+  { key: 'delivering', labelKey: 'step_delivering', Icon: Navigation,    activeFor: [OrderStatus.PICKED_UP] },
+  { key: 'done',       labelKey: 'step_done',       Icon: CheckCircle2,  activeFor: [OrderStatus.DELIVERED] },
 ]
 
 function StepTracker({ status }: { status: OrderStatus }) {
+  const { t } = useTranslation('rider')
   const currentIdx =
     [OrderStatus.CONFIRMED, OrderStatus.PREPARING].includes(status as OrderStatus) ? 0
     : status === OrderStatus.READY     ? 1
@@ -85,7 +87,7 @@ function StepTracker({ status }: { status: OrderStatus }) {
               <p className={`text-[9px] font-medium text-center leading-tight max-w-[52px] whitespace-pre-line ${
                 isActive ? 'text-primary' : isDone ? 'text-green-400' : 'text-zinc-700'
               }`}>
-                {step.label}
+                {t(step.labelKey)}
               </p>
             </div>
             {i < STEPS.length - 1 && (
@@ -107,6 +109,7 @@ function StepTracker({ status }: { status: OrderStatus }) {
 }
 
 function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; currentUserId: string; onFullChat: () => void }) {
+  const { t } = useTranslation('rider')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [text, setText] = useState('')
   const [peerTyping, setPeerTyping] = useState(false)
@@ -237,7 +240,7 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
     >
       <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-zinc-200">Chat with customer</p>
+          <p className="text-sm font-semibold text-zinc-200">{t('chat_title')}</p>
           {unreadCount > 0 && (
             <span className="h-5 min-w-5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center px-1">
               {unreadCount}
@@ -249,12 +252,12 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
           className="text-xs text-primary font-semibold cursor-pointer hover:opacity-80 transition-opacity"
           style={{ touchAction: 'manipulation' }}
         >
-          Full chat →
+          {t('full_chat')} →
         </button>
       </div>
       <div className="h-52 overflow-y-auto px-4 py-3 flex flex-col gap-2">
         {messages.length === 0 && !peerTyping && (
-          <p className="text-xs text-zinc-600 text-center mt-8">No messages yet.</p>
+          <p className="text-xs text-zinc-600 text-center mt-8">{t('no_messages')}</p>
         )}
         {messages.map((m) => {
           const isMe = m.senderId === currentUserId
@@ -268,10 +271,10 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
                     : 'bg-zinc-800 text-zinc-200 rounded-bl-sm'
                 } ${m.status === 'sending' ? 'opacity-60' : ''}`}
               >
-                {m.deletedAt ? <span className="italic opacity-60">Removed</span> : m.text}
+                {m.deletedAt ? <span className="italic opacity-60">{t('chat_message_removed')}</span> : m.text}
               </div>
               {isMe && m.readAt && (
-                <span className="text-[10px] text-primary/70 mt-0.5 mr-1">Read</span>
+                <span className="text-[10px] text-primary/70 mt-0.5 mr-1">{t('chat_read')}</span>
               )}
               {isFailed && (
                 <button
@@ -281,7 +284,7 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
                   }}
                   className="text-[11px] text-red-400 font-semibold mt-0.5 cursor-pointer"
                 >
-                  Failed — retry
+                  {t('chat_failed_retry')}
                 </button>
               )}
             </div>
@@ -295,7 +298,7 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
                   animate={{ y: [0, -3, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: d }} />
               ))}
             </div>
-            <span className="text-xs text-zinc-600">Customer is typing…</span>
+            <span className="text-xs text-zinc-600">{t('chat_customer_typing')}</span>
           </div>
         )}
         <div ref={bottomRef} />
@@ -305,7 +308,7 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
           value={text}
           onChange={(e) => handleInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          placeholder="Message customer..."
+          placeholder={t('message_placeholder')}
           maxLength={500}
           className="flex-1 rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
@@ -315,7 +318,7 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
           className="px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl disabled:opacity-40 cursor-pointer"
           style={{ minHeight: '44px', touchAction: 'manipulation' }}
         >
-          Send
+          {t('send')}
         </button>
       </div>
     </motion.div>
@@ -325,19 +328,40 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
 export default function ActiveDeliveryPage() {
   const { orderId } = useParams<{ orderId: string }>()
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { activeOrder, setActiveOrder } = useRiderStore()
   const { user } = useAuthStore()
   const [acting, setActing] = useState(false)
   const [sosOpen, setSosOpen] = useState(false)
   const [riderPos, setRiderPos] = useState<[number, number] | null>(null)
+  const [customerContact, setCustomerContact] = useState<CustomerContact | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
   const order = activeOrder?._id === orderId ? activeOrder : null
 
+  // Bootstrap: restore activeOrder from server on hard-refresh (Zustand resets on page load)
+  useEffect(() => {
+    if (order) return
+    ridersApi.getActiveJob()
+      .then((res) => { if (res.data.data) setActiveOrder(res.data.data) })
+      .catch(() => undefined)
+  }, [orderId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch customer contact so the call button works
+  useEffect(() => {
+    if (!order) return
+    ordersApi.getCustomerContact(order._id)
+      .then((res) => setCustomerContact(res.data.data))
+      .catch(() => undefined)
+  }, [order?._id])
+
   const isPendingPickup = order
     ? [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY].includes(order.status as OrderStatus)
     : false
-  const isReadyForPickup = order?.status === OrderStatus.READY
+  // Rider can confirm pickup from PREPARING (restaurant auto-notified) or READY (restaurant manually marked)
+  const isReadyForPickup = order
+    ? [OrderStatus.PREPARING, OrderStatus.READY].includes(order.status as OrderStatus)
+    : false
   const isPickedUp = order?.status === OrderStatus.PICKED_UP
 
   // Phase-aware destination: restaurant first, then delivery address
@@ -427,7 +451,7 @@ export default function ActiveDeliveryPage() {
       <div className="flex h-full items-center justify-center px-6">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 rounded-full border-2 border-zinc-700 border-t-primary animate-spin" />
-          <p className="text-sm text-zinc-500">Loading order…</p>
+          <p className="text-sm text-zinc-500">{t('loading_order')}</p>
         </motion.div>
       </div>
     )
@@ -451,9 +475,9 @@ export default function ActiveDeliveryPage() {
     try {
       const res = await ordersApi.updateStatus(order!._id, { status: OrderStatus.PICKED_UP })
       setActiveOrder(res.data.data)
-      toast.success('Picked up! Head to the customer now.')
+      toast.success(t('picked_up_success'))
     } catch {
-      toast.error('Could not update. Try again.')
+      toast.error(t('update_error'))
     } finally {
       setActing(false)
     }
@@ -465,10 +489,10 @@ export default function ActiveDeliveryPage() {
     try {
       await ordersApi.updateStatus(order!._id, { status: OrderStatus.DELIVERED })
       setActiveOrder(null)
-      toast.success('Delivered! Great job.')
+      toast.success(t('delivered_success'))
       void navigate(ROUTES.HOME, { replace: true })
     } catch {
-      toast.error('Could not update. Try again.')
+      toast.error(t('update_error'))
     } finally {
       setActing(false)
     }
@@ -499,7 +523,7 @@ export default function ActiveDeliveryPage() {
           />
           {riderPos && (
             <Marker position={riderPos} icon={riderIcon}>
-              <Popup>You are here</Popup>
+              <Popup>{t('you_are_here')}</Popup>
             </Marker>
           )}
           {destination && (
@@ -518,7 +542,7 @@ export default function ActiveDeliveryPage() {
           style={{ touchAction: 'manipulation' }}
         >
           <Navigation size={13} className="text-primary" />
-          Navigate
+          {t('navigate')}
         </motion.button>
 
         {/* SOS button */}
@@ -527,10 +551,10 @@ export default function ActiveDeliveryPage() {
           onClick={() => setSosOpen(true)}
           className="absolute bottom-3 left-3 z-[1000] flex items-center gap-1.5 rounded-2xl bg-red-600/90 backdrop-blur-sm border border-red-500/40 px-3 py-2.5 text-xs font-bold text-white cursor-pointer hover:bg-red-600 transition-colors shadow-lg shadow-red-900/40"
           style={{ touchAction: 'manipulation' }}
-          aria-label="Emergency SOS"
+          aria-label={t('emergency_sos_label')}
         >
           <AlertTriangle size={13} />
-          SOS
+          {t('sos')}
         </motion.button>
 
         {/* Phase badge */}
@@ -541,7 +565,7 @@ export default function ActiveDeliveryPage() {
             transition={{ duration: 1.5, repeat: Infinity }}
           />
           <span className={`text-[10px] font-semibold ${isPendingPickup ? 'text-green-400' : 'text-primary'}`}>
-            {isPendingPickup ? 'Head to restaurant' : 'Active delivery'}
+            {isPendingPickup ? t('head_to_restaurant') : t('active_delivery_banner')}
           </span>
         </div>
       </div>
@@ -577,14 +601,14 @@ export default function ActiveDeliveryPage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className={`font-bold text-sm ${isPendingPickup ? 'text-green-400' : 'text-primary'}`}>
-              {isPendingPickup ? 'Head to restaurant' : 'On the way to customer'}
+              {isPendingPickup ? t('head_to_restaurant') : t('step_delivering')}
             </p>
             <p className="text-xs text-zinc-500 mt-0.5 font-mono">{order.orderNumber}</p>
           </div>
           <div className="text-right shrink-0">
             <div className="flex items-center gap-1 justify-end">
               <Zap size={11} className="text-primary" />
-              <p className="text-[10px] text-zinc-500">Earning</p>
+              <p className="text-[10px] text-zinc-500">{t('earning_label')}</p>
             </div>
             <p className="font-display font-bold text-zinc-100">{formatMoney(earnings, order.currency)}</p>
           </div>
@@ -610,16 +634,16 @@ export default function ActiveDeliveryPage() {
                     <MapPin size={13} className="text-green-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">Pick up from</p>
+                    <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">{t('pick_up_from')}</p>
                     <p className="text-sm text-zinc-200 font-medium">{order.restaurantPickupAddress.street}</p>
                     <p className="text-xs text-zinc-500 mt-0.5">{order.restaurantPickupAddress.city}, {order.restaurantPickupAddress.state}</p>
-                    <p className="text-xs text-zinc-600 mt-1">Show order number to staff on arrival</p>
+                    <p className="text-xs text-zinc-600 mt-1">{t('show_order_number')}</p>
                   </div>
                   <button
                     onClick={openNavigation}
                     className="h-8 w-8 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0 cursor-pointer hover:bg-green-500/25 transition-colors"
                     style={{ touchAction: 'manipulation' }}
-                    aria-label="Navigate to restaurant"
+                    aria-label={t('navigate_to_restaurant_label')}
                   >
                     <Navigation size={14} className="text-green-400" />
                   </button>
@@ -635,7 +659,7 @@ export default function ActiveDeliveryPage() {
               <MapPin size={13} className="text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">Deliver to</p>
+              <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">{t('deliver_to')}</p>
               <p className="text-sm text-zinc-200 font-medium">{order.deliveryAddress.street}</p>
               <p className="text-xs text-zinc-500 mt-0.5">{order.deliveryAddress.city}, {order.deliveryAddress.state}</p>
             </div>
@@ -644,7 +668,7 @@ export default function ActiveDeliveryPage() {
                 onClick={openNavigation}
                 className="h-8 w-8 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 cursor-pointer hover:bg-primary/25 transition-colors"
                 style={{ touchAction: 'manipulation' }}
-                aria-label="Navigate to customer"
+                aria-label={t('navigate_to_customer_label')}
               >
                 <Navigation size={14} className="text-primary" />
               </button>
@@ -661,11 +685,11 @@ export default function ActiveDeliveryPage() {
               className="rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm space-y-2"
             >
               <div className="flex justify-between text-zinc-500">
-                <span>Delivery fee</span>
+                <span>{t('delivery_fee_label')}</span>
                 <span className="text-zinc-300">{formatMoney(order.pricing.deliveryFee, order.currency)}</span>
               </div>
               <div className="flex justify-between text-zinc-500">
-                <span>Tip</span>
+                <span>{t('tip_label')}</span>
                 <span className="text-green-400 font-semibold">+{formatMoney(order.pricing.tip ?? 0, order.currency)}</span>
               </div>
             </motion.div>
@@ -680,16 +704,25 @@ export default function ActiveDeliveryPage() {
           className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-3.5"
         >
           <div className="h-10 w-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
-            <span className="font-display font-bold text-zinc-400">C</span>
+            <span className="font-display font-bold text-zinc-400">
+              {customerContact?.firstName?.[0]?.toUpperCase() ?? 'C'}
+            </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-zinc-500 mb-0.5">Customer</p>
-            <p className="text-sm font-semibold text-zinc-200">Contact on arrival</p>
+            <p className="text-xs text-zinc-500 mb-0.5">{t('customer_label')}</p>
+            <p className="text-sm font-semibold text-zinc-200">
+              {customerContact ? `${customerContact.firstName} ${customerContact.lastName}` : t('contact_on_arrival')}
+            </p>
           </div>
           <a
-            href="tel:"
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary cursor-pointer hover:bg-primary/25 transition-colors"
-            aria-label="Call customer"
+            href={customerContact?.phone ? `tel:${customerContact.phone}` : undefined}
+            onClick={!customerContact?.phone ? (e) => e.preventDefault() : undefined}
+            className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
+              customerContact?.phone
+                ? 'bg-primary/15 text-primary cursor-pointer hover:bg-primary/25'
+                : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
+            }`}
+            aria-label={t('call_customer_label')}
           >
             <Phone size={16} />
           </a>
@@ -731,14 +764,14 @@ export default function ActiveDeliveryPage() {
                       <AlertTriangle size={18} className="text-red-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-red-400">Emergency SOS</p>
-                      <p className="text-[10px] text-zinc-500 mt-0.5">Choose an option below</p>
+                      <p className="text-sm font-bold text-red-400">{t('emergency_title')}</p>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">{t('emergency_subtitle')}</p>
                     </div>
                   </div>
                   <button
                     onClick={() => setSosOpen(false)}
                     className="h-8 w-8 rounded-xl bg-zinc-800 flex items-center justify-center cursor-pointer hover:bg-zinc-700 transition-colors"
-                    aria-label="Close"
+                    aria-label={t('close_label')}
                   >
                     <X size={14} className="text-zinc-400" />
                   </button>
@@ -747,9 +780,9 @@ export default function ActiveDeliveryPage() {
                 {/* Emergency options */}
                 <div className="p-4 space-y-3">
                   {[
-                    { label: 'Nigerian Police', number: '199', desc: 'Emergency police response', color: 'blue' },
-                    { label: 'Ambulance', number: '767', desc: 'Medical emergency', color: 'green' },
-                    { label: 'General Emergency', number: '112', desc: 'All emergency services', color: 'red' },
+                    { label: t('police_name'), number: '199', desc: t('police_desc'), color: 'blue' },
+                    { label: t('ambulance_name'), number: '767', desc: t('ambulance_desc'), color: 'green' },
+                    { label: t('general_emergency_name'), number: '112', desc: t('general_emergency_desc'), color: 'red' },
                   ].map(({ label, number, desc, color }) => (
                     <a
                       key={number}
@@ -779,7 +812,7 @@ export default function ActiveDeliveryPage() {
                   ))}
 
                   <p className="text-center text-[10px] text-zinc-600 pt-1">
-                    Tapping a number will open your phone dialler
+                    {t('dialler_hint')}
                   </p>
                 </div>
               </motion.div>
@@ -788,20 +821,6 @@ export default function ActiveDeliveryPage() {
         </AnimatePresence>
 
         <AnimatePresence mode="wait">
-          {isPendingPickup && !isReadyForPickup && (
-            <motion.div
-              key="waiting-btn"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="w-full flex items-center justify-center gap-2.5 rounded-2xl border border-zinc-700 bg-zinc-900 py-4 text-sm text-zinc-500"
-              style={{ minHeight: '56px' }}
-            >
-              <span className="h-4 w-4 rounded-full border-2 border-zinc-700 border-t-zinc-400 animate-spin shrink-0" />
-              Waiting for restaurant to prepare order…
-            </motion.div>
-          )}
-
           {isReadyForPickup && (
             <motion.button
               key="pickup-btn"
@@ -818,7 +837,7 @@ export default function ActiveDeliveryPage() {
                 ? <span className="h-4 w-4 rounded-full border-2 border-zinc-900/40 border-t-zinc-900 animate-spin" />
                 : <Package size={18} />
               }
-              {acting ? 'Updating…' : 'Confirm pickup'}
+              {acting ? t('updating') : t('confirm_pickup')}
             </motion.button>
           )}
 
@@ -838,7 +857,7 @@ export default function ActiveDeliveryPage() {
                 ? <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
                 : <CheckCircle2 size={18} />
               }
-              {acting ? 'Marking delivered…' : 'Confirm delivery'}
+              {acting ? t('marking_delivered') : t('confirm_delivery')}
             </motion.button>
           )}
         </AnimatePresence>

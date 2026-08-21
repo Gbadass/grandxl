@@ -1,5 +1,6 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react'
 import * as Sentry from '@sentry/react'
+import i18n from '../../i18n'
 import { ROUTES } from '../../router/routes'
 
 interface Props { children: ReactNode }
@@ -24,13 +25,13 @@ export class PageErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex min-h-[60vh] flex-col items-center justify-center p-8 text-center">
-          <p className="text-lg font-semibold text-gray-800">Something went wrong on this page</p>
-          <p className="mt-1 text-sm text-gray-500">The rest of the app is still working.</p>
+          <p className="text-lg font-semibold text-gray-800">{i18n.t('common:pageError.title')}</p>
+          <p className="mt-1 text-sm text-gray-500">{i18n.t('common:pageError.subtitle')}</p>
           <a
             href={ROUTES.HOME}
             className="mt-4 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white"
           >
-            Go home
+            {i18n.t('common:pageError.goHome')}
           </a>
         </div>
       )

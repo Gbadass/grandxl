@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bike, Car, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -12,15 +13,15 @@ import { ROUTES } from '../router/routes'
 
 interface VehicleOption {
   type: VehicleType
-  label: string
-  sub: string
+  labelKey: string
+  subKey: string
   Icon: React.ElementType
 }
 
 const VEHICLES: VehicleOption[] = [
-  { type: VehicleType.BICYCLE,    label: 'Bicycle',    sub: 'Eco-friendly short routes',    Icon: Bike },
-  { type: VehicleType.MOTORCYCLE, label: 'Motorcycle', sub: 'Fast city deliveries',          Icon: Bike },
-  { type: VehicleType.CAR,        label: 'Car',        sub: 'Comfortable all-weather rides', Icon: Car },
+  { type: VehicleType.BICYCLE,    labelKey: 'vehicle_bicycle',    subKey: 'vehicle_bicycle_sub',    Icon: Bike },
+  { type: VehicleType.MOTORCYCLE, labelKey: 'vehicle_motorcycle', subKey: 'vehicle_motorcycle_sub', Icon: Bike },
+  { type: VehicleType.CAR,        labelKey: 'vehicle_car',        subKey: 'vehicle_car_sub',        Icon: Car },
 ]
 
 type Step = 'personal' | 'vehicle'
@@ -28,6 +29,7 @@ type Step = 'personal' | 'vehicle'
 export default function RegisterDriverPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { t } = useTranslation('rider')
   const phone = (location.state as { phone?: string } | null)?.phone ?? ''
 
   const { setRider } = useRiderStore()
@@ -50,15 +52,15 @@ export default function RegisterDriverPage() {
 
   function validatePersonal() {
     const e: typeof errors = {}
-    if (!firstName.trim()) e.firstName = 'First name is required'
-    if (!lastName.trim())  e.lastName  = 'Last name is required'
+    if (!firstName.trim()) e.firstName = t('first_name_required')
+    if (!lastName.trim())  e.lastName  = t('last_name_required')
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
   function validateVehicle() {
     const e: typeof errors = {}
-    if (!plate.trim()) e.plate = 'Plate number is required'
+    if (!plate.trim()) e.plate = t('plate_required')
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -87,16 +89,18 @@ export default function RegisterDriverPage() {
       })
       setRider(riderRes.data.data)
 
-      toast.success('Application submitted! Upload your documents next.')
+      toast.success(t('app_submitted'))
       void navigate(ROUTES.KYC_UPLOAD, { replace: true })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })
         ?.response?.data?.message
       if (msg?.includes('expired')) {
-        toast.error('Verification expired. Please start again.')
+        toast.error(t('expired_error'))
         void navigate(ROUTES.LOGIN, { replace: true })
+      } else if (msg) {
+        toast.error(msg)
       } else {
-        toast.error('Could not submit. Please try again.')
+        toast.error(t('submit_error'))
       }
     } finally {
       setLoading(false)
@@ -127,7 +131,7 @@ export default function RegisterDriverPage() {
         style={{ touchAction: 'manipulation' }}
       >
         <ChevronLeft size={18} />
-        Back
+        {t('back_btn')}
       </motion.button>
 
       <AnimatePresence mode="wait">
@@ -147,10 +151,10 @@ export default function RegisterDriverPage() {
                 <Bike size={24} className="text-primary" />
               </div>
               <h1 className="font-display text-2xl font-bold leading-tight text-zinc-100">
-                Create your account
+                {t('create_account')}
               </h1>
               <p className="mt-1.5 text-sm text-zinc-500">
-                Tell us who you are — phone confirmed ✓
+                {t('create_account_desc')}
               </p>
             </div>
 
@@ -158,13 +162,13 @@ export default function RegisterDriverPage() {
               {/* First name */}
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                  First name
+                  {t('first_name_label')}
                 </label>
                 <input
                   type="text"
                   value={firstName}
                   onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: undefined })) }}
-                  placeholder="e.g. Emeka"
+                  placeholder={t('first_name_placeholder')}
                   className={`w-full rounded-2xl border bg-zinc-900 px-4 py-4 text-sm text-zinc-100 placeholder-zinc-700 outline-none transition-all focus:ring-2 ${
                     errors.firstName
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
@@ -185,13 +189,13 @@ export default function RegisterDriverPage() {
               {/* Last name */}
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                  Last name
+                  {t('last_name_label')}
                 </label>
                 <input
                   type="text"
                   value={lastName}
                   onChange={(e) => { setLastName(e.target.value); setErrors((p) => ({ ...p, lastName: undefined })) }}
-                  placeholder="e.g. Okonkwo"
+                  placeholder={t('last_name_placeholder')}
                   className={`w-full rounded-2xl border bg-zinc-900 px-4 py-4 text-sm text-zinc-100 placeholder-zinc-700 outline-none transition-all focus:ring-2 ${
                     errors.lastName
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
@@ -216,7 +220,7 @@ export default function RegisterDriverPage() {
               className="mt-auto flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-bold text-white shadow-lg shadow-primary/20 transition-opacity hover:opacity-90 cursor-pointer"
               style={{ minHeight: '56px', touchAction: 'manipulation' }}
             >
-              Continue
+              {t('continue_btn')}
               <ChevronRight size={18} />
             </motion.button>
           </motion.div>
@@ -234,16 +238,16 @@ export default function RegisterDriverPage() {
           >
             <div className="mb-8">
               <h1 className="font-display text-2xl font-bold leading-tight text-zinc-100">
-                Your vehicle
+                {t('your_vehicle')}
               </h1>
               <p className="mt-1.5 text-sm text-zinc-500">
-                Select your vehicle type and enter your plate number
+                {t('your_vehicle_desc')}
               </p>
             </div>
 
             {/* Vehicle picker */}
             <div className="mb-5 flex flex-col gap-2.5">
-              {VEHICLES.map(({ type, label, sub, Icon }, i) => {
+              {VEHICLES.map(({ type, labelKey, subKey, Icon }, i) => {
                 const isSelected = vehicle === type
                 return (
                   <motion.button
@@ -267,9 +271,9 @@ export default function RegisterDriverPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`font-semibold text-sm transition-colors ${isSelected ? 'text-zinc-100' : 'text-zinc-300'}`}>
-                        {label}
+                        {t(labelKey)}
                       </p>
-                      <p className="text-xs text-zinc-500 mt-0.5">{sub}</p>
+                      <p className="text-xs text-zinc-500 mt-0.5">{t(subKey)}</p>
                     </div>
                     <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                       isSelected ? 'border-primary bg-primary' : 'border-zinc-700'
@@ -287,13 +291,13 @@ export default function RegisterDriverPage() {
             {/* Plate number */}
             <div className="mb-8">
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                Plate number
+                {t('plate_number_label')}
               </label>
               <input
                 type="text"
                 value={plate}
                 onChange={(e) => { setPlate(e.target.value); setErrors((p) => ({ ...p, plate: undefined })) }}
-                placeholder="e.g. ABC-123-XY"
+                placeholder={t('plate_number_placeholder')}
                 className={`w-full rounded-2xl border bg-zinc-900 px-4 py-4 font-mono text-sm tracking-widest text-zinc-100 placeholder-zinc-700 outline-none transition-all focus:ring-2 ${
                   errors.plate
                     ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
@@ -313,7 +317,7 @@ export default function RegisterDriverPage() {
             </div>
 
             <div className="mb-8 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-xs text-zinc-500 leading-relaxed">
-              Your application will be reviewed within 24 hours. We may contact you to verify your vehicle documents.
+              {t('vehicle_review_note')}
             </div>
 
             <motion.button
@@ -326,11 +330,11 @@ export default function RegisterDriverPage() {
               {loading ? (
                 <>
                   <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                  Submitting…
+                  {t('submitting')}
                 </>
               ) : (
                 <>
-                  Submit application
+                  {t('submit_application')}
                   <ChevronRight size={18} />
                 </>
               )}

@@ -18,5 +18,49 @@
   "restaurant": "restaurant",
   "restaurants": "restaurants",
   "noFavorites": "No saved restaurants yet",
-  "noFavoritesHint": "Tap the ♡ on any restaurant to save it here for quick access."
+  "noFavoritesHint": "Tap the ♡ on any restaurant to save it here for quick access.",
+
+  "good_morning": "Good morning",
+  "good_afternoon": "Good afternoon",
+  "good_evening": "Good evening",
+  "delivering": "Delivering",
+  "craving": "What are you craving?",
+  "all_categories": "All",
+  "top_rated_near": "Top rated near you",
+  "try_different": "Try a different category or location",
+  "see_all": "See all",
+
+  "freeDelivery": "Free delivery",
+  "changeDeliveryLocation": "Change delivery location",
+  "card": {
+    "closedBadge": "CLOSED",
+    "freeDeliveryBadge": "FREE DELIVERY",
+    "removeFavorite": "Remove from favorites",
+    "saveRestaurant": "Save restaurant"
+  },
+  "location": {
+    "title": "Set your location",
+    "subtitle": "So we can show restaurants near you",
+    "currentArea": "Current area",
+    "detecting": "Detecting your location…",
+    "useCurrentLocation": "Use my current location",
+    "gpsAutoDetect": "GPS auto-detect",
+    "searchPlaceholder": "Search city or neighbourhood…",
+    "noResults": "No results for \"{{query}}\"",
+    "citiesInBenue": "Cities in Benue",
+    "benueState": "Benue State",
+    "gpsNotAvailable": "GPS not available on this browser",
+    "locationSetTo": "Location set to {{city}}",
+    "locationDetected": "Location detected",
+    "locationResolveFailed": "Could not resolve location. Try searching manually.",
+    "locationDenied": "Location access denied. Please allow location in browser settings.",
+    "deliveryAreaSetTo": "Delivery area set to {{city}}",
+    "locationDetailsFailed": "Could not load location details. Try again."
+  },
+  "promo_free_title": "Free delivery",
+  "promo_free_sub": "On your very first order",
+  "promo_fast_title": "25 min or less",
+  "promo_fast_sub": "Fast food near you",
+  "promo_top_title": "Top rated",
+  "promo_top_sub": "Curated picks · 4.5+"
 }

@@ -77,14 +77,14 @@ export default function OtpVerifyPage() {
       } else {
         if (refreshToken) saveRiderToken(refreshToken)
         setAuth(user!, accessToken!)
-        toast.success('Verified! Welcome back.')
+        toast.success(t('verified_welcome'))
         void navigate(ROUTES.HOME, { replace: true })
       }
     } catch {
       setIsError(true)
       setOtp(Array(OTP_LENGTH).fill(''))
       inputRefs.current[0]?.focus()
-      toast.error('Invalid code. Please try again.')
+      toast.error(t('invalid_code'))
     } finally {
       setLoading(false)
     }
@@ -126,7 +126,7 @@ export default function OtpVerifyPage() {
         </div>
         <h1 className="mb-1 font-display text-2xl font-bold text-zinc-100">{t('verify_otp')}</h1>
         <p className="mb-8 text-sm text-zinc-400">
-          Code sent to <span className="text-zinc-300 font-medium">{phone}</span>
+          {t('code_sent_to')} <span className="text-zinc-300 font-medium">{phone}</span>
         </p>
       </motion.div>
 
@@ -157,7 +157,7 @@ export default function OtpVerifyPage() {
                 ? 'border-primary focus:border-primary focus:ring-primary/20'
                 : 'border-zinc-800 focus:border-primary focus:ring-primary/20'
             }`}
-            aria-label={`OTP digit ${i + 1}`}
+            aria-label={t('otp_digit_label', { number: i + 1 })}
           />
         ))}
       </motion.div>
@@ -170,7 +170,7 @@ export default function OtpVerifyPage() {
             exit={{ opacity: 0 }}
             className="mb-4 text-center text-sm text-red-400"
           >
-            Incorrect code. Please check and try again.
+            {t('incorrect_code')}
           </motion.p>
         )}
       </AnimatePresence>
@@ -188,7 +188,7 @@ export default function OtpVerifyPage() {
         {loading && (
           <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
         )}
-        {loading ? 'Verifying…' : t('verify_otp')}
+        {loading ? t('verifying') : t('verify_otp')}
       </motion.button>
 
       <motion.button
@@ -201,7 +201,7 @@ export default function OtpVerifyPage() {
         style={{ touchAction: 'manipulation' }}
       >
         {countdown > 0
-          ? `Resend code in ${countdown}s`
+          ? t('resend_countdown', { seconds: countdown })
           : t('resend_otp')}
       </motion.button>
     </div>

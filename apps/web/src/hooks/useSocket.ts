@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import toast from 'react-hot-toast'
+import { useQueryClient } from '@tanstack/react-query'
 import { socket } from '../lib/socket'
 import { useAuthStore } from '../store/auth.store'
 import { primeAudio, playStatusChime } from '../lib/alertSound'
@@ -18,6 +19,7 @@ const RIDER_ASSIGNED_TOAST = 'A rider has accepted your order and is heading to 
 
 export function useSocket(): void {
   const { isAuthenticated, accessToken } = useAuthStore()
+  const qc = useQueryClient()
 
   // Unlock AudioContext on first gesture
   useEffect(() => {
@@ -44,9 +46,16 @@ export function useSocket(): void {
     socket.auth = { token: accessToken }
     if (!socket.connected) socket.connect()
 
-    // Show a toast whenever order status changes — customer can tap the
-    // notification bell or go to Orders page to view details.
-    function onStatusUpdate({ status }: { status: string }) {
+    function invalidateOrders(orderId?: string) {
+      void qc.invalidateQueries({ queryKey: ['orders'] })
+      void qc.invalidateQueries({ queryKey: ['notifications'] })
+      if (orderId) void qc.invalidateQueries({ queryKey: ['order', orderId] })
+    }
+
+    // Show a toast whenever order status changes — also invalidates the active
+    // orders cache so the banner and order list update immediately.
+    function onStatusUpdate({ orderId, status }: { orderId: string; status: string }) {
+      invalidateOrders(orderId)
       const message = STATUS_TOASTS[status as OrderStatus]
       if (!message) return
       playStatusChime()
@@ -57,7 +66,8 @@ export function useSocket(): void {
       })
     }
 
-    function onRiderAssigned() {
+    function onRiderAssigned({ orderId }: { orderId: string }) {
+      invalidateOrders(orderId)
       playStatusChime()
       toast(RIDER_ASSIGNED_TOAST, { id: 'rider-assigned', duration: 5000 })
     }
@@ -69,7 +79,7 @@ export function useSocket(): void {
       socket.off('order:status_update', onStatusUpdate)
       socket.off('order:rider_assigned', onRiderAssigned)
     }
-  }, [isAuthenticated, accessToken])
+  }, [isAuthenticated, accessToken, qc])
 
   // Disconnect cleanly on app unmount
   useEffect(() => {

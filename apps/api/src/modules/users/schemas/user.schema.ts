@@ -47,11 +47,11 @@ export class UserDocument extends Document {
   @Prop({ required: true, trim: true })
   lastName!: string
 
-  @Prop({ type: String, lowercase: true, trim: true, default: null })
-  email!: string | null
+  @Prop({ type: String, lowercase: true, trim: true })
+  email?: string | null
 
-  @Prop({ type: String, trim: true, default: null })
-  phone!: string | null
+  @Prop({ type: String, trim: true })
+  phone?: string | null
 
   @Prop({ type: String, default: null })
   @Exclude()

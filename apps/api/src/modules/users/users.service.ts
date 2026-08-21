@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Logger,
+  OnModuleInit,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
@@ -27,11 +29,33 @@ export interface CreateUserDto {
 }
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
+  private readonly logger = new Logger(UsersService.name)
+
   constructor(
     @InjectModel(UserDocument.name)
     private readonly userModel: Model<UserDocument>,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // The email_1 index was originally created without sparse:true, which means
+    // any two users without an email address cause a duplicate key error (both
+    // have email:null which the non-sparse index treats as a real value).
+    // We drop it here so Mongoose rebuilds it as sparse on next ensureIndexes().
+    try {
+      const indexes = await this.userModel.collection.indexes()
+      const emailIdx = indexes.find((i) => i.name === 'email_1')
+      if (emailIdx && !emailIdx.sparse) {
+        await this.userModel.collection.dropIndex('email_1')
+        this.logger.log('Dropped non-sparse email_1 index — will be recreated as sparse')
+      }
+    } catch (err) {
+      // Index may not exist — safe to ignore
+      this.logger.warn(`Index migration skipped: ${(err as Error).message}`)
+    }
+    // Sync schema indexes (creates any missing ones, including the fixed email_1)
+    await this.userModel.syncIndexes()
+  }
 
   // ── Create ──────────────────────────────────────────────────────
 
@@ -45,7 +69,13 @@ export class UsersService {
       if (existing) throw new ConflictException('Email already registered')
     }
 
-    const user = new this.userModel({ ...dto, roles: dto.roles ?? [UserRole.CUSTOMER] })
+    // Omit null/undefined email and phone — the sparse unique indexes skip
+    // missing fields, but explicitly stored `null` is treated as a value and
+    // would conflict once a second user without email/phone is created.
+    const data: Record<string, unknown> = { ...dto, roles: dto.roles ?? [UserRole.CUSTOMER] }
+    if (!data['email']) delete data['email']
+    if (!data['phone']) delete data['phone']
+    const user = new this.userModel(data)
     return user.save()
   }
 

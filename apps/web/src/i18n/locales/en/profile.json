@@ -12,5 +12,20 @@
   "orderHistory": "Order history",
   "logout": "Sign out",
   "deleteAccount": "Delete account",
-  "saved": "Profile updated"
+  "saved": "Profile updated",
+  "sectionAccount": "My account",
+  "menuOrders": "My orders",
+  "menuOrdersSub": "Track and reorder",
+  "menuAddresses": "Saved addresses",
+  "menuAddressesSub": "Manage delivery locations",
+  "menuWallet": "Wallet",
+  "menuWalletSub": "Balance & transactions",
+  "menuNotifications": "Notifications",
+  "sectionSupport": "Support",
+  "menuHelp": "Help & Support",
+  "menuPrivacy": "Privacy Policy",
+  "menuTerms": "Terms of Service",
+  "signingOut": "Signing out…",
+  "signOut": "Sign out",
+  "version": "GrandXL v1.0 · Made with love for Nigeria"
 }

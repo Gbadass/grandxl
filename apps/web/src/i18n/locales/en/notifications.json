@@ -11,5 +11,8 @@
   "hoursAgo": "{{count}} hours ago",
   "oneHourAgo": "1 hour ago",
   "yesterday": "Yesterday",
-  "daysAgo": "{{count}} days ago"
+  "daysAgo": "{{count}} days ago",
+  "pushAlreadyEnabled": "Push notifications are enabled!",
+  "pushEnabled": "Push notifications enabled!",
+  "pushError": "Could not enable notifications."
 }

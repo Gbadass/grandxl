@@ -209,7 +209,7 @@ export default function NotificationsPage() {
 
       const reg = await navigator.serviceWorker.ready
       const existing = await reg.pushManager.getSubscription()
-      if (existing) { toast.success('Push notifications are enabled!'); return }
+      if (existing) { toast.success(t('pushAlreadyEnabled')); return }
 
       const { data } = await notificationsApi.getVapidPublicKey()
       const raw = data.data.publicKey
@@ -224,9 +224,9 @@ export default function NotificationsPage() {
       if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return
 
       await usersApi.saveWebPushSubscription({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } })
-      toast.success('Push notifications enabled!')
+      toast.success(t('pushEnabled'))
     } catch {
-      toast.error('Could not enable notifications.')
+      toast.error(t('pushError'))
     } finally {
       setEnablingPush(false)
     }

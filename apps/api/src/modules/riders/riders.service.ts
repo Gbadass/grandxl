@@ -6,9 +6,10 @@ import {
   ConflictException,
   ForbiddenException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
-import { Model, Types } from 'mongoose'
+import { Model, Types, type MongooseError } from 'mongoose'
 import * as bcrypt from 'bcryptjs'
 import { RiderDocument } from './schemas/rider.schema'
 import { OrdersService } from '../orders/orders.service'
@@ -335,19 +336,31 @@ export class RidersService {
           'This rider account has been terminated. Use the Reinstate action on their profile to re-activate.',
         )
       }
-      return this.riderModel.findOneAndUpdate(
+      const updated = await this.riderModel.findOneAndUpdate(
         { userId },
         { $set: { vehicleType: dto.vehicleType, vehiclePlate: dto.vehiclePlate ?? null, isVerified: true } },
         { new: true },
-      ) as Promise<RiderDocument>
+      )
+      if (!updated) throw new NotFoundException('Rider profile not found — please try again.')
+      return updated
     }
 
-    return this.riderModel.create({
-      userId,
-      vehicleType:  dto.vehicleType,
-      vehiclePlate: dto.vehiclePlate ?? null,
-      isVerified:   true,
-    })
+    try {
+      return await this.riderModel.create({
+        userId,
+        vehicleType:  dto.vehicleType,
+        vehiclePlate: dto.vehiclePlate ?? null,
+        isVerified:   true,
+      })
+    } catch (err) {
+      const mongoErr = err as MongooseError & { code?: number }
+      if (mongoErr.code === 11000) {
+        throw new ConflictException('A rider profile already exists for this account.')
+      }
+      throw new InternalServerErrorException(
+        mongoErr.message ?? 'Failed to create rider profile.',
+      )
+    }
   }
 
   async verifyRider(riderId: string): Promise<RiderDocument> {

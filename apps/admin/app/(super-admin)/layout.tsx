@@ -4,6 +4,7 @@ import { SocketProvider } from '../../src/components/SocketProvider'
 
 const NAV: NavItem[] = [
   { href: '/dashboard',   label: 'Dashboard',   icon: 'dashboard'   },
+  { href: '/dispatch',    label: 'Live Dispatch', icon: 'dispatch'  },
   { href: '/restaurants', label: 'Restaurants', icon: 'restaurants' },
   { href: '/riders',      label: 'Riders',      icon: 'riders'      },
   { href: '/orders',      label: 'Orders',      icon: 'orders'      },

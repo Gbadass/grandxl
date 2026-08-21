@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ChevronDown, Send } from 'lucide-react'
@@ -15,13 +16,13 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function formatDateLabel(iso: string) {
+function formatDateLabel(iso: string, t: (key: string) => string) {
   const d = new Date(iso)
   const today = new Date()
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
-  if (d.toDateString() === today.toDateString()) return 'Today'
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
+  if (d.toDateString() === today.toDateString()) return t('chat_today')
+  if (d.toDateString() === yesterday.toDateString()) return t('chat_yesterday')
   return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
 }
 
@@ -29,14 +30,6 @@ function isSameDay(a: string, b: string) {
   return new Date(a).toDateString() === new Date(b).toDateString()
 }
 
-const QUICK_REPLIES = [
-  "On my way!",
-  "At your gate",
-  "What's the gate number?",
-  "Almost there",
-  "I've arrived",
-  "Please come out",
-]
 
 // ── Read ticks ─────────────────────────────────────────────────────────────────
 
@@ -52,6 +45,7 @@ function Ticks({ isRead }: { isRead: boolean }) {
 // ── Typing indicator ───────────────────────────────────────────────────────────
 
 function TypingIndicator() {
+  const { t } = useTranslation('rider')
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -70,7 +64,7 @@ function TypingIndicator() {
           />
         ))}
       </div>
-      <span className="text-xs text-zinc-600 pb-1">Customer is typing…</span>
+      <span className="text-xs text-zinc-600 pb-1">{t('chat_customer_typing')}</span>
     </motion.div>
   )
 }
@@ -90,6 +84,7 @@ function MessageBubble({
   showTime: boolean
   onRetry?: (msg: ChatMessage) => void
 }) {
+  const { t } = useTranslation('rider')
   const isFailed = msg.status === 'failed'
   const isSending = msg.status === 'sending'
 
@@ -118,7 +113,7 @@ function MessageBubble({
           }`}
         >
           {msg.deletedAt ? (
-            <span className="italic opacity-40 text-sm">Message removed</span>
+            <span className="italic opacity-40 text-sm">{t('chat_message_removed')}</span>
           ) : (
             msg.text
           )}
@@ -136,7 +131,7 @@ function MessageBubble({
             onClick={() => onRetry(msg)}
             className="text-[11px] text-red-400 font-semibold mt-0.5 cursor-pointer hover:underline"
           >
-            Failed — tap to retry
+            {t('chat_failed_retry')}
           </button>
         )}
       </div>
@@ -149,7 +144,17 @@ function MessageBubble({
 export default function ChatPage() {
   const { orderId } = useParams<{ orderId: string }>()
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { user } = useAuthStore()
+
+  const QUICK_REPLIES = [
+    t('chat_quick_reply1'),
+    t('chat_quick_reply2'),
+    t('chat_quick_reply3'),
+    t('chat_quick_reply4'),
+    t('chat_quick_reply5'),
+    t('chat_quick_reply6'),
+  ]
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [text, setText] = useState('')
@@ -353,7 +358,7 @@ export default function ChatPage() {
         <button
           onClick={() => navigate(order ? ROUTES.ACTIVE_DELIVERY.replace(':orderId', order._id) : ROUTES.HOME)}
           className="h-9 w-9 rounded-full flex items-center justify-center hover:bg-zinc-800 transition-colors cursor-pointer shrink-0"
-          aria-label="Back"
+          aria-label={t('chat_back')}
         >
           <ChevronLeft size={22} className="text-zinc-300" />
         </button>
@@ -366,7 +371,7 @@ export default function ChatPage() {
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-zinc-100 leading-tight">Customer</p>
+          <p className="text-sm font-bold text-zinc-100 leading-tight">{t('chat_customer')}</p>
           {order && (
             <p className="text-[11px] text-zinc-500 truncate">
               {order.orderNumber} · {order.deliveryAddress.street}
@@ -388,7 +393,7 @@ export default function ChatPage() {
               disabled={loadingMore}
               className="text-xs text-zinc-400 font-semibold px-4 py-2 rounded-full bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
             >
-              {loadingMore ? 'Loading…' : 'Load earlier messages'}
+              {loadingMore ? t('chat_loading_earlier') : t('chat_load_earlier')}
             </button>
           </div>
         )}
@@ -411,8 +416,8 @@ export default function ChatPage() {
               </svg>
             </div>
             <div>
-              <p className="text-sm font-semibold text-zinc-300">No messages yet</p>
-              <p className="text-xs text-zinc-600 mt-1">Reach out to your customer</p>
+              <p className="text-sm font-semibold text-zinc-300">{t('chat_empty_title')}</p>
+              <p className="text-xs text-zinc-600 mt-1">{t('chat_reach_out')}</p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center">
               {QUICK_REPLIES.slice(0, 3).map((r) => (
@@ -440,7 +445,7 @@ export default function ChatPage() {
               {showDayLabel && (
                 <div className="flex items-center justify-center my-3">
                   <span className="text-[11px] text-zinc-500 bg-zinc-800 rounded-full px-3 py-1 border border-zinc-700">
-                    {formatDateLabel(msg.createdAt)}
+                    {formatDateLabel(msg.createdAt, t)}
                   </span>
                 </div>
               )}
@@ -512,7 +517,7 @@ export default function ChatPage() {
         <button
           onClick={() => setShowQuickReplies((v) => !v)}
           className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${showQuickReplies ? 'bg-primary text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
-          aria-label="Quick replies"
+          aria-label={t('chat_quick_replies')}
           style={{ touchAction: 'manipulation' }}
         >
           <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -528,7 +533,7 @@ export default function ChatPage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
             }}
-            placeholder="Message customer…"
+            placeholder={t('chat_placeholder')}
             maxLength={500}
             rows={1}
             className="w-full resize-none rounded-2xl border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm leading-relaxed text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition-all"
@@ -548,7 +553,7 @@ export default function ChatPage() {
           whileTap={{ scale: 0.88 }}
           transition={{ duration: 0.08 }}
           className="h-10 w-10 rounded-full bg-primary text-white flex items-center justify-center shrink-0 disabled:opacity-35 transition-opacity cursor-pointer shadow-md shadow-primary/25"
-          aria-label="Send"
+          aria-label={t('chat_send')}
           style={{ touchAction: 'manipulation' }}
         >
           <Send size={17} className="translate-x-[1px]" />

@@ -1,0 +1,23 @@
+{
+  "customer": "Customer",
+  "today": "Today",
+  "yesterday": "Yesterday",
+  "quickReply1": "On my way!",
+  "quickReply2": "Almost there",
+  "quickReply3": "What's your exact location?",
+  "quickReply4": "Gate number?",
+  "quickReply5": "Be with you in 5 minutes",
+  "goBack": "Go back",
+  "defaultPeerName": "Rider",
+  "messagePrompt": "Message {{name}}…",
+  "scrollToLatest": "Scroll to latest",
+  "quickRepliesLabel": "Quick replies",
+  "loadEarlier": "Load earlier messages",
+  "loadingEarlier": "Loading…",
+  "emptyTitle": "No messages yet",
+  "emptySub": "Send a quick note to your {{name}}",
+  "messageRemoved": "This message was removed",
+  "failedRetry": "Failed — tap to retry",
+  "typingIndicator": "{{name}} is typing…",
+  "sendLabel": "Send"
+}

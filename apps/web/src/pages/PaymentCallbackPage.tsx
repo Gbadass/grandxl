@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { CheckCircle2, XCircle, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -14,6 +15,7 @@ const MAX_POLL_ATTEMPTS = 10 // 40 seconds total — Paystack webhooks arrive wi
 export default function PaymentCallbackPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { t } = useTranslation('payment')
   const reference = searchParams.get('reference') ?? searchParams.get('trxref')
   const [state, setState] = useState<VerifyState>('verifying')
   const [orderId, setOrderId] = useState<string | null>(null)
@@ -43,7 +45,7 @@ export default function PaymentCallbackPage() {
           setOrderId(data.orderId)
           setAmount(data.amount)
           setState('success')
-          toast.success('Payment confirmed!')
+          toast.success(t('confirmed'))
           if (data.orderId) {
             timerRef.current = setTimeout(() => {
               void navigate(`/orders/${data.orderId}/tracking`, { replace: true })
@@ -88,8 +90,8 @@ export default function PaymentCallbackPage() {
           className="flex flex-col items-center gap-4"
         >
           <div className="h-14 w-14 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-          <p className="text-gray-600 font-medium">Verifying your payment…</p>
-          <p className="text-xs text-gray-400">This only takes a moment</p>
+          <p className="text-gray-600 font-medium">{t('verifying')}</p>
+          <p className="text-xs text-gray-400">{t('verifyingDesc')}</p>
         </motion.div>
       )}
 
@@ -102,9 +104,9 @@ export default function PaymentCallbackPage() {
           <div className="h-20 w-20 rounded-full bg-amber-50 flex items-center justify-center">
             <Clock size={44} className="text-amber-500" />
           </div>
-          <h1 className="text-xl font-display font-bold text-gray-900">Payment processing</h1>
+          <h1 className="text-xl font-display font-bold text-gray-900">{t('pendingTitle')}</h1>
           <p className="text-gray-500 text-sm max-w-xs">
-            Your payment is being confirmed. This can take up to a minute — we'll notify you the moment it's approved.
+            {t('pendingDesc')}
           </p>
           <div className="flex items-center gap-2 mt-1">
             <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -117,13 +119,13 @@ export default function PaymentCallbackPage() {
               className="w-full py-3.5 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors"
               style={{ minHeight: '48px', touchAction: 'manipulation' }}
             >
-              Check my orders
+              {t('checkOrders')}
             </button>
             <button
               onClick={() => void navigate('/', { replace: true })}
               className="w-full py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium cursor-pointer hover:border-gray-300 transition-colors"
             >
-              Back to home
+              {t('backToHome')}
             </button>
           </div>
         </motion.div>
@@ -144,12 +146,12 @@ export default function PaymentCallbackPage() {
           >
             <CheckCircle2 size={44} className="text-green-500" />
           </motion.div>
-          <h1 className="text-xl font-display font-bold text-gray-900">Payment successful!</h1>
+          <h1 className="text-xl font-display font-bold text-gray-900">{t('successTitle')}</h1>
           {amount !== null && (
-            <p className="text-gray-500 text-sm">{formatMoney(amount, 'NGN')} paid</p>
+            <p className="text-gray-500 text-sm">{t('paid', { amount: formatMoney(amount, 'NGN') })}</p>
           )}
           {orderId && (
-            <p className="text-xs text-gray-400 animate-pulse">Taking you to your order…</p>
+            <p className="text-xs text-gray-400 animate-pulse">{t('redirecting')}</p>
           )}
           <div className="flex flex-col gap-2 w-full max-w-xs mt-2">
             {orderId && (
@@ -158,14 +160,14 @@ export default function PaymentCallbackPage() {
                 className="w-full py-3.5 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors"
                 style={{ minHeight: '48px', touchAction: 'manipulation' }}
               >
-                Track your order
+                {t('trackOrder')}
               </button>
             )}
             <button
               onClick={() => void navigate('/', { replace: true })}
               className="w-full py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium cursor-pointer hover:border-gray-300 transition-colors"
             >
-              Back to home
+              {t('backToHome')}
             </button>
           </div>
         </motion.div>
@@ -180,9 +182,9 @@ export default function PaymentCallbackPage() {
           <div className="h-20 w-20 rounded-full bg-red-50 flex items-center justify-center">
             <XCircle size={44} className="text-red-400" />
           </div>
-          <h1 className="text-xl font-display font-bold text-gray-900">Payment failed</h1>
+          <h1 className="text-xl font-display font-bold text-gray-900">{t('failedTitle')}</h1>
           <p className="text-gray-500 text-sm max-w-xs">
-            We could not confirm your payment. Your order has not been placed.
+            {t('failedDesc')}
           </p>
           <div className="flex flex-col gap-2 w-full max-w-xs mt-2">
             <button
@@ -190,13 +192,13 @@ export default function PaymentCallbackPage() {
               className="w-full py-3.5 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors"
               style={{ minHeight: '48px', touchAction: 'manipulation' }}
             >
-              Browse restaurants
+              {t('browseRestaurants')}
             </button>
             <button
               onClick={() => void navigate('/orders', { replace: true })}
               className="w-full py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium cursor-pointer hover:border-gray-300 transition-colors"
             >
-              View my orders
+              {t('viewOrders')}
             </button>
           </div>
         </motion.div>

@@ -50,16 +50,17 @@ function buildWeeklyBars(orders: Order[]) {
 }
 
 function WeeklyBarChart({ orders }: { orders: Order[] }) {
+  const { t } = useTranslation('rider')
   const bars = buildWeeklyBars(orders)
   const totalWeekKobo = bars.reduce((s, b) => s + b.amount, 0)
 
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
       <div className="flex items-center justify-between mb-1">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">This week</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{t('this_week')}</p>
         <p className="text-sm font-bold text-zinc-100">{formatMoney(totalWeekKobo, 'NGN')}</p>
       </div>
-      <p className="text-[10px] text-zinc-600 mb-4">Your earnings by day</p>
+      <p className="text-[10px] text-zinc-600 mb-4">{t('earnings_by_day')}</p>
       <div className="flex items-end gap-1.5 h-16">
         {bars.map((bar, i) => (
           <div key={bar.label} className="flex-1 flex flex-col items-center gap-1">
@@ -143,12 +144,12 @@ export default function EarningsPage() {
           <div>
             <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1">{t('earnings_total')}</p>
             <p className="font-display text-2xl font-bold text-zinc-100 tabular-nums">{formatMoney(totalKobo, currency)}</p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">All-time settled</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">{t('all_time_settled')}</p>
           </div>
           <div>
             <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1">{t('earnings_pending')}</p>
             <p className="font-display text-2xl font-bold text-amber-400 tabular-nums">{formatMoney(pendingKobo, currency)}</p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">Paid weekly</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">{t('paid_weekly')}</p>
           </div>
         </div>
       </motion.div>
@@ -168,7 +169,7 @@ export default function EarningsPage() {
         custom={3} variants={stagger} initial="hidden" animate="visible"
         className="mb-4"
       >
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Last 30 days</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">{t('last_30_days')}</p>
         {loadingMetrics ? (
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -182,7 +183,7 @@ export default function EarningsPage() {
                 <Bike size={17} className="text-primary" />
               </div>
               <div>
-                <p className="text-xs text-zinc-500">Deliveries</p>
+                <p className="text-xs text-zinc-500">{t('stat_deliveries')}</p>
                 <p className="font-bold text-zinc-100 text-lg">{metrics?.deliveriesCount ?? rider?.totalDeliveries ?? 0}</p>
               </div>
             </div>
@@ -191,7 +192,7 @@ export default function EarningsPage() {
                 <Clock size={17} className="text-secondary" />
               </div>
               <div>
-                <p className="text-xs text-zinc-500">Avg time</p>
+                <p className="text-xs text-zinc-500">{t('avg_time')}</p>
                 <p className="font-bold text-zinc-100 text-lg">
                   {metrics?.avgDeliveryMinutes ? `${Math.round(metrics.avgDeliveryMinutes)}m` : '—'}
                 </p>
@@ -202,7 +203,7 @@ export default function EarningsPage() {
                 <Target size={17} className="text-green-400" />
               </div>
               <div>
-                <p className="text-xs text-zinc-500">On time</p>
+                <p className="text-xs text-zinc-500">{t('on_time')}</p>
                 <p className="font-bold text-zinc-100 text-lg">
                   {metrics ? `${Math.round(metrics.onTimeRate * 100)}%` : '—'}
                 </p>
@@ -213,7 +214,7 @@ export default function EarningsPage() {
                 <TrendingUp size={17} className="text-orange-400" />
               </div>
               <div>
-                <p className="text-xs text-zinc-500">Cancel rate</p>
+                <p className="text-xs text-zinc-500">{t('cancel_rate')}</p>
                 <p className="font-bold text-zinc-100 text-lg">
                   {metrics ? `${Math.round(metrics.cancellationRate * 100)}%` : '—'}
                 </p>
@@ -235,9 +236,9 @@ export default function EarningsPage() {
           <TrendingUp size={18} className="text-primary" />
         </div>
         <div className="flex-1 text-left">
-          <p className="text-sm font-medium text-zinc-200">Request payout</p>
+          <p className="text-sm font-medium text-zinc-200">{t('request_payout')}</p>
           <p className="text-xs text-zinc-500 mt-0.5">
-            {formatMoney(liveRider?.earnings.pendingKobo ?? 0, 'NGN')} pending · Tap to request
+            {formatMoney(liveRider?.earnings.pendingKobo ?? 0, 'NGN')} {t('pending_tap_to_request')}
           </p>
         </div>
         <ChevronRight size={16} className="text-zinc-600" />
@@ -247,13 +248,13 @@ export default function EarningsPage() {
       <motion.div
         custom={5} variants={stagger} initial="hidden" animate="visible"
       >
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Delivery history</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">{t('delivery_history')}</p>
 
         {allDeliveries.length === 0 && !historyFetching ? (
           <div className="flex flex-col items-center justify-center py-10 rounded-2xl border border-zinc-800 bg-zinc-900">
             <Package size={32} className="text-zinc-700 mb-2" />
-            <p className="text-sm text-zinc-500">No deliveries yet</p>
-            <p className="text-xs text-zinc-600 mt-1">Completed deliveries will appear here</p>
+            <p className="text-sm text-zinc-500">{t('no_deliveries_yet')}</p>
+            <p className="text-xs text-zinc-600 mt-1">{t('deliveries_appear_here')}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -279,7 +280,7 @@ export default function EarningsPage() {
                       </p>
                       {hasTip && (
                         <p className="text-[10px] text-secondary mt-0.5">
-                          incl. tip {formatMoney(order.pricing.tip, order.currency)}
+                          {t('incl_tip', { amount: formatMoney(order.pricing.tip, order.currency) })}
                         </p>
                       )}
                     </div>
@@ -292,7 +293,7 @@ export default function EarningsPage() {
                   <div className="flex items-center gap-2 text-[10px] text-zinc-600">
                     <span>{formatRelativeDate(order.updatedAt)}</span>
                     <span>·</span>
-                    <span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+                    <span>{t('item_count', { count: itemCount })}</span>
                   </div>
                 </div>
               )
@@ -304,7 +305,7 @@ export default function EarningsPage() {
                 disabled={historyFetching}
                 className="w-full py-3 text-sm font-medium text-zinc-400 border border-zinc-800 rounded-2xl cursor-pointer hover:border-zinc-700 transition-colors disabled:opacity-50"
               >
-                {historyFetching ? 'Loading…' : 'Load more'}
+                {historyFetching ? t('loading') : t('load_more')}
               </button>
             )}
           </div>

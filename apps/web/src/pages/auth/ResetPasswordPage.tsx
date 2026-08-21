@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, ShieldCheck } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useResetPassword } from '../../features/auth/hooks/useResetPassword'
 import { AuthLayout } from '../../features/auth/components/AuthLayout'
 import { FormField } from '../../features/auth/components/FormField'
@@ -33,6 +34,7 @@ const item = {
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('auth')
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
   const { mutate: resetPassword, isPending, isSuccess } = useResetPassword()
@@ -45,16 +47,16 @@ export default function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <AuthLayout title="Invalid link" subtitle="This reset link is not valid">
+      <AuthLayout title={t('resetPassword.invalidTitle')} subtitle={t('resetPassword.invalidSubtitle')}>
         <div className="flex flex-col items-center text-center py-8">
           <p className="text-sm text-gray-500 mb-6">
-            Your reset link may have expired or already been used.
+            {t('resetPassword.expiredDesc')}
           </p>
           <Link
             to={ROUTES.FORGOT_PASSWORD}
             className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline cursor-pointer"
           >
-            Request a new link
+            {t('resetPassword.requestNew')}
           </Link>
         </div>
       </AuthLayout>
@@ -63,7 +65,7 @@ export default function ResetPasswordPage() {
 
   if (isSuccess) {
     return (
-      <AuthLayout title="Password updated!" subtitle="You're all set">
+      <AuthLayout title={t('resetPassword.successTitle')} subtitle={t('resetPassword.successSubtitle')}>
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -73,7 +75,7 @@ export default function ResetPasswordPage() {
             <ShieldCheck size={36} className="text-green-500" />
           </div>
           <p className="text-sm text-gray-500 max-w-xs mb-8">
-            Your password has been updated successfully. You can now sign in with your new password.
+            {t('resetPassword.successDesc')}
           </p>
           <motion.button
             whileTap={{ scale: 0.97 }}
@@ -81,7 +83,7 @@ export default function ResetPasswordPage() {
             className="w-full flex items-center justify-center bg-primary text-white rounded-2xl font-semibold text-sm cursor-pointer hover:bg-primary/90 transition-colors"
             style={{ minHeight: '56px', touchAction: 'manipulation' }}
           >
-            Sign in
+            {t('resetPassword.signIn')}
           </motion.button>
         </motion.div>
       </AuthLayout>
@@ -93,15 +95,15 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <AuthLayout title="Set new password" subtitle="Choose a strong password for your account">
+    <AuthLayout title={t('resetPassword.title')} subtitle={t('resetPassword.subtitle')}>
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
         <motion.div custom={0} variants={item} initial="hidden" animate="visible">
           <FormField
             {...register('newPassword')}
             id="newPassword"
-            label="New password"
+            label={t('resetPassword.newPasswordLabel')}
             type="password"
-            placeholder="Min. 8 chars, 1 uppercase, 1 number"
+            placeholder={t('resetPassword.newPasswordPlaceholder')}
             autoComplete="new-password"
             error={errors.newPassword?.message}
           />
@@ -112,9 +114,9 @@ export default function ResetPasswordPage() {
           <FormField
             {...register('confirm')}
             id="confirm"
-            label="Confirm new password"
+            label={t('resetPassword.confirmLabel')}
             type="password"
-            placeholder="Repeat your password"
+            placeholder={t('resetPassword.confirmPlaceholder')}
             autoComplete="new-password"
             error={errors.confirm?.message}
           />
@@ -132,7 +134,7 @@ export default function ResetPasswordPage() {
             {isPending && (
               <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
             )}
-            {isPending ? 'Saving…' : 'Set new password'}
+            {isPending ? t('resetPassword.saving') : t('resetPassword.submit')}
           </motion.button>
         </motion.div>
       </form>
@@ -143,7 +145,7 @@ export default function ResetPasswordPage() {
           className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-primary transition-colors cursor-pointer"
         >
           <ArrowLeft size={15} />
-          Back to login
+          {t('resetPassword.backToLogin')}
         </Link>
       </p>
     </AuthLayout>

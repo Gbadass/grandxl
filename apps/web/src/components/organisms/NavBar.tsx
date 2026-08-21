@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Search, MapPin, Bell, ShoppingBag, ChevronDown } from 'lucide-react'
 import { useAuthStore } from '../../store/auth.store'
 import { useCartStore } from '../../features/cart/store/cart.store'
 import { useLocationStore } from '../../store/location.store'
+import { useUnreadNotificationCount } from '../../features/notifications/hooks/useUnreadCount'
 import { LocationPickerSheet } from './LocationPickerSheet'
 import { ROUTES } from '../../router/routes'
 
@@ -14,7 +15,18 @@ export function NavBar() {
   const user = useAuthStore((s) => s.user)
   const itemCount = useCartStore((s) => s.items.reduce((sum, i) => sum + i.quantity, 0))
   const city = useLocationStore((s) => s.city)
+  const unreadCount = useUnreadNotificationCount()
   const [locationSheetOpen, setLocationSheetOpen] = useState(false)
+  const [searchValue, setSearchValue] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const q = searchValue.trim()
+    void navigate(q ? `${ROUTES.SEARCH}?q=${encodeURIComponent(q)}` : ROUTES.SEARCH)
+    setSearchValue('')
+    searchInputRef.current?.blur()
+  }
 
   return (
     <>
@@ -28,14 +40,21 @@ export function NavBar() {
         </Link>
 
         {/* Search */}
-        <div className="flex-1 max-w-xl mx-auto">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2.5 cursor-pointer hover:bg-gray-200 transition-colors duration-150">
+        <form onSubmit={handleSearchSubmit} className="flex-1 max-w-xl mx-auto">
+          <div className="flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2.5 hover:bg-gray-200 transition-colors duration-150 focus-within:bg-gray-200 focus-within:ring-2 focus-within:ring-primary/30">
             <Search className="w-4 h-4 text-gray-400 shrink-0" />
-            <span className="text-gray-400 text-sm select-none">
-              {t('nav.searchPlaceholder', 'Search restaurants or dishes...')}
-            </span>
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onFocus={() => { if (!searchValue) void navigate(ROUTES.SEARCH) }}
+              placeholder={t('nav.searchPlaceholder', 'Search restaurants or dishes...')}
+              className="flex-1 bg-transparent text-sm text-gray-700 placeholder-gray-400 outline-none"
+              autoComplete="off"
+            />
           </div>
-        </div>
+        </form>
 
         {/* Right actions */}
         <div className="flex items-center gap-1 shrink-0">
@@ -55,10 +74,15 @@ export function NavBar() {
 
           <Link
             to={ROUTES.NOTIFICATIONS}
-            className="p-2 rounded-full hover:bg-gray-100 transition-colors duration-150 cursor-pointer"
+            className="relative p-2 rounded-full hover:bg-gray-100 transition-colors duration-150 cursor-pointer"
             aria-label={t('nav.notifications', 'Notifications')}
           >
             <Bell className="w-5 h-5 text-gray-600" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </Link>
 
           <Link

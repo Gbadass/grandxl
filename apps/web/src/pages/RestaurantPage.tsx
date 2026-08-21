@@ -141,7 +141,7 @@ export default function RestaurantPage() {
           <span className="flex items-center gap-1.5">
             <ShoppingBag size={14} className="text-gray-400" />
             {restaurant.deliveryFeeFixed === 0
-              ? 'Free delivery'
+              ? t('freeDelivery')
               : formatMoney(restaurant.deliveryFeeFixed, restaurant.currency)}
           </span>
         </div>

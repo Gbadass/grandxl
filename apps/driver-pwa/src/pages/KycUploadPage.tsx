@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CreditCard, Car, Camera, CheckCircle2, Upload, AlertCircle, ChevronRight, X } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -9,8 +10,8 @@ import { ROUTES } from '../router/routes'
 
 interface DocSlot {
   key: 'idCard' | 'driverLicense' | 'vehiclePhoto'
-  label: string
-  sub: string
+  labelKey: string
+  subKey: string
   Icon: React.ElementType
   accept: string
 }
@@ -18,22 +19,22 @@ interface DocSlot {
 const DOC_SLOTS: DocSlot[] = [
   {
     key: 'idCard',
-    label: 'Government ID',
-    sub: "National ID, International Passport, or Voter's Card",
+    labelKey: 'doc_id_label',
+    subKey: 'doc_id_sub',
     Icon: CreditCard,
     accept: 'image/*',
   },
   {
     key: 'driverLicense',
-    label: "Driver's License",
-    sub: 'Must be current and not expired',
+    labelKey: 'doc_license_label',
+    subKey: 'doc_license_sub',
     Icon: Car,
     accept: 'image/*',
   },
   {
     key: 'vehiclePhoto',
-    label: 'Vehicle Photo',
-    sub: 'Clear photo showing the plate number',
+    labelKey: 'doc_vehicle_label',
+    subKey: 'doc_vehicle_sub',
     Icon: Camera,
     accept: 'image/*',
   },
@@ -50,6 +51,7 @@ const initSlot = (): UploadState => ({ url: null, preview: null, uploading: fals
 
 export default function KycUploadPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { setRider } = useRiderStore()
   const [uploads, setUploads] = useState<Record<string, UploadState>>({
     idCard: initSlot(),
@@ -70,7 +72,7 @@ export default function KycUploadPage() {
       const res = await uploadsApi.uploadRiderDocument(file)
       setSlot(key, { url: res.data.data.url, uploading: false })
     } catch {
-      setSlot(key, { uploading: false, error: 'Upload failed. Tap to retry.' })
+      setSlot(key, { uploading: false, error: t('upload_failed') })
     }
   }
 
@@ -86,10 +88,10 @@ export default function KycUploadPage() {
         vehiclePhoto: uploads.vehiclePhoto.url!,
       })
       setRider(res.data.data)
-      toast.success("Documents submitted! We'll review within 24 hours.")
+      toast.success(t('docs_submitted'))
       void navigate(ROUTES.PENDING_VERIFICATION, { replace: true })
     } catch {
-      toast.error('Could not submit documents. Please try again.')
+      toast.error(t('docs_submit_error'))
     } finally {
       setSubmitting(false)
     }
@@ -103,10 +105,10 @@ export default function KycUploadPage() {
           <Upload size={24} className="text-primary" />
         </div>
         <h1 className="font-display text-2xl font-bold text-zinc-100 leading-tight">
-          Upload documents
+          {t('upload_docs_title')}
         </h1>
         <p className="mt-1.5 text-sm text-zinc-500">
-          We need to verify your identity before you can start delivering
+          {t('upload_docs_desc')}
         </p>
       </motion.div>
 
@@ -124,12 +126,12 @@ export default function KycUploadPage() {
             }`} />
           </div>
         ))}
-        <p className="ml-2 text-xs font-medium text-zinc-500 shrink-0">Step 2 of 3</p>
+        <p className="ml-2 text-xs font-medium text-zinc-500 shrink-0">{t('step_2_of_3')}</p>
       </motion.div>
 
       {/* Document upload slots */}
       <div className="flex flex-col gap-3 mb-6">
-        {DOC_SLOTS.map(({ key, label, sub, Icon, accept }, i) => {
+        {DOC_SLOTS.map(({ key, labelKey, subKey, Icon, accept }, i) => {
           const slot = uploads[key]
           const isDone = slot.url !== null
           const isUploading = slot.uploading
@@ -190,9 +192,9 @@ export default function KycUploadPage() {
                   <p className={`text-sm font-semibold transition-colors ${
                     isDone ? 'text-green-400' : 'text-zinc-200'
                   }`}>
-                    {label}
+                    {t(labelKey)}
                   </p>
-                  <p className="text-xs text-zinc-500 mt-0.5 leading-snug">{sub}</p>
+                  <p className="text-xs text-zinc-500 mt-0.5 leading-snug">{t(subKey)}</p>
                   {slot.error && (
                     <p className="mt-1 flex items-center gap-1 text-xs text-red-400">
                       <AlertCircle size={10} />
@@ -252,13 +254,13 @@ export default function KycUploadPage() {
                           setSlot(key, initSlot())
                         }}
                         className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-zinc-900/90 border border-zinc-700 text-zinc-300 cursor-pointer hover:bg-zinc-800 transition-colors"
-                        aria-label="Remove document"
+                        aria-label={t('remove_doc')}
                       >
                         <X size={13} />
                       </button>
                       <span className="absolute bottom-2 left-3 text-[10px] font-semibold text-green-300 flex items-center gap-1">
                         <CheckCircle2 size={10} />
-                        Uploaded
+                        {t('doc_uploaded')}
                       </span>
                     </div>
                   </motion.div>
@@ -276,7 +278,7 @@ export default function KycUploadPage() {
         transition={{ delay: 0.38 }}
         className="mb-8 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-xs text-zinc-500 leading-relaxed"
       >
-        Your documents are uploaded securely over HTTPS and stored with Cloudinary. They are used only for identity verification and reviewed by our team before your account is activated.
+        {t('doc_info_note')}
       </motion.div>
 
       {/* Submit */}
@@ -293,11 +295,11 @@ export default function KycUploadPage() {
         {submitting ? (
           <>
             <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-            Submitting…
+            {t('submitting')}
           </>
         ) : (
           <>
-            Submit documents
+            {t('submit_docs')}
             <ChevronRight size={18} />
           </>
         )}
@@ -305,7 +307,7 @@ export default function KycUploadPage() {
 
       {!allUploaded && (
         <p className="mt-3 text-center text-xs text-zinc-600">
-          Upload all 3 documents to continue
+          {t('docs_required')}
         </p>
       )}
     </div>

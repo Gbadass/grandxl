@@ -37,9 +37,10 @@ const STATUS_STYLES: Record<PayoutRequest['status'], string> = {
 }
 
 function StatusPill({ status }: { status: PayoutRequest['status'] }) {
+  const { t } = useTranslation('rider')
   return (
     <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[status]}`}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {t(`payout_status_${status}`)}
     </span>
   )
 }
@@ -53,6 +54,7 @@ interface BankFormProps {
 }
 
 function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
+  const { t } = useTranslation('rider')
   const queryClient = useQueryClient()
 
   // Step 1 — bank selection
@@ -103,7 +105,7 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
       })
       .catch(() => {
         if (!cancelled)
-          setResolveError('Account not found — check the number and bank')
+          setResolveError(t('bank_account_not_found'))
       })
       .finally(() => {
         if (!cancelled) setResolving(false)
@@ -124,10 +126,10 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
         bankCode:      selectedBank.code,
       })
       await queryClient.invalidateQueries({ queryKey: ['rider-bank-account'] })
-      toast.success('Bank account saved')
+      toast.success(t('bank_account_saved'))
       onSaved()
     } catch {
-      toast.error('Failed to save bank account')
+      toast.error(t('bank_account_save_error'))
     } finally {
       setSaving(false)
     }
@@ -137,7 +139,7 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
     <div className="space-y-3">
       {/* Bank selector */}
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-zinc-400">Bank</label>
+        <label className="mb-1.5 block text-xs font-medium text-zinc-400">{t('bank_label')}</label>
         <div className="relative">
           <div className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center">
             <Search size={14} className="text-zinc-500" />
@@ -152,7 +154,7 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
               setShowBankList(true)
             }}
             onFocus={() => setShowBankList(true)}
-            placeholder="Search for your bank…"
+            placeholder={t('bank_search_placeholder')}
             className="w-full rounded-xl border border-zinc-700 bg-zinc-800 py-2.5 pl-9 pr-3.5 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-primary"
             style={{ minHeight: '48px' }}
           />
@@ -197,7 +199,7 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
 
       {/* Account number */}
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-zinc-400">Account Number</label>
+        <label className="mb-1.5 block text-xs font-medium text-zinc-400">{t('account_number_label')}</label>
         <input
           type="text"
           inputMode="numeric"
@@ -206,13 +208,13 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
             const val = e.target.value.replace(/\D/g, '').slice(0, 10)
             setAccountNumber(val)
           }}
-          placeholder="10-digit account number"
+          placeholder={t('account_number_placeholder')}
           disabled={!selectedBank}
           className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-primary disabled:opacity-40"
           style={{ minHeight: '48px' }}
         />
         {accountNumber.length > 0 && accountNumber.length < 10 && (
-          <p className="mt-1 text-[11px] text-zinc-500">{10 - accountNumber.length} more digits</p>
+          <p className="mt-1 text-[11px] text-zinc-500">{t('more_digits', { count: 10 - accountNumber.length })}</p>
         )}
       </div>
 
@@ -225,7 +227,7 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
             className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3"
           >
             <Loader2 size={15} className="animate-spin text-zinc-500" />
-            <span className="text-sm text-zinc-400">Verifying account…</span>
+            <span className="text-sm text-zinc-400">{t('verifying_account')}</span>
           </motion.div>
         )}
 
@@ -237,7 +239,7 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
           >
             <CheckCircle2 size={18} className="shrink-0 text-green-400" />
             <div>
-              <p className="text-xs text-green-500">Account verified</p>
+              <p className="text-xs text-green-500">{t('account_verified')}</p>
               <p className="font-semibold text-sm text-green-300">{resolvedName}</p>
             </div>
           </motion.div>
@@ -262,7 +264,7 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
             className="flex-1 cursor-pointer rounded-xl border border-zinc-700 py-2.5 text-sm font-semibold text-zinc-400 transition-colors hover:border-zinc-600"
             style={{ touchAction: 'manipulation', minHeight: '48px' }}
           >
-            Cancel
+            {t('cancel_btn')}
           </button>
         )}
         <button
@@ -271,7 +273,7 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
           className="flex-1 cursor-pointer rounded-xl bg-primary py-2.5 text-sm font-semibold text-white disabled:opacity-40 transition-opacity"
           style={{ touchAction: 'manipulation', minHeight: '48px' }}
         >
-          {saving ? 'Saving…' : 'Confirm account'}
+          {saving ? t('saving') : t('confirm_account')}
         </button>
       </div>
     </div>
@@ -387,10 +389,10 @@ export default function PayoutsPage() {
       setAllItems([])
       setLoadedPages([])
       setHistoryPage(1)
-      toast.success('Payout request submitted!')
+      toast.success(t('payout_submitted'))
       setShowConfirmSheet(false)
     } catch {
-      toast.error('Failed to submit payout request')
+      toast.error(t('payout_submit_error'))
     } finally {
       setRequesting(false)
     }
@@ -424,11 +426,11 @@ export default function PayoutsPage() {
         <p className="mb-1 font-display text-3xl font-bold text-primary">
           {formatMoney(pendingKobo, 'NGN')}
         </p>
-        <p className="mb-5 text-xs text-zinc-600">Available for payout</p>
+        <p className="mb-5 text-xs text-zinc-600">{t('available_for_payout')}</p>
 
         {!loadingBank && !hasBankAccount ? (
           <p className="rounded-xl bg-yellow-500/10 px-4 py-2.5 text-xs font-medium text-yellow-400">
-            Set up a bank account below before requesting a payout
+            {t('setup_bank_first')}
           </p>
         ) : (
           <button
@@ -453,7 +455,7 @@ export default function PayoutsPage() {
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Building2 size={16} className="text-zinc-500" />
-            <p className="text-sm font-semibold text-zinc-300">Bank account</p>
+            <p className="text-sm font-semibold text-zinc-300">{t('bank_account_title')}</p>
           </div>
           {hasBankAccount && !editingBank && (
             <button
@@ -462,7 +464,7 @@ export default function PayoutsPage() {
               style={{ touchAction: 'manipulation', minHeight: '36px' }}
             >
               <Pencil size={13} />
-              Edit
+              {t('edit_btn')}
             </button>
           )}
           {editingBank && (
@@ -472,7 +474,7 @@ export default function PayoutsPage() {
               style={{ touchAction: 'manipulation', minHeight: '36px' }}
             >
               <X size={14} />
-              Close
+              {t('close_label')}
             </button>
           )}
         </div>
@@ -485,17 +487,17 @@ export default function PayoutsPage() {
         ) : hasBankAccount && !editingBank ? (
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-zinc-500">Bank</span>
+              <span className="text-xs text-zinc-500">{t('bank_label')}</span>
               <span className="text-sm font-medium text-zinc-200">{bankAccount!.bankName}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-zinc-500">Account no.</span>
+              <span className="text-xs text-zinc-500">{t('account_no_label')}</span>
               <span className="font-mono text-sm font-semibold tracking-widest text-zinc-200">
                 {maskAccount(bankAccount!.accountNumber)}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-zinc-500">Account name</span>
+              <span className="text-xs text-zinc-500">{t('account_name_label')}</span>
               <span className="text-sm font-medium text-zinc-200">{bankAccount!.accountName}</span>
             </div>
           </div>
@@ -509,7 +511,7 @@ export default function PayoutsPage() {
           /* No bank account yet */
           <div>
             <p className="mb-4 text-sm text-zinc-500">
-              Add your bank account to receive payouts directly.
+              {t('add_bank_account_desc')}
             </p>
             <BankAccountForm
               initial={null}
@@ -545,7 +547,7 @@ export default function PayoutsPage() {
           </div>
         ) : allItems.length === 0 ? (
           <p className="py-6 text-center text-sm text-zinc-600">
-            No payout requests yet
+            {t('no_payout_requests')}
           </p>
         ) : (
           <>
@@ -561,7 +563,7 @@ export default function PayoutsPage() {
                 className="mt-4 w-full cursor-pointer rounded-xl border border-zinc-700 py-2.5 text-sm font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-300 disabled:opacity-50"
                 style={{ touchAction: 'manipulation', minHeight: '44px' }}
               >
-                {fetchingMore ? 'Loading…' : 'Load more'}
+                {fetchingMore ? t('loading') : t('load_more')}
               </button>
             )}
           </>
@@ -596,7 +598,7 @@ export default function PayoutsPage() {
 
               <div className="mb-1 flex items-center justify-between">
                 <p className="font-display text-base font-bold text-zinc-100">
-                  Confirm payout request
+                  {t('confirm_payout_title')}
                 </p>
                 <button
                   onClick={() => setShowConfirmSheet(false)}
@@ -609,7 +611,7 @@ export default function PayoutsPage() {
 
               {/* Amount */}
               <div className="my-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
-                <p className="mb-1 text-xs text-zinc-500">Amount to request</p>
+                <p className="mb-1 text-xs text-zinc-500">{t('amount_to_request')}</p>
                 <p className="font-display text-3xl font-bold text-primary">
                   {formatMoney(pendingKobo, 'NGN')}
                 </p>
@@ -631,7 +633,7 @@ export default function PayoutsPage() {
               )}
 
               <p className="mb-5 text-center text-xs text-zinc-500">
-                Payouts are processed within 2 business days
+                {t('payout_processing_time')}
               </p>
 
               <button
@@ -640,7 +642,7 @@ export default function PayoutsPage() {
                 className="w-full cursor-pointer rounded-xl bg-primary py-3.5 text-sm font-semibold text-white disabled:opacity-50 transition-opacity"
                 style={{ touchAction: 'manipulation', minHeight: '52px' }}
               >
-                {requesting ? 'Submitting…' : 'Confirm payout request'}
+                {requesting ? t('submitting') : t('confirm_payout_title')}
               </button>
             </motion.div>
           </>

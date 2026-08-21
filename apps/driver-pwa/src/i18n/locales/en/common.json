@@ -8,5 +8,9 @@
   "confirm": "Confirm",
   "back": "Back",
   "offline": "You're offline. Some features may not work.",
-  "online_restored": "Back online"
+  "online_restored": "Back online",
+  "notifications": "Notifications",
+  "reload": "Reload app",
+  "app_error": "App error",
+  "app_error_sub": "Something went wrong. Your active delivery is safe — tap reload to continue."
 }

@@ -1,11 +1,13 @@
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { socket } from '../../lib/socket'
 
 export function OfflineBanner() {
   const { isOnline, wasOffline } = useNetworkStatus()
   const queryClient = useQueryClient()
+  const { t } = useTranslation('common')
 
   // Refetch stale queries when network comes back
   useEffect(() => {
@@ -33,9 +35,7 @@ export function OfflineBanner() {
         isOnline ? 'bg-success' : 'bg-warning'
       }`}
     >
-      {isOnline
-        ? 'Back online — refreshing data...'
-        : 'No internet connection. Some features may be unavailable.'}
+      {isOnline ? t('online') : t('offline')}
     </div>
   )
 }

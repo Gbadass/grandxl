@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
@@ -8,17 +9,18 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ridersApi } from '@grandxl/api-client'
+import { ridersApi, authApi } from '@grandxl/api-client'
 import { useAuthStore } from '../store/auth.store'
 import { useRiderStore } from '../store/rider.store'
+import { clearRiderToken } from '../lib/riderAuth'
 import { VehicleType } from '@grandxl/types'
 import { ROUTES } from '../router/routes'
 import { formatMoney } from '@grandxl/utils'
 
-const vehicleLabel: Record<VehicleType, string> = {
-  [VehicleType.BICYCLE]:    'Bicycle',
-  [VehicleType.MOTORCYCLE]: 'Motorcycle',
-  [VehicleType.CAR]:        'Car',
+const vehicleLabelKey: Record<VehicleType, string> = {
+  [VehicleType.BICYCLE]:    'vehicle_bicycle',
+  [VehicleType.MOTORCYCLE]: 'vehicle_motorcycle',
+  [VehicleType.CAR]:        'vehicle_car',
 }
 
 const vehicleIcon: Record<VehicleType, string> = {
@@ -70,14 +72,21 @@ function SectionRow({
 
 export default function ProfilePage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { user, clearAuth } = useAuthStore()
-  const { rider, setRider } = useRiderStore()
+  const { rider, setRider, setActiveOrder, clearPendingJobs } = useRiderStore()
 
-  function signOut() {
-    clearAuth()
+  async function signOut() {
+    // Clear all rider state first so no in-flight effects re-navigate to /delivery
+    setActiveOrder(null)
+    clearPendingJobs()
     setRider(null)
+    clearAuth()
+    clearRiderToken()
+    // Fire-and-forget — invalidate the refresh token on the server
+    void authApi.logout().catch(() => undefined)
     void navigate(ROUTES.LOGIN, { replace: true })
-    toast.success('Signed out successfully')
+    toast.success(t('signed_out'))
   }
 
   // Always fetch fresh profile on mount so verified status / name are up to date
@@ -123,11 +132,11 @@ export default function ProfilePage() {
           <p className="text-sm text-zinc-500 mt-0.5">{user?.phone}</p>
           {liveRider?.isVerified ? (
             <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">
-              <Shield size={9} /> Verified rider
+              <Shield size={9} /> {t('verified_rider_badge')}
             </span>
           ) : liveRider ? (
             <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-              Pending verification
+              {t('pending_verification_badge')}
             </span>
           ) : null}
         </div>
@@ -142,19 +151,19 @@ export default function ProfilePage() {
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-3.5 text-center">
             <Star size={13} className="text-yellow-400 mx-auto mb-1" />
             <p className="font-display text-xl font-bold text-zinc-100">{liveRider.rating.toFixed(1)}</p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">Rating</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">{t('stat_rating')}</p>
           </div>
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-3.5 text-center">
             <Bike size={13} className="text-primary mx-auto mb-1" />
             <p className="font-display text-xl font-bold text-zinc-100">{liveRider.totalDeliveries}</p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">Deliveries</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">{t('stat_deliveries')}</p>
           </div>
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-3.5 text-center">
             <Wallet size={13} className="text-green-400 mx-auto mb-1" />
             <p className="font-display text-sm font-bold text-zinc-100 truncate leading-tight">
               {formatMoney(liveRider.earnings.totalKobo ?? 0, 'NGN')}
             </p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">Total earned</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">{t('stat_total_earned')}</p>
           </div>
         </motion.div>
       )}
@@ -166,12 +175,12 @@ export default function ProfilePage() {
           className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden"
         >
           <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
-            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">Vehicle</p>
+            <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">{t('section_vehicle')}</p>
           </div>
           <div className="flex items-center gap-3 px-4 py-3.5">
             <span className="text-2xl">{vehicleIcon[liveRider.vehicleType]}</span>
             <div>
-              <p className="text-sm font-semibold text-zinc-200">{vehicleLabel[liveRider.vehicleType]}</p>
+              <p className="text-sm font-semibold text-zinc-200">{t(vehicleLabelKey[liveRider.vehicleType])}</p>
               {liveRider.vehiclePlate && (
                 <p className="text-xs font-mono text-zinc-500 tracking-widest mt-0.5">{liveRider.vehiclePlate}</p>
               )}
@@ -186,21 +195,21 @@ export default function ProfilePage() {
         className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden"
       >
         <div className="px-4 py-3 border-b border-zinc-800">
-          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">Account</p>
+          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">{t('section_account')}</p>
         </div>
         <div className="divide-y divide-zinc-800/60">
           <SectionRow
             icon={Wallet}
             iconColor="text-zinc-400"
             iconBg="bg-zinc-800"
-            label="Payouts"
+            label={t('section_payouts')}
             onClick={() => void navigate(ROUTES.PAYOUTS)}
           />
           <SectionRow
             icon={TrendingUp}
             iconColor="text-zinc-400"
             iconBg="bg-zinc-800"
-            label="Earnings & metrics"
+            label={t('section_earnings_metrics')}
             onClick={() => void navigate(ROUTES.EARNINGS)}
           />
         </div>
@@ -212,14 +221,14 @@ export default function ProfilePage() {
         className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden"
       >
         <div className="px-4 py-3 border-b border-zinc-800">
-          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">Help & support</p>
+          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">{t('section_support')}</p>
         </div>
         <div className="divide-y divide-zinc-800/60">
           <SectionRow
             icon={Phone}
             iconColor="text-blue-400"
             iconBg="bg-blue-500/10"
-            label="Contact support"
+            label={t('contact_support')}
             onClick={() => {
               window.open('tel:+234800GRANDXL', '_self')
             }}
@@ -228,21 +237,21 @@ export default function ProfilePage() {
             icon={HelpCircle}
             iconColor="text-zinc-400"
             iconBg="bg-zinc-800"
-            label="Help centre"
-            onClick={() => toast('Help centre coming soon')}
+            label={t('help_centre')}
+            onClick={() => toast(t('help_coming_soon'))}
           />
           <SectionRow
             icon={FileText}
             iconColor="text-zinc-400"
             iconBg="bg-zinc-800"
-            label="Terms & conditions"
-            onClick={() => toast('Opening terms...')}
+            label={t('terms_conditions')}
+            onClick={() => toast(t('opening_terms'))}
           />
           <SectionRow
             icon={Info}
             iconColor="text-zinc-400"
             iconBg="bg-zinc-800"
-            label="App version"
+            label={t('app_version')}
             value="1.0.0"
           />
         </div>
@@ -252,12 +261,12 @@ export default function ProfilePage() {
       <motion.button
         custom={5} variants={stagger} initial="hidden" animate="visible"
         whileTap={{ scale: 0.97 }}
-        onClick={signOut}
+        onClick={() => void signOut()}
         className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-900/40 bg-red-950/20 py-4 text-sm font-semibold text-red-500 transition-colors hover:bg-red-950/40 cursor-pointer"
         style={{ touchAction: 'manipulation', minHeight: '52px' }}
       >
         <LogOut size={16} />
-        Sign out
+        {t('sign_out')}
       </motion.button>
     </div>
   )

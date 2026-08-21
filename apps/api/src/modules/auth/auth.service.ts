@@ -270,6 +270,20 @@ export class AuthService {
     }
     await this.redis.del(`phone_verified:${dto.phone}`)
 
+    // If phone is already registered (e.g. rider going through flow a second time),
+    // skip creation and issue fresh tokens for the existing account.
+    const existing = await this.usersService.findByPhone(dto.phone)
+    if (existing) {
+      await this.usersService.markVerified(existing._id.toString())
+      const tokens = await this.issueTokens(existing)
+      await this.storeRefreshToken(existing._id.toString(), tokens.refreshToken)
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: await this.usersService.toSafeUser(existing),
+      }
+    }
+
     const user = await this.usersService.create({
       firstName: dto.firstName,
       lastName: dto.lastName,

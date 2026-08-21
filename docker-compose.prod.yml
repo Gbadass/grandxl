@@ -66,6 +66,7 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL}
         VITE_SENTRY_DSN_WEB: ${VITE_SENTRY_DSN_WEB}
+        VITE_GOOGLE_MAPS_KEY: ${VITE_GOOGLE_MAPS_KEY}
     container_name: grandxl-web
     restart: always
     networks:

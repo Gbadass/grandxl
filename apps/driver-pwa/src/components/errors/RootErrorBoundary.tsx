@@ -1,4 +1,5 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react'
+import i18n from '../../i18n'
 
 interface Props { children: ReactNode }
 interface State { hasError: boolean }
@@ -24,16 +25,16 @@ export class RootErrorBoundary extends Component<Props, State> {
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
             </svg>
           </div>
-          <h1 className="text-lg font-bold text-zinc-100">App error</h1>
+          <h1 className="text-lg font-bold text-zinc-100">{i18n.t('common:app_error')}</h1>
           <p className="mt-2 text-sm text-zinc-500 max-w-xs">
-            Something went wrong. Your active delivery is safe — tap reload to continue.
+            {i18n.t('common:app_error_sub')}
           </p>
           <button
             className="mt-6 rounded-2xl bg-primary px-8 py-3.5 text-sm font-bold text-white shadow-lg shadow-primary/25 cursor-pointer"
             onClick={() => window.location.reload()}
             style={{ touchAction: 'manipulation' }}
           >
-            Reload app
+            {i18n.t('common:reload')}
           </button>
         </div>
       )

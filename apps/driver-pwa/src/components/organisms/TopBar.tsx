@@ -1,10 +1,12 @@
 import { Bell, Bike } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { useRiderStore } from '../../store/rider.store'
 import { formatMoney } from '@grandxl/utils'
 
 export function TopBar() {
   const { isOnline, rider, pendingJobs } = useRiderStore()
+  const { t } = useTranslation(['rider', 'common'])
   const hasPendingJobs = pendingJobs.length > 0
   const pendingKobo = rider?.earnings.pendingKobo ?? 0
 
@@ -41,7 +43,7 @@ export function TopBar() {
           <button
             className="relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:bg-zinc-800 cursor-pointer"
             style={{ touchAction: 'manipulation' }}
-            aria-label="Notifications"
+            aria-label={t('common:notifications')}
           >
             <Bell
               size={17}
@@ -66,7 +68,7 @@ export function TopBar() {
               animate={isOnline ? { scale: [1, 1.4, 1], opacity: [1, 0.5, 1] } : {}}
               transition={{ duration: 1.5, repeat: Infinity }}
             />
-            {isOnline ? 'Online' : 'Offline'}
+            {isOnline ? t('rider:online') : t('rider:offline_status')}
           </div>
         </div>
       </div>

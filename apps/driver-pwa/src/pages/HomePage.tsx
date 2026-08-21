@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import type { Variants } from 'framer-motion'
 import {
@@ -21,11 +22,11 @@ const fade: Variants = {
   }),
 }
 
-function greeting() {
+function greetingKey() {
   const h = new Date().getHours()
-  if (h < 12) return 'Good morning'
-  if (h < 17) return 'Good afternoon'
-  return 'Good evening'
+  if (h < 12) return 'good_morning'
+  if (h < 17) return 'good_afternoon'
+  return 'good_evening'
 }
 
 /** SVG ring that fills clockwise from 0–100% */
@@ -63,6 +64,7 @@ function Ring({
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('rider')
   const { user } = useAuthStore()
   const { rider, isOnline, activeOrder } = useRiderStore()
 
@@ -91,7 +93,7 @@ export default function HomePage() {
 
       {/* ── Greeting ── */}
       <motion.div custom={0} variants={fade} initial="hidden" animate="visible">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{greeting()}</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{t(greetingKey())}</p>
         <h1 className="font-display text-2xl font-bold text-zinc-100 mt-0.5 leading-tight">
           {firstName} 👋
         </h1>
@@ -118,7 +120,7 @@ export default function HomePage() {
                 animate={{ opacity: [1, 0.3, 1] }}
                 transition={{ duration: 1.2, repeat: Infinity }}
               />
-              <p className="text-[10px] font-bold text-primary uppercase tracking-wide">Active delivery</p>
+              <p className="text-[10px] font-bold text-primary uppercase tracking-wide">{t('active_delivery_banner')}</p>
             </div>
             <p className="text-sm font-semibold text-zinc-100 truncate">
               {activeOrder.deliveryAddress.street}, {activeOrder.deliveryAddress.city}
@@ -137,14 +139,14 @@ export default function HomePage() {
         {/* Subtle gradient accent */}
         <div className="absolute top-0 right-0 h-32 w-32 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
 
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Earnings overview</p>
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">{t('earnings_overview')}</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <div className="flex items-center gap-1.5 mb-1">
               <div className="h-5 w-5 rounded-md bg-green-500/10 flex items-center justify-center">
                 <Wallet size={11} className="text-green-400" />
               </div>
-              <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">Total earned</p>
+              <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">{t('total_earned')}</p>
             </div>
             <p className="font-display text-2xl font-bold text-zinc-100 leading-tight tabular-nums">
               {formatMoney(totalKobo, 'NGN')}
@@ -155,13 +157,13 @@ export default function HomePage() {
               <div className="h-5 w-5 rounded-md bg-amber-500/10 flex items-center justify-center">
                 <Clock size={11} className="text-amber-400" />
               </div>
-              <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">Pending</p>
+              <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide">{t('pending')}</p>
             </div>
             <p className="font-display text-2xl font-bold text-amber-400 leading-tight tabular-nums">
               {formatMoney(pendingKobo, 'NGN')}
             </p>
             {pendingKobo > 0 && (
-              <p className="text-[10px] text-zinc-600 mt-0.5">Paid out weekly</p>
+              <p className="text-[10px] text-zinc-600 mt-0.5">{t('paid_out_weekly')}</p>
             )}
           </div>
         </div>
@@ -173,9 +175,9 @@ export default function HomePage() {
         className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4"
       >
         <div className="flex items-center justify-between mb-4">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">30-day performance</p>
+          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{t('performance_30_day')}</p>
           {deliveryCount > 0 && (
-            <span className="text-[10px] text-zinc-600 font-medium">{deliveryCount} deliveries</span>
+            <span className="text-[10px] text-zinc-600 font-medium">{t('deliveries_count', { count: deliveryCount })}</span>
           )}
         </div>
         <div className="grid grid-cols-3 gap-3">
@@ -191,7 +193,7 @@ export default function HomePage() {
               <p className="font-display text-base font-bold text-zinc-100">
                 {rider ? rider.rating.toFixed(1) : '—'}
               </p>
-              <p className="text-[10px] text-zinc-600">Rating</p>
+              <p className="text-[10px] text-zinc-600">{t('rating')}</p>
             </div>
           </div>
 
@@ -207,7 +209,7 @@ export default function HomePage() {
               <p className="font-display text-base font-bold text-zinc-100">
                 {metrics ? `${Math.round(onTimeRate * 100)}%` : '—'}
               </p>
-              <p className="text-[10px] text-zinc-600">On time</p>
+              <p className="text-[10px] text-zinc-600">{t('on_time')}</p>
             </div>
           </div>
 
@@ -223,7 +225,7 @@ export default function HomePage() {
               <p className="font-display text-base font-bold text-zinc-100">
                 {metrics ? `${Math.round((1 - cancelRate) * 100)}%` : '—'}
               </p>
-              <p className="text-[10px] text-zinc-600">Completion</p>
+              <p className="text-[10px] text-zinc-600">{t('completion')}</p>
             </div>
           </div>
         </div>
@@ -250,10 +252,10 @@ export default function HomePage() {
         </div>
         <div className="flex-1 min-w-0">
           <p className={`text-sm font-semibold ${isOnline ? 'text-green-400' : 'text-zinc-400'}`}>
-            {isOnline ? 'Online — receiving jobs' : 'Offline'}
+            {isOnline ? t('online_receiving') : t('offline_status')}
           </p>
           <p className="text-xs text-zinc-600 mt-0.5">
-            {isOnline ? 'Switch to Jobs tab to see incoming orders' : 'Go to Jobs tab to go online'}
+            {isOnline ? t('switch_to_jobs') : t('go_online_hint')}
           </p>
         </div>
         <Zap size={16} className={isOnline ? 'text-green-400' : 'text-zinc-700'} />
@@ -265,7 +267,7 @@ export default function HomePage() {
         className="rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden"
       >
         <div className="px-4 py-3 border-b border-zinc-800/60">
-          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">Quick actions</p>
+          <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">{t('quick_actions')}</p>
         </div>
 
         <button
@@ -276,7 +278,7 @@ export default function HomePage() {
           <div className="h-8 w-8 rounded-xl bg-zinc-800 flex items-center justify-center shrink-0">
             <TrendingUp size={14} className="text-zinc-400" />
           </div>
-          <span className="flex-1 text-left">Earnings & metrics</span>
+          <span className="flex-1 text-left">{t('earnings_metrics')}</span>
           <ChevronRight size={14} className="text-zinc-600" />
         </button>
 
@@ -288,7 +290,7 @@ export default function HomePage() {
           <div className="h-8 w-8 rounded-xl bg-zinc-800 flex items-center justify-center shrink-0">
             <Wallet size={14} className="text-zinc-400" />
           </div>
-          <span className="flex-1 text-left">Request payout</span>
+          <span className="flex-1 text-left">{t('request_payout')}</span>
           {pendingKobo > 0 && (
             <span className="text-[10px] font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full mr-1">
               {formatMoney(pendingKobo, 'NGN')}
@@ -305,7 +307,7 @@ export default function HomePage() {
           <div className="h-8 w-8 rounded-xl bg-zinc-800 flex items-center justify-center shrink-0">
             <Clock size={14} className="text-zinc-400" />
           </div>
-          <span className="flex-1 text-left">Delivery history</span>
+          <span className="flex-1 text-left">{t('delivery_history')}</span>
           <ChevronRight size={14} className="text-zinc-600" />
         </button>
 
@@ -317,7 +319,7 @@ export default function HomePage() {
           <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
             <Package size={14} className="text-primary" />
           </div>
-          <span className="flex-1 text-left font-medium text-primary">Find jobs now</span>
+          <span className="flex-1 text-left font-medium text-primary">{t('find_jobs')}</span>
           <ChevronRight size={14} className="text-primary" />
         </button>
       </motion.div>

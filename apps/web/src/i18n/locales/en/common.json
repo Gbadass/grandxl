@@ -7,12 +7,32 @@
   "delete": "Delete",
   "edit": "Edit",
   "back": "Back",
+  "clear": "Clear",
   "confirm": "Confirm",
   "close": "Close",
   "submit": "Submit",
   "search": "Search",
   "noResults": "No results found",
+  "refresh": "Refresh",
   "currency": "₦",
+  "browse": "Browse restaurants",
+  "online": "Back online — refreshing data...",
+  "offline": "No internet connection. Some features may be unavailable.",
+  "notFound": {
+    "title": "Page not found",
+    "subtitle": "The page you're looking for doesn't exist.",
+    "backToHome": "Back to home"
+  },
+  "pageError": {
+    "title": "Something went wrong on this page",
+    "subtitle": "The rest of the app is still working.",
+    "goHome": "Go home"
+  },
+  "rootError": {
+    "title": "Something went wrong",
+    "subtitle": "We're sorry — the app ran into an unexpected error.",
+    "reload": "Reload app"
+  },
   "nav": {
     "home": "Home",
     "browse": "Browse",
@@ -22,6 +42,8 @@
     "mainNavigation": "Main navigation",
     "searchPlaceholder": "Search restaurants or dishes...",
     "myLocation": "My location",
+    "changeLocation": "Change location",
+    "location": "Set location",
     "notifications": "Notifications",
     "cart": "Cart",
     "signIn": "Sign In"

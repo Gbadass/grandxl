@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, MapPin, Home, Briefcase, Star, Trash2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -31,6 +32,7 @@ function AddressRow({
   onSetDefault: () => void
   delay: number
 }) {
+  const { t } = useTranslation(['addresses', 'common'])
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   return (
@@ -51,7 +53,7 @@ function AddressRow({
             <p className="text-sm font-semibold text-gray-900 capitalize">{address.label}</p>
             {isDefault && (
               <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                Default
+                {t('default')}
               </span>
             )}
           </div>
@@ -72,7 +74,7 @@ function AddressRow({
             className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-gray-500 hover:text-primary hover:bg-primary/5 cursor-pointer transition-colors"
           >
             <Star size={13} />
-            Set as default
+            {t('setDefault')}
           </button>
         )}
         <AnimatePresence mode="wait">
@@ -89,14 +91,14 @@ function AddressRow({
                 onClick={() => setConfirmDelete(false)}
                 className="flex-1 py-3 text-xs font-medium text-gray-400 hover:bg-gray-50 cursor-pointer transition-colors"
               >
-                Cancel
+                {t('common:cancel')}
               </button>
               <button
                 type="button"
                 onClick={onDelete}
                 className="flex-1 py-3 text-xs font-semibold text-red-500 hover:bg-red-50 cursor-pointer transition-colors"
               >
-                Delete
+                {t('common:delete')}
               </button>
             </motion.div>
           ) : (
@@ -121,6 +123,7 @@ function AddressRow({
 
 export default function AddressesPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation('addresses')
   const { addresses, defaultAddressId } = useAddresses()
   const { mutate: deleteAddress } = useDeleteAddress()
   const { mutate: setDefault } = useSetDefaultAddress()
@@ -128,13 +131,13 @@ export default function AddressesPage() {
 
   function handleDelete(id: string) {
     deleteAddress(id)
-    toast.success('Address removed')
+    toast.success(t('removed'))
   }
 
   function handleSetDefault(id: string) {
     setDefault(id, {
-      onSuccess: () => toast.success('Default address updated'),
-      onError: () => toast.error('Could not update. Try again.'),
+      onSuccess: () => toast.success(t('defaultUpdated')),
+      onError: () => toast.error(t('defaultUpdateError')),
     })
   }
 
@@ -146,11 +149,11 @@ export default function AddressesPage() {
           <button
             onClick={() => void navigate(-1)}
             className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 cursor-pointer hover:border-gray-300 transition-colors"
-            aria-label="Back"
+            aria-label={t('common:back')}
           >
             <ChevronLeft size={18} className="text-gray-700" />
           </button>
-          <h1 className="font-display font-bold text-xl text-gray-900">Saved addresses</h1>
+          <h1 className="font-display font-bold text-xl text-gray-900">{t('title')}</h1>
         </div>
 
         {/* Address list */}
@@ -163,8 +166,8 @@ export default function AddressesPage() {
             <div className="mb-4 h-20 w-20 rounded-full bg-gray-100 flex items-center justify-center">
               <MapPin size={36} className="text-gray-300" />
             </div>
-            <h2 className="font-semibold text-gray-900">No saved addresses</h2>
-            <p className="mt-1 text-sm text-gray-500">Add your home or work address for faster checkout</p>
+            <h2 className="font-semibold text-gray-900">{t('empty')}</h2>
+            <p className="mt-1 text-sm text-gray-500">{t('emptySub')}</p>
           </motion.div>
         ) : (
           <div className="space-y-3">
@@ -196,7 +199,7 @@ export default function AddressesPage() {
           <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
             <Plus size={18} />
           </div>
-          <span className="font-medium text-sm">Add new address</span>
+          <span className="font-medium text-sm">{t('add')}</span>
         </motion.button>
       </div>
 

@@ -1,0 +1,14 @@
+{
+  "placeholder": "Restaurants, dishes…",
+  "tabRestaurants": "Restaurants",
+  "tabDishes": "Dishes",
+  "unavailable": "Unavailable",
+  "noResults": "No results for \"{{query}}\"",
+  "tryDifferent": "Try different keywords or check your spelling",
+  "prompt": "Search for restaurants or dishes",
+  "promptSub": "Find your favourite food near you",
+  "noRestaurants": "No restaurants match \"{{query}}\"",
+  "noDishes": "No dishes match \"{{query}}\"",
+  "seeDishes": "See {{count}} dish result(s)",
+  "seeRestaurants": "See {{count}} restaurant(s)"
+}
