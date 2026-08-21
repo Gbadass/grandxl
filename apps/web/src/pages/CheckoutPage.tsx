@@ -186,14 +186,10 @@ export default function CheckoutPage() {
         street: selectedAddress.street,
         city: selectedAddress.city,
         state: selectedAddress.state,
-        ...(selectedAddress.coordinates
-          ? {
-              coordinates: {
-                lat: selectedAddress.coordinates.coordinates[1],
-                lng: selectedAddress.coordinates.coordinates[0],
-              },
-            }
-          : {}),
+        coordinates: {
+          lat: selectedAddress.coordinates.coordinates[1],
+          lng: selectedAddress.coordinates.coordinates[0],
+        },
       },
       paymentMethod,
       customerNote: customerNote.trim() || undefined,

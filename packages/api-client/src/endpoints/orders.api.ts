@@ -16,7 +16,7 @@ export interface CreateOrderDto {
     street: string
     city: string
     state: string
-    coordinates?: { lat: number; lng: number }
+    coordinates: { lat: number; lng: number }
   }
   paymentMethod: PaymentMethod
   couponCode?: string
