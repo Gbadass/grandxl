@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common'
+import { ReferralsModule } from '../referrals/referrals.module'
 import { MongooseModule } from '@nestjs/mongoose'
 import { BullModule } from '@nestjs/bullmq'
 import { OrderDocument, OrderSchema } from './schemas/order.schema'
@@ -13,6 +14,7 @@ import { RestaurantsModule } from '../restaurants/restaurants.module'
 import { TrackingModule } from '../tracking/tracking.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { PlatformConfigModule } from '../platform-config/platform-config.module'
+import { PaymentsModule } from '../payments/payments.module'
 import { ORDER_TIMEOUT_QUEUE, RIDER_DISPATCH_QUEUE, SCHEDULED_ORDER_QUEUE } from '../jobs/constants/queue.constants'
 
 @Module({
@@ -27,11 +29,13 @@ import { ORDER_TIMEOUT_QUEUE, RIDER_DISPATCH_QUEUE, SCHEDULED_ORDER_QUEUE } from
       { name: SCHEDULED_ORDER_QUEUE },
     ),
     forwardRef(() => RidersModule),
+    forwardRef(() => PaymentsModule),
     MenuItemsModule,
     RestaurantsModule,
     TrackingModule,
     NotificationsModule,
     PlatformConfigModule,
+    ReferralsModule,
   ],
   controllers: [OrdersController, AdminOrdersController],
   providers: [OrdersService, SettlementService],

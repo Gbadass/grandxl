@@ -47,8 +47,12 @@ export default function AdminLoginPage() {
       }
     } catch (err) {
       if (err instanceof AxiosError) {
-        const data = err.response?.data as ApiError | undefined
-        setError(data?.message ?? 'Invalid email or password.')
+        if (!err.response) {
+          setError('Unable to reach the server. Please check your connection or try again shortly.')
+        } else {
+          const data = err.response.data as ApiError | undefined
+          setError(data?.message ?? 'Invalid email or password.')
+        }
       } else {
         setError('Something went wrong. Try again.')
       }

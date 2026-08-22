@@ -27,5 +27,14 @@
   "menuTerms": "Terms of Service",
   "signingOut": "Signing out…",
   "signOut": "Sign out",
-  "version": "GrandXL v1.0 · Made with love for Nigeria"
+  "version": "GrandXL v1.0 · Made with love for Nigeria",
+  "sectionPreferences": "Preferences",
+  "darkMode": "Dark mode",
+  "darkModeOn": "On",
+  "darkModeOff": "Off",
+  "language": "Language",
+  "languageEnglish": "English",
+  "languageYoruba": "Yoruba",
+  "languageIgbo": "Igbo",
+  "languageHausa": "Hausa"
 }

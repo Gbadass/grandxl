@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Logger,
   forwardRef,
   NotFoundException,
   ForbiddenException,
@@ -27,6 +28,8 @@ import { WalletTxnReason } from '../wallet/schemas/wallet-transaction.schema'
 import { DeliveryZonesService } from '../delivery-zones/delivery-zones.service'
 import { SurgePricingService } from '../surge-pricing/surge-pricing.service'
 import { RidersService } from '../riders/riders.service'
+import { PaymentsService } from '../payments/payments.service'
+import { ReferralsService } from '../referrals/referrals.service'
 import {
   ORDER_TIMEOUT_QUEUE,
   RIDER_DISPATCH_QUEUE,
@@ -58,6 +61,8 @@ const DEFAULT_SERVICE_FEE_CAP_KOBO = 150_000
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name)
+
   constructor(
     @InjectModel(OrderDocument.name)
     private readonly orderModel: Model<OrderDocument>,
@@ -73,6 +78,9 @@ export class OrdersService {
     private readonly surgePricingService: SurgePricingService,
     @Inject(forwardRef(() => RidersService))
     private readonly ridersService: RidersService,
+    @Inject(forwardRef(() => PaymentsService))
+    private readonly paymentsService: PaymentsService,
+    private readonly referralsService: ReferralsService,
     @InjectQueue(ORDER_TIMEOUT_QUEUE) private readonly orderTimeoutQueue: Queue,
     @InjectQueue(RIDER_DISPATCH_QUEUE) private readonly riderDispatchQueue: Queue,
     @InjectQueue(SCHEDULED_ORDER_QUEUE) private readonly scheduledOrderQueue: Queue,
@@ -377,23 +385,21 @@ export class OrdersService {
 
     const total = subtotal + (freeDelivery ? 0 : deliveryFee) + serviceFee - (freeDelivery ? 0 : discount) + vat + tip
 
-    // Wallet application: debit min(balance, total). Locks the customer's balance to this order
-    // so they can't double-spend if they hit checkout twice. If order is cancelled later we
-    // refund the wallet — handled in the cancellation flow.
+    // Wallet application: atomically debit up to `total` kobo in a single DB op.
+    // Using debitUpTo avoids the read-then-write race: two concurrent orders for
+    // the same customer can no longer both pass a balance check and overdraft the wallet.
+    // The actual amount debited is returned and used as walletApplied.
     let walletApplied = 0
     if (dto.useWallet) {
-      const { balance } = await this.walletService.getBalance(customerId)
-      walletApplied = Math.min(balance, total)
-      if (walletApplied > 0) {
-        await this.walletService.debit({
-          userId:        customerId,
-          amount:        walletApplied,
-          reason:        WalletTxnReason.ORDER_PAYMENT,
-          description:   `Applied to new order`,
-          referenceType: 'order_pending',
-          referenceId:   customerId, // overwritten once order has an id — see post-save patch below
-        })
-      }
+      const { actualDebited } = await this.walletService.debitUpTo({
+        userId:        customerId,
+        maxAmount:     total,
+        reason:        WalletTxnReason.ORDER_PAYMENT,
+        description:   `Applied to new order`,
+        referenceType: 'order_pending',
+        referenceId:   customerId, // overwritten once order has an id — see post-save patch below
+      })
+      walletApplied = actualDebited
     }
 
     const order = await new this.orderModel({
@@ -727,6 +733,16 @@ export class OrdersService {
         .catch(() => undefined)
     }
 
+    // Initiate Paystack card refund if the order was paid by card. Fire-and-forget —
+    // wallet has already been refunded above; a Paystack API hiccup must not block the
+    // cancellation response. Errors are logged inside initiateRefund().
+    if (dto.status === OrderStatus.CANCELLED) {
+      const cancelReason = dto.cancelReason ?? 'Order cancelled'
+      this.paymentsService
+        .initiateRefund(orderId, cancelReason)
+        .catch(() => undefined)
+    }
+
     // Restock items when the order is cancelled — items that auto-disabled at 0
     // stock stay disabled until the restaurant re-enables (handled in MenuItemsService).
     if (dto.status === OrderStatus.CANCELLED) {
@@ -807,6 +823,12 @@ export class OrdersService {
               this.trackingService.notifyRiderOrderReady(riderUserId, orderIdStr)
               return this.notificationsService.onOrderReady(riderUserId, updated.orderNumber, orderIdStr)
             })
+        : Promise.resolve(),
+      // On delivery: trigger referral reward for the customer's first completed order
+      dto.status === OrderStatus.DELIVERED
+        ? this.referralsService
+            .onFirstOrderCompleted(orderIdStr, customerId)
+            .catch(() => undefined)
         : Promise.resolve(),
     ])
 
@@ -1262,7 +1284,7 @@ export class OrdersService {
     const cancelled = await this.orderModel.findByIdAndUpdate(orderId, {
       $set: {
         status: OrderStatus.CANCELLED,
-        cancelReason: 'Payment timeout — order auto-cancelled after 15 minutes',
+        cancelReason: 'Payment not completed within 30 minutes',
       },
     }, { new: true })
 

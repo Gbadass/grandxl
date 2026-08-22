@@ -1,12 +1,22 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../store/auth.store'
 import { ROUTES } from './routes'
 import type { UserRole } from '@grandxl/types'
 
-// Requires authentication — redirects to /login if not logged in
+// Requires authentication — redirects to /login with returnTo so the login page
+// sends the user back to the page they were trying to reach after they sign in.
 export function ProtectedRoute() {
   const { isAuthenticated } = useAuthStore()
-  if (!isAuthenticated) return <Navigate to={ROUTES.LOGIN} replace />
+  const location = useLocation()
+  if (!isAuthenticated) {
+    return (
+      <Navigate
+        to={ROUTES.LOGIN}
+        state={{ returnTo: location.pathname + location.search }}
+        replace
+      />
+    )
+  }
   return <Outlet />
 }
 

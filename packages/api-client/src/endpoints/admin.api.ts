@@ -215,15 +215,31 @@ export const platformConfigApi = {
 
 // ── Admin — Users ────────────────────────────────────────────────────────────
 
+export interface AdminCreateUserDto {
+  firstName: string
+  lastName: string
+  phone?: string
+  email?: string
+  password: string
+  roles: string[]
+  country?: string
+}
+
 export const adminUsersApi = {
   list: (params?: { page?: number; limit?: number; search?: string }) =>
     getClient().get<PaginatedResponse<User>>('/admin/users', { params }),
+
+  create: (dto: AdminCreateUserDto) =>
+    getClient().post<ApiResponse<User>>('/admin/users', dto),
 
   ban: (id: string) =>
     getClient().patch<ApiResponse<{ banned: boolean }>>(`/admin/users/${id}/ban`),
 
   unban: (id: string) =>
     getClient().patch<ApiResponse<{ banned: boolean }>>(`/admin/users/${id}/unban`),
+
+  delete: (id: string) =>
+    getClient().delete<ApiResponse<{ deleted: boolean }>>(`/admin/users/${id}`),
 }
 
 // ── Restaurant Owner — own restaurant & orders ───────────────────────────────

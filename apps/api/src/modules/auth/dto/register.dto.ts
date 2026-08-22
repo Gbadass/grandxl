@@ -62,4 +62,10 @@ export class RegisterDto {
   @IsOptional()
   @IsEnum([UserRole.CUSTOMER, UserRole.RIDER, UserRole.RESTAURANT_OWNER])
   role?: UserRole.CUSTOMER | UserRole.RIDER | UserRole.RESTAURANT_OWNER
+
+  @ApiPropertyOptional({ example: 'ABC12XYZ' })
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }: { value: string | undefined }) => value?.toUpperCase()?.trim())
+  referralCode?: string
 }

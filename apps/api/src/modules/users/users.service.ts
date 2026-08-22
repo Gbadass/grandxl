@@ -14,6 +14,10 @@ import type { UpdateProfileDto } from './dto/update-profile.dto'
 import type { AddAddressDto } from './dto/add-address.dto'
 import type { UpdateAddressDto } from './dto/update-address.dto'
 
+function generateReferralCode(): string {
+  return Math.random().toString(36).substring(2, 10).toUpperCase()
+}
+
 export interface CreateUserDto {
   firstName: string
   lastName: string
@@ -72,7 +76,11 @@ export class UsersService implements OnModuleInit {
     // Omit null/undefined email and phone — the sparse unique indexes skip
     // missing fields, but explicitly stored `null` is treated as a value and
     // would conflict once a second user without email/phone is created.
-    const data: Record<string, unknown> = { ...dto, roles: dto.roles ?? [UserRole.CUSTOMER] }
+    const data: Record<string, unknown> = {
+      ...dto,
+      roles: dto.roles ?? [UserRole.CUSTOMER],
+      referralCode: generateReferralCode(),
+    }
     if (!data['email']) delete data['email']
     if (!data['phone']) delete data['phone']
     const user = new this.userModel(data)
@@ -92,6 +100,10 @@ export class UsersService implements OnModuleInit {
 
   async findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email.toLowerCase() }).exec()
+  }
+
+  async findByReferralCode(code: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ referralCode: code.toUpperCase() }).exec()
   }
 
   async findByIdOrThrow(id: string): Promise<UserDocument> {
@@ -261,9 +273,7 @@ export class UsersService implements OnModuleInit {
   // ── Admin ────────────────────────────────────────────────────────
 
   async listUsers(page: number, limit: number, search?: string) {
-    const filter: Record<string, unknown> = search
-      ? { deletedAt: null }
-      : { roles: UserRole.CUSTOMER, deletedAt: null }
+    const filter: Record<string, unknown> = { deletedAt: null }
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const re = new RegExp(escaped, 'i')
@@ -318,7 +328,7 @@ export class UsersService implements OnModuleInit {
           firstName: 'Deleted',
           lastName: 'User',
           email: `deleted_${userId}@grandxl.com`,
-          phone: null,
+          phone: `deleted_${userId}`,
           avatar: null,
           expoPushToken: null,
           addresses: [],

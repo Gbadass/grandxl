@@ -23,4 +23,6 @@ export const ROUTES = {
   PAYMENT_CALLBACK: '/payment/callback',
   FAVORITES: '/favorites',
   SEARCH: '/search',
+  ORDER_DISPUTE: (id: string) => `/orders/${id}/dispute`,
+  REFERRALS: '/referrals',
 } as const

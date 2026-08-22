@@ -208,22 +208,67 @@ export default function CheckoutPage() {
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
 
       if (paymentMethod === PaymentMethod.PAYSTACK) {
-        const callbackUrl = `${window.location.origin}/payment/callback`
+        let accessCode: string
+        let paystackRef: string
         let authorizationUrl: string
         try {
           const payRes = await paymentsApi.initiate({
             orderId: order._id,
-            method: PaymentMethod.PAYSTACK,
-            callbackUrl,
+            method:  PaymentMethod.PAYSTACK,
           })
+          accessCode       = payRes.data.data.accessCode
+          paystackRef      = payRes.data.data.reference
           authorizationUrl = payRes.data.data.authorizationUrl
         } catch (payErr: unknown) {
-          // Payment initiation failed — cancel the order so customer isn't left with a ghost order
           void ordersApi.cancel(order._id, 'Payment initiation failed').catch(() => undefined)
           throw payErr
         }
-        clearCart()
-        window.location.href = authorizationUrl
+
+        // Store IDs for the AppShell recovery hook in case the user kills the tab
+        // entirely (bypassing both popup onClose and callback).
+        sessionStorage.setItem('pendingPaystackOrderId', order._id)
+        sessionStorage.setItem('pendingPaystackReference', paystackRef)
+
+        setIsSubmitting(false) // re-enable the button while popup is open
+
+        // Open Paystack inline popup — stays on this page, no full-page redirect.
+        // v2 API: when the backend pre-initializes the transaction (which we do),
+        // use resumeTransaction(access_code, callbacks) — NOT newTransaction().
+        type PaystackPopInstance = {
+          resumeTransaction(
+            accessCode: string,
+            callbacks: {
+              onSuccess(response: { reference: string }): void
+              onCancel(): void
+            },
+          ): void
+        }
+        type PaystackPopCtor = new () => PaystackPopInstance
+        const PaystackPop = (window as unknown as { PaystackPop?: PaystackPopCtor }).PaystackPop
+        if (!PaystackPop) {
+          // Script not yet loaded (very slow network) — fall back to redirect
+          window.location.href = authorizationUrl
+          return
+        }
+
+        new PaystackPop().resumeTransaction(accessCode, {
+          onCancel() {
+            // User closed the popup without paying — cancel the ghost order silently
+            sessionStorage.removeItem('pendingPaystackOrderId')
+            sessionStorage.removeItem('pendingPaystackReference')
+            void ordersApi.cancel(order._id, 'Payment cancelled by user').catch(() => undefined)
+            toast(t('checkout:paymentCancelled', 'Payment cancelled — your cart is ready.'))
+          },
+
+          onSuccess(_response) {
+            // Payment completed — clear cart and navigate to tracking
+            clearCart()
+            sessionStorage.removeItem('pendingPaystackOrderId')
+            sessionStorage.removeItem('pendingPaystackReference')
+            void queryClient.invalidateQueries({ queryKey: ['orders'] })
+            setPlacedOrderId(order._id)
+          },
+        })
         return
       }
 

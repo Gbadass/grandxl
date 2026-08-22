@@ -8,6 +8,7 @@ import { JwtStrategy } from './strategies/jwt.strategy'
 import { TermiiProvider } from './providers/termii.provider'
 import { UsersModule } from '../users/users.module'
 import { EmailModule } from '../email/email.module'
+import { ReferralsModule } from '../referrals/referrals.module'
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { EmailModule } from '../email/email.module'
     JwtModule.register({}),
     UsersModule,
     EmailModule,
+    ReferralsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, TermiiProvider],

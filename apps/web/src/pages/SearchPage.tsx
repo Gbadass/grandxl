@@ -3,7 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ArrowLeft, UtensilsCrossed, Store, X } from 'lucide-react'
+import { Search, ArrowLeft, UtensilsCrossed, Store, X, Clock, ChevronDown } from 'lucide-react'
 import { searchApi } from '@grandxl/api-client'
 import type { Restaurant, MenuItem } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
@@ -161,6 +161,130 @@ function SearchPrompt() {
   )
 }
 
+// ── Filter types ──────────────────────────────────────────────────────────────
+
+type SortBy = 'relevance' | 'rating' | 'newest'
+
+interface SearchFilters {
+  openNow: boolean
+  cuisine: string
+  minRating: boolean
+  sortBy: SortBy
+}
+
+const CUISINE_CHIPS = [
+  'All',
+  'Nigerian',
+  'Chinese',
+  'Pizza',
+  'Burgers',
+  'Seafood',
+  'Salads',
+  'Desserts',
+] as const
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: 'relevance', label: 'Relevance' },
+  { value: 'rating',    label: 'Rating' },
+  { value: 'newest',   label: 'Newest' },
+]
+
+// ── Filter bar ────────────────────────────────────────────────────────────────
+
+function FilterBar({
+  filters,
+  onChange,
+}: {
+  filters: SearchFilters
+  onChange: (next: SearchFilters) => void
+}) {
+  const [sortOpen, setSortOpen] = useState(false)
+
+  function toggle<K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) {
+    onChange({ ...filters, [key]: value })
+  }
+
+  const activeSortLabel = SORT_OPTIONS.find((o) => o.value === filters.sortBy)?.label ?? 'Relevance'
+  const chipBase = 'shrink-0 px-3 py-1.5 rounded-full text-sm border transition-colors duration-150 cursor-pointer whitespace-nowrap'
+  const chipIdle   = `${chipBase} bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500`
+  const chipActive = `${chipBase} bg-primary border-primary text-white`
+
+  return (
+    <div className="bg-zinc-950 border-b border-zinc-800 px-4 py-2.5">
+      {/* Row 1 — cuisine chips */}
+      <div className="flex items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden pb-2">
+        {CUISINE_CHIPS.map((c) => {
+          const isActive = c === 'All' ? filters.cuisine === '' : filters.cuisine === c
+          return (
+            <button
+              key={c}
+              type="button"
+              onClick={() => toggle('cuisine', c === 'All' ? '' : (isActive ? '' : c))}
+              className={isActive ? chipActive : chipIdle}
+            >
+              {c}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Row 2 — toggles + sort */}
+      <div className="flex items-center gap-2 pt-1">
+        {/* Open now toggle */}
+        <button
+          type="button"
+          onClick={() => toggle('openNow', !filters.openNow)}
+          className={`${filters.openNow ? chipActive : chipIdle} flex items-center gap-1.5`}
+        >
+          <Clock size={12} />
+          Open now
+        </button>
+
+        {/* Min rating toggle */}
+        <button
+          type="button"
+          onClick={() => toggle('minRating', !filters.minRating)}
+          className={filters.minRating ? chipActive : chipIdle}
+        >
+          4★ & up
+        </button>
+
+        {/* Sort dropdown */}
+        <div className="relative ml-auto shrink-0">
+          <button
+            type="button"
+            onClick={() => setSortOpen((v) => !v)}
+            className={`${chipBase} bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500 flex items-center gap-1.5 ${
+              filters.sortBy !== 'relevance' ? '!border-primary !text-primary' : ''
+            }`}
+          >
+            {activeSortLabel}
+            <ChevronDown size={12} className={`transition-transform ${sortOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {sortOpen && (
+            <div className="absolute right-0 top-full mt-1 z-30 bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl overflow-hidden min-w-[120px]">
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { toggle('sortBy', opt.value); setSortOpen(false) }}
+                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors cursor-pointer ${
+                    filters.sortBy === opt.value
+                      ? 'text-primary font-semibold bg-zinc-700'
+                      : 'text-zinc-300 hover:bg-zinc-700'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type TabId = 'restaurants' | 'dishes'
@@ -175,6 +299,12 @@ export default function SearchPage() {
   const [inputValue, setInputValue] = useState(initialQ)
   const [debouncedQ, setDebouncedQ] = useState(initialQ)
   const [activeTab, setActiveTab] = useState<TabId>('restaurants')
+  const [filters, setFilters] = useState<SearchFilters>({
+    openNow: false,
+    cuisine: '',
+    minRating: false,
+    sortBy: 'relevance',
+  })
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -198,8 +328,14 @@ export default function SearchPage() {
   }, [])
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['search', debouncedQ],
-    queryFn: () => searchApi.search({ q: debouncedQ }),
+    queryKey: ['search', debouncedQ, filters],
+    queryFn: () => searchApi.search({
+      q: debouncedQ,
+      ...(filters.cuisine    ? { cuisine: filters.cuisine }           : {}),
+      ...(filters.openNow    ? { openNow: true }                      : {}),
+      ...(filters.minRating  ? { minRating: 4 }                       : {}),
+      ...(filters.sortBy !== 'relevance' ? { sortBy: filters.sortBy } : {}),
+    }),
     enabled: debouncedQ.trim().length >= 2,
     staleTime: 30_000,
   })
@@ -221,7 +357,7 @@ export default function SearchPage() {
   return (
     <div className="max-w-2xl mx-auto pb-24">
       {/* ── Search header ─────────────────────────────────────────── */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 pt-3 pb-0">
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 pt-3 pb-0 overflow-hidden">
         <div className="flex items-center gap-3 mb-3">
           {/* Back button */}
           <button
@@ -276,6 +412,11 @@ export default function SearchPage() {
             />
           </div>
         )}
+      </div>
+
+      {/* ── Filter bar (sticky, below search header) ───────────────── */}
+      <div className="sticky top-[69px] z-10">
+        <FilterBar filters={filters} onChange={setFilters} />
       </div>
 
       {/* ── Results area ──────────────────────────────────────────── */}

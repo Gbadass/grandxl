@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ordersApi } from '@grandxl/api-client'
-import { OrderStatus } from '@grandxl/types'
+import { OrderStatus, PaymentMethod, PaymentStatus } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
 
 export const ACTIVE_STATUSES = [
@@ -10,6 +10,22 @@ export const ACTIVE_STATUSES = [
   OrderStatus.READY,
   OrderStatus.PICKED_UP,
 ]
+
+// A PENDING Paystack order means "waiting for payment" — the popup is open or the
+// user navigated away. These are ghost orders (not yet paid) and should be invisible
+// to the customer until the webhook confirms payment and advances the order to CONFIRMED.
+// Cash/wallet PENDING orders ARE real — the restaurant is waiting to confirm them.
+function isActiveForBanner(order: Order): boolean {
+  if (!ACTIVE_STATUSES.includes(order.status)) return false
+  if (
+    order.status === OrderStatus.PENDING &&
+    order.payment.method === PaymentMethod.PAYSTACK &&
+    order.payment.status !== PaymentStatus.COMPLETED
+  ) {
+    return false
+  }
+  return true
+}
 
 export type OrderTab = 'all' | 'active' | 'delivered' | 'cancelled'
 
@@ -31,7 +47,7 @@ export function useActiveOrders() {
     queryFn: () =>
       ordersApi.getHistory({ page: 1, limit: 20 }).then((r) => {
         const all: Order[] = r.data.data.data
-        return all.filter((o) => ACTIVE_STATUSES.includes(o.status))
+        return all.filter(isActiveForBanner)
       }),
     staleTime: 0,
     refetchOnMount: 'always',

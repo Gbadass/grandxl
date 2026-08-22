@@ -36,7 +36,7 @@ function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number)
 
 interface AuthenticatedSocket extends Socket {
   data: {
-    user: { userId: string; roles: string[] }
+    user: { userId: string; roles: string[]; exp?: number }
   }
 }
 
@@ -80,7 +80,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
       const payload = this.jwtService.verify<JwtPayload>(token)
       const authClient = client as AuthenticatedSocket
-      authClient.data.user = { userId: payload.sub, roles: payload.roles }
+      authClient.data.user = { userId: payload.sub, roles: payload.roles, exp: payload.exp }
 
       client.join(`user_${payload.sub}`)
       if ((payload.roles as string[]).includes('super_admin')) {
@@ -105,7 +105,12 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: LocationUpdatePayload,
   ): void {
-    const { userId, roles } = client.data.user
+    const { userId, roles, exp } = client.data.user
+    if (exp && Date.now() / 1000 > exp) {
+      client.emit('auth:token_expired')
+      client.disconnect()
+      return
+    }
     if (!roles.includes('rider')) return
     if (!data.orderId) return // no active order — nothing to broadcast
 
@@ -182,7 +187,12 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: { orderId: string },
   ): Promise<void> {
-    const { userId, roles } = client.data.user
+    const { userId, roles, exp } = client.data.user
+    if (exp && Date.now() / 1000 > exp) {
+      client.emit('auth:token_expired')
+      client.disconnect()
+      return
+    }
     const { orderId } = data
 
     if (!Types.ObjectId.isValid(orderId)) return
@@ -213,6 +223,28 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
 
     client.join(`order_${orderId}`)
+  }
+
+  @SubscribeMessage('auth:refresh_token')
+  handleRefreshToken(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { token: string },
+  ): void {
+    try {
+      const payload = this.jwtService.verify<JwtPayload>(data.token)
+      const previousUserId = client.data.user.userId
+      client.data.user = { userId: payload.sub, roles: payload.roles, exp: payload.exp }
+      // If the userId changed (e.g. impersonation edge-case), re-join the correct user room
+      if (previousUserId !== payload.sub) {
+        client.leave(`user_${previousUserId}`)
+        client.join(`user_${payload.sub}`)
+      }
+      client.emit('auth:token_accepted')
+    } catch (err) {
+      this.logger.warn(`WS token refresh rejected client=${client.id}: ${(err as Error).message}`)
+      client.emit('auth:token_expired')
+      client.disconnect()
+    }
   }
 
   @SubscribeMessage('order:leave_room')

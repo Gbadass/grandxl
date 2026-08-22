@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { e164Phone } from '@grandxl/validators'
-import { useRegister } from '../../features/auth/hooks/useRegister'
+import { useRegister, getRegisterError } from '../../features/auth/hooks/useRegister'
 import { AuthLayout } from '../../features/auth/components/AuthLayout'
 import { FormField } from '../../features/auth/components/FormField'
 import { PasswordStrength } from '../../features/auth/components/PasswordStrength'
@@ -36,7 +36,7 @@ const item = {
 export default function RegisterPage() {
   const navigate = useNavigate()
   const { t } = useTranslation('auth')
-  const { mutate: register, isPending, isError } = useRegister()
+  const { mutate: register, isPending, isError, error } = useRegister()
 
   const { register: field, handleSubmit, control, formState: { errors } } = useForm<Fields>({
     resolver: zodResolver(formSchema),
@@ -156,7 +156,7 @@ export default function RegisterPage() {
             animate={{ opacity: 1, y: 0 }}
             className="text-sm text-red-500 text-center py-2.5 bg-red-50 rounded-2xl px-3"
           >
-            {t('register.errorPhone')}
+            {getRegisterError(error)}
           </motion.p>
         )}
 

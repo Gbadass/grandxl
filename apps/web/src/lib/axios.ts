@@ -2,6 +2,7 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import * as Sentry from '@sentry/react'
 import { setClient } from '@grandxl/api-client'
 import { useAuthStore } from '../store/auth.store'
+import { useCartStore } from '../features/cart/store/cart.store'
 
 // Single Axios instance for the entire web app.
 // Every API call goes through this — never create a second instance.
@@ -43,6 +44,21 @@ instance.interceptors.response.use(
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
     if (error.response?.status === 401 && !original._retry) {
+      // Account was permanently deleted — skip refresh, show proper message and redirect
+      const errMessage = (error.response.data as { message?: string } | undefined)?.message
+      if (errMessage === 'ACCOUNT_DELETED') {
+        useAuthStore.getState().clearAuth()
+        useCartStore.getState().clearCart()
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.error('This account has been removed. Contact support if you believe this is a mistake.', {
+            id: 'account-deleted',
+            duration: 6000,
+          })
+          setTimeout(() => { window.location.href = '/login' }, 1500)
+        }).catch(() => { window.location.href = '/login' })
+        return Promise.reject(error)
+      }
+
       if (isRefreshing) {
         // Queue this request until the refresh completes
         return new Promise((resolve, reject) => {
@@ -74,6 +90,7 @@ instance.interceptors.response.use(
       } catch (err) {
         processQueue(err)
         useAuthStore.getState().clearAuth()
+        useCartStore.getState().clearCart()
         // Inform the user before the redirect — silent redirects feel like bugs
         import('react-hot-toast').then(({ default: toast }) => {
           toast.error('Your session expired. Please log in again.', { id: 'session-expired', duration: 4000 })

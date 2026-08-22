@@ -287,5 +287,16 @@
   "job_accept_error": "Could not accept job — try again.",
   "more_items": "+{{count}} more",
   "register_success": "Vehicle registered! Now upload your documents.",
-  "register_error": "Could not submit. Please try again."
+  "register_error": "Could not submit. Please try again.",
+
+  "decline_reason_title": "Why are you declining?",
+  "decline_confirm": "Confirm decline",
+  "decline_go_back": "Go back",
+  "decline_reason": {
+    "too_far": "Too far",
+    "low_payout": "Low payout",
+    "busy": "I'm busy",
+    "vehicle_issue": "Vehicle issue",
+    "other": "Other"
+  }
 }

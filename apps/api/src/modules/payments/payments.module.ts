@@ -6,15 +6,17 @@ import { PaymentsController } from './payments.controller'
 import { OrdersModule } from '../orders/orders.module'
 import { UsersModule } from '../users/users.module'
 import { WalletModule } from '../wallet/wallet.module'
+import { FraudModule } from '../fraud/fraud.module'
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: TransactionDocument.name, schema: TransactionSchema },
     ]),
-    OrdersModule,
+    forwardRef(() => OrdersModule),
     UsersModule,
     forwardRef(() => WalletModule),
+    FraudModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService],

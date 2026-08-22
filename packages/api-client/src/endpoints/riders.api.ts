@@ -43,8 +43,8 @@ export const ridersApi = {
   acceptJob: (orderId: string) =>
     getClient().post<ApiResponse<void>>(`/riders/me/jobs/${orderId}/accept`),
 
-  declineJob: (orderId: string) =>
-    getClient().post<ApiResponse<void>>(`/riders/me/jobs/${orderId}/decline`),
+  declineJob: (orderId: string, reason?: string) =>
+    getClient().post<ApiResponse<void>>(`/riders/me/jobs/${orderId}/decline`, reason ? { reason } : {}),
 
   getDeliveryHistory: (params?: { page?: number; limit?: number }) =>
     getClient().get<PaginatedResponse<Order>>('/riders/me/jobs/history', { params }),

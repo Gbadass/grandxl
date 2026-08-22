@@ -36,12 +36,13 @@ export function useRiderSocket() {
       return
     }
 
-    // Attach fresh token before (re)connecting — required by the backend gateway
+    // Always disconnect then reconnect so the gateway re-authenticates with the
+    // current token. Merely updating socket.auth on a live connection is not enough
+    // because the gateway checks token expiry on every inbound message — a stale
+    // token causes all location updates and room joins to be rejected with 401.
     socket.auth = { token: accessToken }
-
-    if (!socket.connected) {
-      socket.connect()
-    }
+    socket.disconnect()
+    socket.connect()
 
     function onDirectJob({ order }: { order: Order }) {
       setActiveOrder(order)
@@ -89,6 +90,7 @@ export function useRiderSocket() {
       socket.off('order:broadcast', onBroadcastJob)
       socket.off('order:status_update', onStatusUpdate)
       socket.off('rider:order_ready', onOrderReady)
+      socket.disconnect()
     }
   }, [isAuthenticated, accessToken, addPendingJob, setActiveOrder, navigate])
 }

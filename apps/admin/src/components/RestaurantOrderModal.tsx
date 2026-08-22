@@ -57,23 +57,36 @@ export function RestaurantOrderModal({ order, onClose }: Props) {
     onClose()
   }
 
-  // Bug fix: dynamically pick the next valid status.
-  // If payment auto-advanced the order to CONFIRMED before the restaurant taps Accept,
-  // sending CONFIRMED again causes a state-machine rejection. We advance to PREPARING instead.
-  function getNextStatus(): OrderStatus {
+  // Dynamically pick the next valid status based on current order state.
+  // Rider accept can auto-advance the order to PREPARING before the restaurant
+  // taps Accept (race condition). In that case null signals "already handled".
+  function getNextStatus(): OrderStatus | null {
     if (order.status === OrderStatus.PENDING) return OrderStatus.CONFIRMED
     if (order.status === OrderStatus.CONFIRMED) return OrderStatus.PREPARING
-    return OrderStatus.CONFIRMED
+    // PREPARING or beyond — rider already accepted, nothing left to do
+    return null
   }
 
   const confirmMutation = useMutation({
-    mutationFn: () => ordersApi.updateStatus(order._id, { status: getNextStatus() }),
+    mutationFn: () => {
+      const next = getNextStatus()
+      if (!next) {
+        // Order was already accepted (rider took it), just close gracefully
+        dismiss()
+        router.push(`/restaurant/orders/${order._id}`)
+        return Promise.resolve(undefined as unknown as import('axios').AxiosResponse)
+      }
+      return ordersApi.updateStatus(order._id, { status: next })
+    },
     onSuccess: () => {
-      toast.success('Order accepted!')
+      if (getNextStatus() !== null) toast.success('Order accepted!')
       dismiss()
       router.push(`/restaurant/orders/${order._id}`)
     },
-    onError: () => toast.error('Could not accept — try again.'),
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast.error(msg ?? 'Could not accept — try again.')
+    },
   })
 
   const rejectMutation = useMutation({

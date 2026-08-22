@@ -15,12 +15,19 @@ import addresses from './locales/en/addresses.json'
 import payment from './locales/en/payment.json'
 import chat from './locales/en/chat.json'
 
+import yoCommon from './locales/yo/common.json'
+import igCommon from './locales/ig/common.json'
+import haCommon from './locales/ha/common.json'
+
 void i18n.use(initReactI18next).init({
-  lng: 'en',
+  lng: localStorage.getItem('gxl-language') ?? 'en',
   fallbackLng: 'en',
   defaultNS: 'common',
   resources: {
     en: { common, auth, restaurants, menu, cart, orders, profile, notifications, search, checkout, addresses, payment, chat },
+    yo: { common: yoCommon },
+    ig: { common: igCommon },
+    ha: { common: haCommon },
   },
   interpolation: { escapeValue: false },
 })

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useRiderStore } from '../../store/rider.store'
 import { ridersApi } from '@grandxl/api-client'
 import { formatMoney } from '@grandxl/utils'
@@ -10,11 +11,23 @@ import type { Order } from '@grandxl/types'
 
 const OFFER_SECONDS = 45
 
+type DeclineReason = 'too_far' | 'low_payout' | 'busy' | 'vehicle_issue' | 'other'
+
+const DECLINE_REASONS: DeclineReason[] = [
+  'too_far',
+  'low_payout',
+  'busy',
+  'vehicle_issue',
+  'other',
+]
+
 function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
   const navigate = useNavigate()
   const { t } = useTranslation('rider')
   const { setActiveOrder, removePendingJob } = useRiderStore()
   const [seconds, setSeconds] = useState(OFFER_SECONDS)
+  const [showDeclineReasons, setShowDeclineReasons] = useState(false)
+  const [selectedReason, setSelectedReason] = useState<DeclineReason | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const dismiss = useCallback(() => {
@@ -53,11 +66,41 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
     },
   })
 
+  const declineMutation = useMutation({
+    mutationFn: (reason: DeclineReason) =>
+      ridersApi.declineJob(order._id, t(`decline_reason.${reason}`)),
+    onSuccess: () => {
+      dismiss()
+    },
+    onError: () => {
+      dismiss()
+    },
+  })
+
   const progress = (seconds / OFFER_SECONDS) * 100
 
   const pickup = order.restaurantPickupAddress
   const dropoff = order.deliveryAddress
   const payout = order.pricing.deliveryFee + (order.pricing.tip ?? 0)
+
+  function handleDeclineClick() {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    setShowDeclineReasons(true)
+  }
+
+  function handleGoBack() {
+    setShowDeclineReasons(false)
+    setSelectedReason(null)
+    // Resume countdown from remaining seconds
+    intervalRef.current = setInterval(() => {
+      setSeconds((s) => (s <= 1 ? 0 : s - 1))
+    }, 1000)
+  }
+
+  function handleConfirmDecline() {
+    if (!selectedReason) return
+    declineMutation.mutate(selectedReason)
+  }
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-[9999] flex flex-col">
@@ -134,22 +177,84 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
           </div>
         </div>
 
-        {/* Buttons */}
-        <div className="flex gap-3 px-5 pb-8">
-          <button
-            onClick={dismiss}
-            disabled={acceptMutation.isPending}
-            className="flex-1 rounded-2xl border border-zinc-600 py-4 text-base font-bold text-zinc-300 transition-colors hover:bg-zinc-800 active:bg-zinc-700 disabled:opacity-50"
-          >
-            {t('decline')}
-          </button>
-          <button
-            onClick={() => acceptMutation.mutate()}
-            disabled={acceptMutation.isPending}
-            className="flex-[2] rounded-2xl bg-primary py-4 text-base font-bold text-white shadow-lg shadow-primary/30 transition-colors hover:bg-primary/90 active:bg-primary/80 disabled:opacity-50"
-          >
-            {acceptMutation.isPending ? t('accepting') : t('accept_job')}
-          </button>
+        {/* Buttons area — animated between normal and decline-reason picker */}
+        <div className="px-5 pb-8 overflow-hidden">
+          <AnimatePresence mode="wait" initial={false}>
+            {!showDeclineReasons ? (
+              <motion.div
+                key="action-buttons"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.2 }}
+                className="flex gap-3"
+              >
+                <button
+                  onClick={handleDeclineClick}
+                  disabled={acceptMutation.isPending}
+                  className="flex-1 rounded-2xl border border-zinc-600 py-4 text-base font-bold text-zinc-300 transition-colors hover:bg-zinc-800 active:bg-zinc-700 disabled:opacity-50"
+                >
+                  {t('decline')}
+                </button>
+                <button
+                  onClick={() => acceptMutation.mutate()}
+                  disabled={acceptMutation.isPending}
+                  className="flex-[2] rounded-2xl bg-primary py-4 text-base font-bold text-white shadow-lg shadow-primary/30 transition-colors hover:bg-primary/90 active:bg-primary/80 disabled:opacity-50"
+                >
+                  {acceptMutation.isPending ? t('accepting') : t('accept_job')}
+                </button>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="decline-reasons"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-4"
+              >
+                <p className="text-sm font-semibold text-zinc-300">{t('decline_reason_title')}</p>
+
+                {/* Reason chips */}
+                <div className="flex flex-wrap gap-2">
+                  {DECLINE_REASONS.map((reason) => {
+                    const isSelected = selectedReason === reason
+                    return (
+                      <button
+                        key={reason}
+                        onClick={() => setSelectedReason(reason)}
+                        className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                          isSelected
+                            ? 'border-primary bg-primary/15 text-primary'
+                            : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600 hover:text-zinc-200'
+                        }`}
+                      >
+                        {t(`decline_reason.${reason}`)}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Confirm / Go back */}
+                <div className="flex flex-col gap-2 pt-1">
+                  <button
+                    onClick={handleConfirmDecline}
+                    disabled={!selectedReason || declineMutation.isPending}
+                    className="w-full rounded-2xl border border-zinc-600 py-4 text-base font-bold text-zinc-300 transition-colors hover:bg-zinc-800 active:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {declineMutation.isPending ? '…' : t('decline_confirm')}
+                  </button>
+                  <button
+                    onClick={handleGoBack}
+                    disabled={declineMutation.isPending}
+                    className="text-center text-sm text-zinc-500 hover:text-zinc-300 transition-colors py-1"
+                  >
+                    {t('decline_go_back')}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>

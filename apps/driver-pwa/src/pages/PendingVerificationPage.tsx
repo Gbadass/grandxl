@@ -46,8 +46,12 @@ export default function PendingVerificationPage() {
           void navigate(ROUTES.KYC_UPLOAD, { replace: true })
           return
         }
-      } catch {
-        // network error — stay on this page
+      } catch (err) {
+        // 401 ACCOUNT_DELETED is handled by the axios interceptor (clears auth + redirects)
+        // Any other network error — stay on this page
+        if (cancelled) return
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status === 401 || status === 403) return // interceptor is handling this
       } finally {
         if (!cancelled) setLoading(false)
       }

@@ -19,12 +19,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<JwtPayload> {
-    // Verify user still exists and is active
     const user = await this.usersService.findById(payload.sub)
-    if (!user || !user.isActive) {
-      throw new UnauthorizedException('Account not found or suspended')
-    }
-    // Return payload — attached to request.user by Passport
-    return { sub: payload.sub, roles: payload.roles, country: payload.country }
+    if (!user) throw new UnauthorizedException('Account not found or suspended')
+    if (user.deletedAt) throw new UnauthorizedException('ACCOUNT_DELETED')
+    if (!user.isActive) throw new UnauthorizedException('Account suspended')
+    // Use roles from DB so role changes (e.g. adding RIDER after registration) take effect
+    // immediately without requiring a token refresh — no extra DB cost since we fetch anyway
+    return { sub: payload.sub, roles: user.roles as unknown as import('@grandxl/types').UserRole[], country: user.country }
   }
 }

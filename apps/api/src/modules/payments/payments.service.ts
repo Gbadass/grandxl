@@ -5,6 +5,8 @@ import {
   ForbiddenException,
   UnauthorizedException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { ConfigService } from '@nestjs/config'
@@ -37,8 +39,10 @@ export class PaymentsService {
   constructor(
     @InjectModel(TransactionDocument.name)
     private readonly transactionModel: Model<TransactionDocument>,
+    @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => WalletService))
     private readonly walletService: WalletService,
     private readonly fraudService: FraudService,
     private readonly config: ConfigService,
@@ -110,7 +114,7 @@ export class PaymentsService {
   async initiatePayment(
     customerId: string,
     dto: InitiatePaymentDto,
-  ): Promise<{ authorizationUrl: string; reference: string }> {
+  ): Promise<{ authorizationUrl: string; accessCode: string; reference: string }> {
     const order = await this.ordersService.getOrderById(dto.orderId)
     if (order.customerId.toString() !== customerId) {
       throw new ForbiddenException('You do not own this order')
@@ -176,7 +180,7 @@ export class PaymentsService {
 
     const json = (await response.json()) as {
       status: boolean
-      data?: { authorization_url: string; reference: string }
+      data?: { authorization_url: string; access_code: string; reference: string }
       message?: string
     }
 
@@ -187,7 +191,8 @@ export class PaymentsService {
 
     return {
       authorizationUrl: json.data.authorization_url,
-      reference: json.data.reference,
+      accessCode:       json.data.access_code,
+      reference:        json.data.reference,
     }
   }
 
@@ -345,6 +350,43 @@ export class PaymentsService {
       orderId: transaction.orderId?.toString() ?? null,
       amount: transaction.amount,
     }
+  }
+
+  // ── Initiate Paystack refund for a cancelled order ───────────────
+
+  async initiateRefund(orderId: string, reason: string): Promise<void> {
+    // Find the completed card transaction for this order
+    const txn = await this.transactionModel.findOne({
+      orderId: new Types.ObjectId(orderId),
+      type: 'order_payment',
+      status: PaymentStatus.COMPLETED,
+    })
+    if (!txn) return // wallet-only or not yet paid — nothing to refund
+
+    // Call Paystack refund API
+    const res = await paystackFetch(`${PAYSTACK_BASE}/refund`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.paystackSecret}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        transaction: txn.reference,
+        amount: txn.amount, // kobo — full refund
+        merchant_note: reason,
+      }),
+    })
+    const json = (await res.json()) as { status: boolean; message?: string }
+    if (!json.status) {
+      this.logger.error(`Paystack refund failed for order ${orderId}`, json)
+      // Don't throw — wallet was already refunded, log and continue
+      return
+    }
+    // Mark transaction as refunded
+    await this.transactionModel.findByIdAndUpdate(txn._id, {
+      $set: { status: PaymentStatus.REFUNDED },
+    })
+    this.logger.log(`Paystack refund initiated for order ${orderId}, ref ${txn.reference}`)
   }
 
   // ── Customer transaction history ─────────────────────────────────

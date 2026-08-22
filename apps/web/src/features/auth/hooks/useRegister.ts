@@ -6,7 +6,7 @@ import type { ApiError } from '@grandxl/types'
 import { useAuthStore } from '../../../store/auth.store'
 import { notify } from '../../../utils/toast'
 
-function getMsg(err: unknown): string {
+export function getRegisterError(err: unknown): string {
   if (err instanceof AxiosError) {
     return (err.response?.data as ApiError | undefined)?.message ?? 'Registration failed'
   }
@@ -24,8 +24,6 @@ export function useRegister() {
       setAuth(user, accessToken)
       notify.success(t('register.accountCreated'))
     },
-    onError: (err) => {
-      notify.error(getMsg(err))
-    },
+    // No onError toast — registration errors are shown inline in the form
   })
 }

@@ -44,6 +44,21 @@ instance.interceptors.response.use(
       (error.response?.status === 401 || error.response?.status === 403) && !original._retry
 
     if (isAuthError) {
+      // Account was permanently deleted — skip refresh entirely
+      const errMessage = (error.response?.data as { message?: string } | undefined)?.message
+      if (errMessage === 'ACCOUNT_DELETED') {
+        clearRiderToken()
+        useAuthStore.getState().clearAuth()
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.error('This account has been removed. Contact support if you believe this is a mistake.', {
+            id: 'account-deleted',
+            duration: 6000,
+          })
+          setTimeout(() => { window.location.href = '/login' }, 1500)
+        }).catch(() => { window.location.href = '/login' })
+        return Promise.reject(error)
+      }
+
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({

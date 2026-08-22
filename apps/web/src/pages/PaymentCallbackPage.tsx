@@ -4,8 +4,9 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { CheckCircle2, XCircle, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { paymentsApi } from '@grandxl/api-client'
+import { paymentsApi, ordersApi } from '@grandxl/api-client'
 import { formatMoney } from '@grandxl/utils'
+import { useCartStore } from '../features/cart/store/cart.store'
 
 type VerifyState = 'verifying' | 'success' | 'pending' | 'failed'
 
@@ -16,6 +17,7 @@ export default function PaymentCallbackPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { t } = useTranslation('payment')
+  const clearCart = useCartStore((s) => s.clearCart)
   const reference = searchParams.get('reference') ?? searchParams.get('trxref')
   const [state, setState] = useState<VerifyState>('verifying')
   const [orderId, setOrderId] = useState<string | null>(null)
@@ -23,8 +25,18 @@ export default function PaymentCallbackPage() {
   const attemptsRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  function cancelPendingOrder() {
+    const pendingOrderId = sessionStorage.getItem('pendingPaystackOrderId')
+    sessionStorage.removeItem('pendingPaystackOrderId')
+    sessionStorage.removeItem('pendingPaystackReference')
+    if (pendingOrderId) {
+      void ordersApi.cancel(pendingOrderId, 'Payment cancelled or failed').catch(() => undefined)
+    }
+  }
+
   useEffect(() => {
     if (!reference) {
+      cancelPendingOrder()
       setState('failed')
       return
     }
@@ -42,6 +54,10 @@ export default function PaymentCallbackPage() {
         const data = res.data.data
 
         if (data.verified) {
+          // Payment confirmed — safe to clear the cart now
+          clearCart()
+          sessionStorage.removeItem('pendingPaystackOrderId')
+          sessionStorage.removeItem('pendingPaystackReference')
           setOrderId(data.orderId)
           setAmount(data.amount)
           setState('success')
@@ -54,21 +70,23 @@ export default function PaymentCallbackPage() {
           return
         }
 
-        // Payment not yet confirmed — may still be pending
+        // Payment not yet confirmed — may still be pending (webhook not yet arrived)
         if (data.status === 'pending' && attemptsRef.current < MAX_POLL_ATTEMPTS) {
           if (attemptsRef.current === 1) setState('pending')
           timerRef.current = setTimeout(() => { void verify() }, POLL_INTERVAL_MS)
           return
         }
 
-        // Exhausted retries or payment genuinely failed
+        // Exhausted retries or payment genuinely failed/cancelled
+        cancelPendingOrder()
         setState(data.status === 'pending' ? 'pending' : 'failed')
       } catch {
         if (cancelled) return
         if (attemptsRef.current < MAX_POLL_ATTEMPTS) {
           timerRef.current = setTimeout(() => { void verify() }, POLL_INTERVAL_MS)
         } else {
-          setState('pending') // network error after retries — don't show "failed"
+          // Network error after retries — don't destroy the order, let timeout handle it
+          setState('pending')
         }
       }
     }
@@ -79,7 +97,8 @@ export default function PaymentCallbackPage() {
       cancelled = true
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [reference, navigate])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reference, navigate, clearCart])
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
@@ -188,17 +207,17 @@ export default function PaymentCallbackPage() {
           </p>
           <div className="flex flex-col gap-2 w-full max-w-xs mt-2">
             <button
-              onClick={() => void navigate('/', { replace: true })}
+              onClick={() => void navigate('/checkout', { replace: true })}
               className="w-full py-3.5 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors"
               style={{ minHeight: '48px', touchAction: 'manipulation' }}
             >
-              {t('browseRestaurants')}
+              {t('tryAgain', 'Try again')}
             </button>
             <button
-              onClick={() => void navigate('/orders', { replace: true })}
+              onClick={() => void navigate('/', { replace: true })}
               className="w-full py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium cursor-pointer hover:border-gray-300 transition-colors"
             >
-              {t('viewOrders')}
+              {t('backToHome')}
             </button>
           </div>
         </motion.div>

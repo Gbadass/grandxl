@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger'
-import { IsString, IsNotEmpty, Length, Matches } from 'class-validator'
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { IsString, IsNotEmpty, Length, Matches, IsOptional } from 'class-validator'
 import { Transform } from 'class-transformer'
 
 export class VerifyOtpDto {
@@ -18,4 +18,11 @@ export class VerifyOtpDto {
   @Length(6, 6, { message: 'OTP must be exactly 6 digits' })
   @Matches(/^\d{6}$/, { message: 'OTP must be numeric' })
   otp!: string
+
+  @ApiPropertyOptional({ example: 'ABC12XYZ' })
+  @IsOptional()
+  @IsString()
+  @Length(6, 12)
+  @Transform(({ value }: { value: string | undefined }) => value?.toUpperCase()?.trim())
+  referralCode?: string
 }

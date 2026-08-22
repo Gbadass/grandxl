@@ -1,9 +1,12 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
+  Delete,
   Param,
   Query,
+  Body,
   Req,
   HttpCode,
   HttpStatus,
@@ -23,6 +26,19 @@ import { Roles } from '../../common/decorators/roles.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
 import { UserRole } from '@grandxl/types'
 import type { JwtPayload } from '@grandxl/types'
+import * as bcrypt from 'bcryptjs'
+
+const BCRYPT_ROUNDS = 12
+
+interface AdminCreateUserDto {
+  firstName: string
+  lastName: string
+  phone?: string
+  email?: string
+  password: string
+  roles: UserRole[]
+  country?: string
+}
 
 @ApiTags('Admin — Users')
 @ApiBearerAuth()
@@ -58,6 +74,31 @@ export class AdminUsersController {
     )
   }
 
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a user account (admin)' })
+  @ApiOkResponse({ description: 'User created' })
+  async createUser(
+    @CurrentUser() actor: JwtPayload,
+    @Body() dto: AdminCreateUserDto,
+    @Req() req: Request,
+  ) {
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS)
+    const user = await this.usersService.create({
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      phone: dto.phone,
+      email: dto.email,
+      passwordHash,
+      roles: dto.roles?.length ? dto.roles : [UserRole.CUSTOMER],
+      country: dto.country ?? 'NG',
+      consentGiven: true,
+      consentDate: new Date(),
+    })
+    void this.audit.log({ ...this.auditMeta(req, actor), action: 'user.create', targetType: 'user', targetId: String(user._id) })
+    return { _id: user._id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone, roles: user.roles }
+  }
+
   @Patch(':id/ban')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Ban a user — prevents login' })
@@ -84,6 +125,20 @@ export class AdminUsersController {
     await this.usersService.unbanUser(id)
     void this.audit.log({ ...this.auditMeta(req, user), action: 'user.unban', targetType: 'user', targetId: id })
     return { banned: false }
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Soft-delete a user — anonymises personal data (NDPR erasure)' })
+  @ApiOkResponse({ description: 'User deleted' })
+  async deleteUser(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: Request,
+  ) {
+    await this.usersService.softDeleteAccount(id)
+    void this.audit.log({ ...this.auditMeta(req, user), action: 'user.delete', targetType: 'user', targetId: id })
+    return { deleted: true }
   }
 
   @Patch(':id/risk-flags/clear')

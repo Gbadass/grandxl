@@ -18,6 +18,7 @@ import * as crypto from 'crypto'
 import { UsersService } from '../users/users.service'
 import { TermiiProvider } from './providers/termii.provider'
 import { EmailProvider } from '../email/email.provider'
+import { ReferralsService } from '../referrals/referrals.service'
 import type { UserDocument } from '../users/schemas/user.schema'
 import type { JwtPayload } from '@grandxl/types'
 import type { UserRole } from '@grandxl/types'
@@ -75,6 +76,7 @@ export class AuthService {
     private readonly termii: TermiiProvider,
     private readonly email: EmailProvider,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly referralsService: ReferralsService,
   ) {}
 
   // ── Register ────────────────────────────────────────────────────
@@ -116,6 +118,13 @@ export class AuthService {
 
     const tokens = await this.issueTokens(user)
     await this.storeRefreshToken(user._id.toString(), tokens.refreshToken)
+
+    // Apply referral code if provided — fire-and-forget on failure
+    if (dto.referralCode) {
+      this.referralsService
+        .applyReferralCode(user._id.toString(), dto.referralCode)
+        .catch((err: Error) => this.logger.warn(`Referral apply skipped: ${err.message}`))
+    }
 
     return {
       accessToken: tokens.accessToken,
@@ -241,6 +250,10 @@ export class AuthService {
     if (!user) {
       // Phone is verified but no account exists yet — store proof for registration
       await this.redis.set(`phone_verified:${phone}`, '1', 'EX', 600)
+      // Store referral code alongside the verification proof so registerDriver can consume it
+      if (dto.referralCode) {
+        await this.redis.set(`referral_pending:${phone}`, dto.referralCode.toUpperCase(), 'EX', 600)
+      }
       return { isNewUser: true } as AuthResponse
     }
 
@@ -268,7 +281,12 @@ export class AuthService {
     if (!flag) {
       throw new BadRequestException('Phone verification expired. Please request a new OTP.')
     }
+    // Consume the verification flag and any stored referral code atomically
+    const pendingReferralCode = await this.redis.get(`referral_pending:${dto.phone}`)
     await this.redis.del(`phone_verified:${dto.phone}`)
+    if (pendingReferralCode) {
+      await this.redis.del(`referral_pending:${dto.phone}`)
+    }
 
     // If phone is already registered (e.g. rider going through flow a second time),
     // skip creation and issue fresh tokens for the existing account.
@@ -292,6 +310,13 @@ export class AuthService {
     })
     await this.usersService.markVerified(user._id.toString())
     const fresh = await this.usersService.findByIdOrThrow(user._id.toString())
+
+    // Apply referral code if one was stored during phone verification
+    if (pendingReferralCode) {
+      this.referralsService
+        .applyReferralCode(user._id.toString(), pendingReferralCode)
+        .catch((err: Error) => this.logger.warn(`Referral apply skipped: ${err.message}`))
+    }
 
     const tokens = await this.issueTokens(fresh)
     await this.storeRefreshToken(fresh._id.toString(), tokens.refreshToken)

@@ -123,6 +123,12 @@ export class UserDocument extends Document {
   @Prop({ type: Date, default: null })
   lastLoginAt!: Date | null
 
+  @Prop({ type: String, default: null })
+  referralCode!: string | null
+
+  @Prop({ type: Types.ObjectId, ref: 'UserDocument', default: null })
+  referredBy!: Types.ObjectId | null
+
   @Prop({ type: Date, default: null })
   deletedAt!: Date | null
 
@@ -151,3 +157,4 @@ UserSchema.index({ email: 1 }, { unique: true, sparse: true })
 UserSchema.index({ phone: 1 }, { unique: true, sparse: true })
 UserSchema.index({ roles: 1 })
 UserSchema.index({ isActive: 1 })
+UserSchema.index({ referralCode: 1 }, { unique: true, sparse: true })

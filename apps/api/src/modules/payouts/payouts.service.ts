@@ -6,10 +6,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common'
-import { InjectModel } from '@nestjs/mongoose'
+import { InjectConnection, InjectModel } from '@nestjs/mongoose'
 import { ConfigService } from '@nestjs/config'
 import { createHmac } from 'crypto'
-import { Model, Types } from 'mongoose'
+import { Connection, Model, Types } from 'mongoose'
 import { RiderDocument } from '../riders/schemas/rider.schema'
 import {
   PayoutRequestDocument,
@@ -47,6 +47,8 @@ export class PayoutsService {
   private readonly paystackSecret: string
 
   constructor(
+    @InjectConnection()
+    private readonly connection: Connection,
     @InjectModel(PayoutRequestDocument.name)
     private readonly payoutModel: Model<PayoutRequestDocument>,
     @InjectModel('RiderDocument')
@@ -327,28 +329,55 @@ export class PayoutsService {
   }
 
   // Called manually by admin if needed, or automatically by Paystack webhook on transfer.success.
+  // Both the payout status update and the rider earnings decrement run inside a MongoDB
+  // transaction so a server crash between the two writes cannot leave them inconsistent.
   async markPaid(adminId: string, payoutId: string, transferReference: string, note?: string) {
+    // Pre-flight checks outside the transaction to surface clear errors early.
     const payout = await this.payoutModel.findById(payoutId)
     if (!payout) throw new NotFoundException('Payout request not found')
     if (payout.status !== PayoutStatus.APPROVED) {
       throw new BadRequestException('Only approved payouts can be marked paid')
     }
 
-    payout.status            = PayoutStatus.PAID
-    payout.transferReference = transferReference
-    payout.paidAt            = new Date()
-    payout.decisionNote      = note ?? payout.decisionNote
-    payout.decidedBy         = new Types.ObjectId(adminId)
-    payout.decidedAt         = new Date()
-    await payout.save()
+    const session = await this.connection.startSession()
+    try {
+      let result!: PayoutRequestDocument
+      await session.withTransaction(async () => {
+        // Atomic test-and-set: only transition APPROVED → PAID once.
+        // findOneAndUpdate rather than payout.save() prevents double-pay if two
+        // admin requests arrive simultaneously.
+        const updated = await this.payoutModel.findOneAndUpdate(
+          { _id: payout._id, status: PayoutStatus.APPROVED },
+          {
+            $set: {
+              status:            PayoutStatus.PAID,
+              transferReference,
+              paidAt:            new Date(),
+              decisionNote:      note ?? payout.decisionNote,
+              decidedBy:         new Types.ObjectId(adminId),
+              decidedAt:         new Date(),
+            },
+          },
+          { new: true, session },
+        )
+        if (!updated) {
+          throw new BadRequestException('Payout is no longer in APPROVED state — concurrent update detected')
+        }
 
-    // Debit rider earnings — guarded by $gte so we can't go negative
-    await this.riderModel.updateOne(
-      { _id: payout.riderId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
-      { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
-    )
+        // Debit rider earnings — guarded by $gte so we can't go negative.
+        // Runs in the same session/transaction as the payout status update.
+        await this.riderModel.updateOne(
+          { _id: payout.riderId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
+          { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
+          { session },
+        )
 
-    return payout
+        result = updated
+      })
+      return result
+    } finally {
+      await session.endSession()
+    }
   }
 
   // ── Paystack webhook ─────────────────────────────────────────────
@@ -364,6 +393,8 @@ export class PayoutsService {
     const { event, data } = payload
 
     if (event === 'transfer.success') {
+      // Look up the payout before opening the transaction so we can return early
+      // without holding a session if there is no matching record.
       const payout = await this.payoutModel.findOne({
         paystackTransferCode: data.transfer_code,
         status:               PayoutStatus.APPROVED,
@@ -373,14 +404,31 @@ export class PayoutsService {
         return
       }
 
-      payout.status = PayoutStatus.PAID
-      payout.paidAt = new Date()
-      await payout.save()
+      // Both writes run in a single transaction — if the server crashes between them
+      // the session aborts and neither change is persisted, so we stay consistent.
+      const session = await this.connection.startSession()
+      try {
+        await session.withTransaction(async () => {
+          // Atomic test-and-set: ignore if a concurrent call already flipped to PAID.
+          const updated = await this.payoutModel.findOneAndUpdate(
+            { _id: payout._id, status: PayoutStatus.APPROVED },
+            { $set: { status: PayoutStatus.PAID, paidAt: new Date() } },
+            { new: true, session },
+          )
+          if (!updated) {
+            // Already transitioned — idempotent, nothing to do.
+            return
+          }
 
-      await this.riderModel.updateOne(
-        { _id: payout.riderId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
-        { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
-      )
+          await this.riderModel.updateOne(
+            { _id: payout.riderId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
+            { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
+            { session },
+          )
+        })
+      } finally {
+        await session.endSession()
+      }
 
       this.logger.log(`Webhook: payout ${payout._id.toString()} marked PAID via transfer ${data.transfer_code}`)
     }

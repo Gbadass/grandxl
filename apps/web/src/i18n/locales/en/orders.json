@@ -102,6 +102,29 @@
   "callRider": "Call rider",
   "fullChat": "Full chat →",
   "chatSendFailed": "Failed to send message",
+  "dispute": {
+    "title": "Report a problem",
+    "typeLabel": "What went wrong?",
+    "descLabel": "Tell us more",
+    "descPlaceholder": "Describe the issue in detail so we can help you faster…",
+    "submit": "Submit report",
+    "submitting": "Submitting…",
+    "successTitle": "Report received",
+    "successBody": "We've received your complaint. Our team will review it within 24 hours.",
+    "reportLink": "Report a problem",
+    "descTooShort": "Description must be at least 10 characters",
+    "redirecting": "Redirecting you back…",
+    "submitError": "Could not submit your report. Please try again.",
+    "type": {
+      "wrong_order": "Wrong order",
+      "missing_items": "Missing items",
+      "late_delivery": "Late delivery",
+      "food_quality": "Food quality",
+      "rider_conduct": "Rider conduct",
+      "payment_issue": "Payment issue",
+      "other": "Other"
+    }
+  },
   "review": {
     "title": "How was your order?",
     "foodQuality": "Food quality",

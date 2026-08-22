@@ -51,6 +51,72 @@ export class WalletService {
     return this.mutate(args, WalletTxnType.DEBIT)
   }
 
+  /**
+   * Atomically debits up to `maxAmount` kobo from the user's wallet in a single
+   * findOneAndUpdate — no separate balance read, no race condition.
+   *
+   * Returns the amount actually debited (0 if the wallet was empty).
+   * If the wallet balance is ≥ maxAmount the full amount is debited.
+   * If the wallet balance is < maxAmount only the available balance is debited.
+   *
+   * Uses an aggregation-pipeline update so the clamp is evaluated server-side
+   * in one atomic operation.
+   */
+  async debitUpTo(
+    args: Omit<MutationArgs, 'amount'> & { maxAmount: number },
+  ): Promise<{ actualDebited: number; balance: number; txnId: string | null }> {
+    if (!Number.isInteger(args.maxAmount) || args.maxAmount <= 0) {
+      throw new BadRequestException('maxAmount must be a positive integer (kobo)')
+    }
+
+    const uid = new Types.ObjectId(args.userId)
+    await this.ensureWallet(args.userId)
+
+    // Pipeline update: balance becomes max(0, balance - maxAmount), evaluated atomically.
+    // We request the PRE-update document (new: false) so we can derive actualDebited.
+    const before = await this.walletModel.findOneAndUpdate(
+      { userId: uid },
+      [
+        {
+          $set: {
+            balance: {
+              $max: [0, { $subtract: ['$balance', args.maxAmount] }],
+            },
+          },
+        },
+      ],
+      { new: false },
+    ).exec()
+
+    if (!before) throw new BadRequestException('Wallet not found')
+
+    const actualDebited = Math.min(before.balance, args.maxAmount)
+    if (actualDebited === 0) {
+      return { actualDebited: 0, balance: before.balance, txnId: null }
+    }
+
+    const balanceBefore = before.balance
+    const balanceAfter  = balanceBefore - actualDebited
+
+    const txn = await this.txnModel.create({
+      userId:        uid,
+      type:          WalletTxnType.DEBIT,
+      reason:        args.reason,
+      amount:        actualDebited,
+      balanceBefore,
+      balanceAfter,
+      description:   args.description,
+      referenceType: args.referenceType,
+      referenceId:   args.referenceId,
+    })
+
+    return {
+      actualDebited,
+      balance: balanceAfter,
+      txnId: (txn._id as Types.ObjectId).toString(),
+    }
+  }
+
   // Atomic balance update with ledger row. findOneAndUpdate with $inc gives us the
   // pre-update document and the post-update balance in a single op — no race.
   private async mutate(args: MutationArgs, type: WalletTxnType): Promise<{ balance: number; txnId: string }> {

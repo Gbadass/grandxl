@@ -21,7 +21,16 @@ export interface AutocompleteResult {
 }
 
 export const searchApi = {
-  search: (params: { q: string; page?: number; limit?: number; country?: string }) =>
+  search: (params: {
+    q: string
+    page?: number
+    limit?: number
+    country?: string
+    cuisine?: string
+    openNow?: boolean
+    minRating?: number
+    sortBy?: 'relevance' | 'rating' | 'newest'
+  }) =>
     getClient().get<{ data: SearchResults }>('/search', { params }),
 
   autocomplete: (q: string, country?: string) =>

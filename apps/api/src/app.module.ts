@@ -50,6 +50,8 @@ import { DataExportModule } from './modules/data-export/data-export.module'
 import { ContentPagesModule } from './modules/content-pages/content-pages.module'
 import { AnalyticsModule } from './modules/analytics/analytics.module'
 import { ChatModule } from './modules/chat/chat.module'
+import { DisputesModule } from './modules/disputes/disputes.module'
+import { ReferralsModule } from './modules/referrals/referrals.module'
 
 @Module({
   imports: [
@@ -130,6 +132,8 @@ import { ChatModule } from './modules/chat/chat.module'
     ContentPagesModule,
     AnalyticsModule,
     ChatModule,
+    DisputesModule,
+    ReferralsModule,
   ],
   providers: [
     // AllExceptionsFilter uses Winston DI — must be APP_FILTER, not new in main.ts

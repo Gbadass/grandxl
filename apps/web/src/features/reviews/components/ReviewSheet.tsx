@@ -20,15 +20,19 @@ interface StarRatingProps {
   label: string
   value: number
   onChange: (v: number) => void
+  required?: boolean
+  error?: boolean
 }
 
-function StarRating({ label, value, onChange }: StarRatingProps) {
+function StarRating({ label, value, onChange, required, error }: StarRatingProps) {
   const [hovered, setHovered] = useState(0)
   const { t } = useTranslation('orders')
 
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm font-medium text-gray-700">{label}</span>
+    <div className={`flex items-center justify-between rounded-xl px-3 py-2 -mx-3 transition-colors ${error ? 'bg-red-50 ring-1 ring-red-200' : ''}`}>
+      <span className={`text-sm font-medium ${error ? 'text-red-600' : 'text-gray-700'}`}>
+        {label}{required && <span className="ml-0.5 text-red-500">*</span>}
+      </span>
       <div className="flex gap-1" onMouseLeave={() => setHovered(0)}>
         {[1, 2, 3, 4, 5].map((star) => {
           const filled = star <= (hovered || value)
@@ -88,18 +92,20 @@ function SuccessView() {
 // ── Sheet ─────────────────────────────────────────────────────────────────────
 
 export function ReviewSheet({ orderId, riderId, isOpen, onClose }: ReviewSheetProps) {
-  const [foodRating, setFoodRating]         = useState(0)
+  const [foodRating, setFoodRating]             = useState(0)
   const [restaurantRating, setRestaurantRating] = useState(0)
-  const [riderRating, setRiderRating]       = useState(0)
-  const [comment, setComment]               = useState('')
-  const [isPending, setIsPending]           = useState(false)
-  const [submitted, setSubmitted]           = useState(false)
+  const [riderRating, setRiderRating]           = useState(0)
+  const [comment, setComment]                   = useState('')
+  const [isPending, setIsPending]               = useState(false)
+  const [submitted, setSubmitted]               = useState(false)
+  const [restaurantError, setRestaurantError]   = useState(false)
   const { t } = useTranslation('orders')
 
   const hasRider = riderId !== null
 
   async function handleSubmit() {
     if (restaurantRating === 0) {
+      setRestaurantError(true)
       toast.error(t('review.ratingRequired'))
       return
     }
@@ -122,6 +128,7 @@ export function ReviewSheet({ orderId, riderId, isOpen, onClose }: ReviewSheetPr
         setFoodRating(0)
         setRestaurantRating(0)
         setRiderRating(0)
+        setRestaurantError(false)
         setComment('')
       }, 1800)
     } catch {
@@ -133,11 +140,11 @@ export function ReviewSheet({ orderId, riderId, isOpen, onClose }: ReviewSheetPr
 
   function handleClose() {
     onClose()
-    // Reset so if sheet re-opens it starts fresh
     setSubmitted(false)
     setFoodRating(0)
     setRestaurantRating(0)
     setRiderRating(0)
+    setRestaurantError(false)
     setComment('')
   }
 
@@ -200,7 +207,9 @@ export function ReviewSheet({ orderId, riderId, isOpen, onClose }: ReviewSheetPr
                     <StarRating
                       label={t('review.restaurantLabel')}
                       value={restaurantRating}
-                      onChange={setRestaurantRating}
+                      onChange={(v) => { setRestaurantRating(v); setRestaurantError(false) }}
+                      required
+                      error={restaurantError}
                     />
                     {hasRider && (
                       <StarRating

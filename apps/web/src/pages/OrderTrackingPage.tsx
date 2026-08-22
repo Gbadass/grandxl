@@ -1227,6 +1227,16 @@ export default function OrderTrackingPage() {
           >
             {t('orderAgain')}
           </button>
+
+          {/* Report a problem — only on delivered orders */}
+          <div className="text-center pt-1">
+            <Link
+              to={ROUTES.ORDER_DISPUTE(id!)}
+              className="text-sm text-gray-400 hover:text-primary transition-colors"
+            >
+              {t('dispute.reportLink')}
+            </Link>
+          </div>
         </motion.div>
       )}
 

@@ -14,14 +14,19 @@ import {
   User,
   Shield,
   Pencil,
+  Gift,
+  Moon,
+  Globe,
   X,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth.store'
 import { useLogout } from '../features/auth/hooks/useLogout'
+import { useThemeStore } from '../store/theme.store'
 import { ROUTES } from '../router/routes'
 import { usersApi } from '@grandxl/api-client'
 import { notify } from '../utils/toast'
+import i18n from '../i18n'
 
 interface MenuItemProps {
   icon: LucideIcon
@@ -56,6 +61,142 @@ function MenuItem({ icon: Icon, label, sublabel, onClick, danger = false, delay 
 
 function Divider() {
   return <div className="h-px bg-gray-100 mx-4" />
+}
+
+const LANGUAGE_OPTIONS = [
+  { code: 'en', label: 'English' },
+  { code: 'yo', label: 'Yoruba' },
+  { code: 'ig', label: 'Igbo' },
+  { code: 'ha', label: 'Hausa' },
+] as const
+
+type LanguageCode = (typeof LANGUAGE_OPTIONS)[number]['code']
+
+function DarkModeRow({ delay = 0 }: { delay?: number }) {
+  const { t } = useTranslation('profile')
+  const { isDark, toggle } = useThemeStore()
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay, duration: 0.22 }}
+      className="w-full flex items-center gap-3.5 px-4 py-3.5"
+      style={{ minHeight: '56px' }}
+    >
+      <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+        <Moon size={17} className="text-gray-600" />
+      </div>
+      <div className="flex-1 text-left">
+        <p className="text-sm font-medium text-gray-900">{t('darkMode')}</p>
+      </div>
+      <button
+        onClick={toggle}
+        aria-label={isDark ? t('darkModeOn') : t('darkModeOff')}
+        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${isDark ? 'bg-primary' : 'bg-gray-200'}`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${isDark ? 'translate-x-5' : 'translate-x-0'}`}
+        />
+      </button>
+    </motion.div>
+  )
+}
+
+function LanguageRow({ delay = 0 }: { delay?: number }) {
+  const { t } = useTranslation('profile')
+  const [open, setOpen] = useState(false)
+  const [current, setCurrent] = useState<LanguageCode>(
+    (localStorage.getItem('gxl-language') as LanguageCode | null) ?? 'en',
+  )
+
+  const currentLabel = LANGUAGE_OPTIONS.find((o) => o.code === current)?.label ?? 'English'
+
+  const handleSelect = (code: LanguageCode) => {
+    setCurrent(code)
+    localStorage.setItem('gxl-language', code)
+    void i18n.changeLanguage(code)
+    setOpen(false)
+  }
+
+  return (
+    <>
+      <motion.button
+        initial={{ opacity: 0, x: -8 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay, duration: 0.22 }}
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center gap-3.5 px-4 py-3.5 cursor-pointer transition-colors hover:bg-gray-50"
+        style={{ touchAction: 'manipulation', minHeight: '56px' }}
+      >
+        <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+          <Globe size={17} className="text-gray-600" />
+        </div>
+        <div className="flex-1 text-left">
+          <p className="text-sm font-medium text-gray-900">{t('language')}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{currentLabel}</p>
+        </div>
+        <ChevronRight size={16} className="text-gray-400 shrink-0" />
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <>
+            <motion.div
+              key="lang-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={() => setOpen(false)}
+            />
+            <motion.div
+              key="lang-sheet"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 320 }}
+              className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl shadow-2xl px-5 pt-5 pb-8"
+            >
+              <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="font-display font-bold text-lg text-gray-900">
+                  {t('language')}
+                </h2>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center transition-colors hover:bg-gray-200"
+                  aria-label={t('close', 'Close')}
+                >
+                  <X size={16} className="text-gray-600" />
+                </button>
+              </div>
+              <div className="space-y-1">
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <button
+                    key={option.code}
+                    onClick={() => handleSelect(option.code)}
+                    className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl transition-colors ${
+                      current === option.code
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'hover:bg-gray-50 text-gray-800'
+                    }`}
+                    style={{ minHeight: '52px' }}
+                  >
+                    <span className="text-sm">{option.label}</span>
+                    {current === option.code && (
+                      <span className="h-2 w-2 rounded-full bg-primary" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
+  )
 }
 
 interface EditProfileSheetProps {
@@ -215,9 +356,16 @@ function EditProfileSheet({ open, onClose }: EditProfileSheetProps) {
 export default function ProfilePage() {
   const { t } = useTranslation('profile')
   const navigate = useNavigate()
-  const { user } = useAuthStore()
+  const { user, clearAuth } = useAuthStore()
   const { mutate: logout, isPending: loggingOut } = useLogout()
   const [editOpen, setEditOpen] = useState(false)
+
+  // If the auth store has stale data from a now-deleted account, clear immediately
+  if (user?.deletedAt) {
+    clearAuth()
+    navigate('/login', { replace: true })
+    return null
+  }
 
   const initials = user
     ? `${user.firstName[0] ?? ''}${user.lastName[0] ?? ''}`.toUpperCase()
@@ -292,11 +440,29 @@ export default function ProfilePage() {
         />
         <Divider />
         <MenuItem
+          icon={Gift}
+          label={t('menuReferEarn', 'Refer & Earn')}
+          sublabel={t('menuReferEarnSub', 'Get ₦500 for every friend you invite')}
+          onClick={() => void navigate(ROUTES.REFERRALS)}
+          delay={0.18}
+        />
+        <Divider />
+        <MenuItem
           icon={Bell}
           label={t('menuNotifications')}
           onClick={() => void navigate(ROUTES.NOTIFICATIONS)}
           delay={0.2}
         />
+      </div>
+
+      <div className="mt-3 mx-4 bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-4 py-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('sectionPreferences')}</p>
+        </div>
+        <Divider />
+        <DarkModeRow delay={0.22} />
+        <Divider />
+        <LanguageRow delay={0.25} />
       </div>
 
       <div className="mt-3 mx-4 bg-white rounded-2xl shadow-sm overflow-hidden">

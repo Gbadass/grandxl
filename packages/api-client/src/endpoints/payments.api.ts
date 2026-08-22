@@ -10,6 +10,7 @@ export interface InitiatePaymentDto {
 
 export interface PaymentInitResponse {
   authorizationUrl: string
+  accessCode: string
   reference: string
 }
 

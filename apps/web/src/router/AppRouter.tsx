@@ -29,6 +29,8 @@ const AddressesPage       = lazy(() => import('../pages/AddressesPage'))
 const PaymentCallbackPage = lazy(() => import('../pages/PaymentCallbackPage'))
 const FavoritesPage       = lazy(() => import('../pages/FavoritesPage'))
 const SearchPage          = lazy(() => import('../pages/SearchPage'))
+const DisputePage         = lazy(() => import('../pages/DisputePage'))
+const ReferralPage        = lazy(() => import('../pages/ReferralPage'))
 const NotFoundPage        = lazy(() => import('../components/errors/NotFoundPage'))
 
 function PageSkeleton() {
@@ -75,10 +77,12 @@ export function AppRouter() {
               <Route path={ROUTES.ORDERS}                element={wrap(<OrdersPage />)} />
               <Route path="/orders/:id/tracking"         element={wrap(<OrderTrackingPage />)} />
               <Route path="/orders/:id/chat"             element={wrap(<ChatPage />)} />
+              <Route path="/orders/:id/dispute"          element={wrap(<DisputePage />)} />
               <Route path={ROUTES.PROFILE}               element={wrap(<ProfilePage />)} />
               <Route path={ROUTES.WALLET}                element={wrap(<WalletPage />)} />
               <Route path={ROUTES.NOTIFICATIONS}         element={wrap(<NotificationsPage />)} />
               <Route path={ROUTES.ADDRESSES}             element={wrap(<AddressesPage />)} />
+              <Route path={ROUTES.REFERRALS}             element={wrap(<ReferralPage />)} />
             </Route>
           </Route>
 
