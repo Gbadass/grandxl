@@ -31,7 +31,7 @@ const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env['NODE_ENV'] === 'production',
   sameSite: 'strict' as const,
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days in ms
   path: '/',
 }
 
@@ -111,7 +111,12 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.authService.logout(user.sub)
-    res.clearCookie(COOKIE_NAME, { path: '/' })
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      secure: process.env['NODE_ENV'] === 'production',
+      sameSite: 'strict',
+      path: '/',
+    })
     return { message: 'Logged out successfully' }
   }
 

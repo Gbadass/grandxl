@@ -1166,6 +1166,50 @@ export class OrdersService {
     )
   }
 
+  async dispatchDebug(orderId: string) {
+    const order = await this.getOrderById(orderId)
+    const lng = order.deliveryAddress.coordinates.coordinates[0]
+    const lat = order.deliveryAddress.coordinates.coordinates[1]
+
+    const nearestAvailable = await this.ridersService.findNearestAvailable(lng, lat)
+    const nearbyOnlineVerified = await this.ridersService.findNearbyOnlineVerified(lng, lat)
+    const allOnlineVerified = await this.ridersService.findAllOnlineVerified()
+
+    return {
+      order: { id: orderId, status: order.status, riderId: order.riderId ?? null, declinedBy: order.declinedBy },
+      deliveryCoords: { lng, lat },
+      nearestAvailable: nearestAvailable.map((r) => ({ id: r._id, userId: r.userId, isOnline: r.isOnline, isAvailable: r.isAvailable, hasLocation: !!r.currentLocation })),
+      nearbyOnlineVerified: nearbyOnlineVerified.map((r) => ({ id: r._id, userId: r.userId, hasLocation: !!r.currentLocation })),
+      allOnlineVerified: allOnlineVerified.map((r) => ({ id: r._id, userId: r.userId, isOnline: r.isOnline, isVerified: r.isVerified, hasLocation: !!r.currentLocation })),
+      summary: {
+        wouldDispatchTo: (nearbyOnlineVerified.length > 0 ? nearbyOnlineVerified : allOnlineVerified).length,
+        usingFallback: nearbyOnlineVerified.length === 0,
+      },
+    }
+  }
+
+  // Admin manually re-queues dispatch for a stuck order.
+  // Clears declinedBy so all riders get a fresh shot.
+  async adminRedispatch(orderId: string): Promise<void> {
+    const order = await this.getOrderById(orderId)
+    const canDispatch = [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY].includes(
+      order.status as OrderStatus,
+    )
+    if (!canDispatch) throw new BadRequestException(`Order is ${order.status} — only CONFIRMED/PREPARING/READY orders can be redispatched`)
+    if (order.riderId) throw new BadRequestException('Order already has a rider assigned')
+
+    await this.orderModel.updateOne(
+      { _id: new Types.ObjectId(orderId) },
+      { $set: { declinedBy: [] } },
+    )
+
+    await this.riderDispatchQueue.add('dispatch', {
+      orderId,
+      lng: order.deliveryAddress.coordinates.coordinates[0],
+      lat: order.deliveryAddress.coordinates.coordinates[1],
+    })
+  }
+
   async getRiderDeliveries(
     riderId: string,
     query: QueryOrdersDto,

@@ -379,25 +379,26 @@ export default function RestaurantSettingsPage() {
   const descLen = form.description.length
 
   return (
-    <div className="space-y-6">
-      {/* Page header + sticky save */}
-      <div className="flex items-start justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6">
+      {/* Page header + save button */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Settings</h1>
           <p className="mt-0.5 text-sm text-gray-500">Manage your restaurant profile and preferences</p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {dirty && (
-            <span className="flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700">
+            <span className="flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs font-medium text-amber-700">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              Unsaved changes
+              <span className="hidden sm:inline">Unsaved changes</span>
+              <span className="sm:hidden">Unsaved</span>
             </span>
           )}
           <button
             onClick={() => updateMutation.mutate()}
             disabled={updateMutation.isPending || !form.name.trim()}
-            className="flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-700 active:bg-orange-800 disabled:opacity-60 transition-colors cursor-pointer min-w-[120px] justify-center"
+            className="flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 sm:px-5 text-sm font-bold text-white hover:bg-orange-700 active:bg-orange-800 disabled:opacity-60 transition-colors cursor-pointer min-w-[110px] justify-center"
           >
             {updateMutation.isPending ? (
               <><Spinner size={14} /> Saving…</>
@@ -408,10 +409,30 @@ export default function RestaurantSettingsPage() {
         </div>
       </div>
 
-      {/* Tab layout */}
-      <div className="flex gap-6 items-start">
-        {/* Left sidebar */}
-        <nav className="w-52 shrink-0 space-y-1">
+      {/* Mobile: horizontal scrollable tab bar */}
+      <div className="md:hidden -mx-4 px-4 overflow-x-auto pb-1">
+        <div className="flex gap-1.5 min-w-max">
+          {TABS.map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === key
+                  ? 'bg-orange-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <span className={activeTab === key ? 'text-white' : 'text-gray-400'}>{icon}</span>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Desktop: sidebar + content */}
+      <div className="flex flex-col gap-4 md:flex-row md:gap-6 md:items-start">
+        {/* Left sidebar — desktop only */}
+        <nav className="hidden md:block w-52 shrink-0 space-y-1">
           {TABS.map(({ key, label, icon, desc }) => (
             <button
               key={key}
@@ -851,27 +872,30 @@ export default function RestaurantSettingsPage() {
               <SectionHeader icon={<Clock size={18} />} title="Opening hours" desc="Set when your restaurant accepts orders each day" />
 
               <div className="space-y-2">
-                {DAYS.map((day, idx) => {
+                {DAYS.map((day) => {
                   const dayHours = hours[day]
                   return (
                     <div
                       key={day}
-                      className={`flex items-center gap-4 rounded-2xl px-4 py-3 transition-colors ${
+                      className={`rounded-2xl px-4 py-3 transition-colors ${
                         dayHours.isOpen ? 'bg-gray-50' : 'bg-gray-50/50 opacity-60'
                       }`}
                     >
-                      {/* Day name */}
-                      <span className="w-24 shrink-0 text-sm font-semibold capitalize text-gray-700">
-                        {day.slice(0, 3).charAt(0).toUpperCase() + day.slice(1, 3)}
-                        <span className="hidden sm:inline">{day.slice(3)}</span>
-                      </span>
+                      {/* Row 1: day name + toggle */}
+                      <div className="flex items-center gap-3">
+                        <span className="w-20 shrink-0 text-sm font-semibold capitalize text-gray-700">
+                          {day.slice(0, 3).charAt(0).toUpperCase() + day.slice(1, 3)}
+                          <span className="hidden sm:inline">{day.slice(3)}</span>
+                        </span>
+                        <Toggle on={dayHours.isOpen} onToggle={() => setDay(day, 'isOpen', !dayHours.isOpen)} />
+                        {!dayHours.isOpen && (
+                          <span className="text-sm text-gray-400 italic">Closed</span>
+                        )}
+                      </div>
 
-                      {/* Toggle */}
-                      <Toggle on={dayHours.isOpen} onToggle={() => setDay(day, 'isOpen', !dayHours.isOpen)} />
-
-                      {/* Times */}
-                      {dayHours.isOpen ? (
-                        <div className="flex items-center gap-2 flex-1">
+                      {/* Row 2: time pickers — wraps under day name on mobile */}
+                      {dayHours.isOpen && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 sm:ml-24">
                           <input
                             type="time"
                             value={dayHours.open}
@@ -885,18 +909,15 @@ export default function RestaurantSettingsPage() {
                             onChange={(e) => setDay(day, 'close', e.target.value)}
                             className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100 transition cursor-pointer"
                           />
-                          {/* Apply to all */}
                           <button
                             type="button"
                             onClick={() => applyToAllDays(day)}
                             title="Apply these hours to all days"
-                            className="ml-1 shrink-0 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[11px] font-medium text-gray-400 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 transition-colors cursor-pointer whitespace-nowrap"
+                            className="shrink-0 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[11px] font-medium text-gray-400 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 transition-colors cursor-pointer whitespace-nowrap"
                           >
                             Apply all
                           </button>
                         </div>
-                      ) : (
-                        <span className="flex-1 text-sm text-gray-400 italic">Closed</span>
                       )}
                     </div>
                   )

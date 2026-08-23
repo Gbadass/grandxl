@@ -3,8 +3,10 @@ import { TopBar } from '../organisms/TopBar'
 import { BottomNav } from '../organisms/BottomNav'
 import { OfflineBanner } from '../organisms/OfflineBanner'
 import { JobOfferSheet } from '../organisms/JobOfferSheet'
+import { useLocationTracking } from '../../hooks/useLocationTracking'
 
 export function AppShell() {
+  useLocationTracking()
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950">
       <OfflineBanner />

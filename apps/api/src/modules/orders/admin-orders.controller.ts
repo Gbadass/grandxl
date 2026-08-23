@@ -1,4 +1,4 @@
-import { Controller, Get, Delete, Param, Query, HttpCode, HttpStatus } from '@nestjs/common'
+import { Controller, Get, Post, Delete, Param, Query, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse } from '@nestjs/swagger'
 import { OrdersService } from './orders.service'
 import { QueryOrdersDto } from './dto/query-orders.dto'
@@ -33,5 +33,20 @@ export class AdminOrdersController {
   @ApiOkResponse({ description: 'Order details' })
   async getOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.ordersService.getOrderById(id)
+  }
+
+  @Post(':id/redispatch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Re-queue rider dispatch for a stuck order — clears declinedBy and fires a fresh dispatch job' })
+  @ApiOkResponse({ description: 'Dispatch re-queued' })
+  async redispatch(@Param('id', ParseObjectIdPipe) id: string) {
+    await this.ordersService.adminRedispatch(id)
+    return { message: 'Dispatch re-queued' }
+  }
+
+  @Get(':id/dispatch-debug')
+  @ApiOperation({ summary: 'Debug dispatch — shows what riders the processor would find right now' })
+  async dispatchDebug(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.ordersService.dispatchDebug(id)
   }
 }

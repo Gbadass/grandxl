@@ -69,6 +69,9 @@ export function AppRouter() {
             <Route path={ROUTES.PAYMENT_CALLBACK} element={wrap(<PaymentCallbackPage />)} />
             <Route path={ROUTES.SEARCH}           element={wrap(<SearchPage />)} />
 
+            {/* Profile — always reachable, handles guest state internally */}
+            <Route path={ROUTES.PROFILE} element={wrap(<ProfilePage />)} />
+
             {/* Protected app pages */}
             <Route element={<ProtectedRoute />}>
               <Route path={ROUTES.FAVORITES}             element={wrap(<FavoritesPage />)} />
@@ -78,7 +81,6 @@ export function AppRouter() {
               <Route path="/orders/:id/tracking"         element={wrap(<OrderTrackingPage />)} />
               <Route path="/orders/:id/chat"             element={wrap(<ChatPage />)} />
               <Route path="/orders/:id/dispute"          element={wrap(<DisputePage />)} />
-              <Route path={ROUTES.PROFILE}               element={wrap(<ProfilePage />)} />
               <Route path={ROUTES.WALLET}                element={wrap(<WalletPage />)} />
               <Route path={ROUTES.NOTIFICATIONS}         element={wrap(<NotificationsPage />)} />
               <Route path={ROUTES.ADDRESSES}             element={wrap(<AddressesPage />)} />

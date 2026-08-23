@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { socket } from '../lib/socket'
+import axiosInstance from '../lib/axios'
 import { useAuthStore } from '../store/auth.store'
 import { useRiderStore } from '../store/rider.store'
 import { playJobAlert, primeAudio } from '../lib/alertSound'
@@ -80,16 +81,34 @@ export function useRiderSocket() {
       toast.success('Food is ready — head in to pick up!', { id: `ready-${orderId}`, duration: 6000 })
     }
 
+    function onServerDisconnect(reason: string) {
+      // "io server disconnect" = the gateway rejected or kicked our socket.
+      // Most common cause: access token expired while rider was idle (no HTTP
+      // calls to trigger the axios interceptor's silent refresh).
+      // Fix: make one authenticated call → the 401 fires the interceptor →
+      // interceptor refreshes the token → setAuth updates accessToken in the
+      // store → this useEffect re-runs → socket reconnects with the fresh token.
+      if (reason === 'io server disconnect') {
+        void axiosInstance.get('/riders/me').catch(() => {
+          // Interceptor handled it — either we got a new token (reconnect will
+          // happen automatically) or the session was truly dead (clearAuth →
+          // isAuthenticated = false → socket stays disconnected).
+        })
+      }
+    }
+
     socket.on('rider:new_job', onDirectJob)
     socket.on('order:broadcast', onBroadcastJob)
     socket.on('order:status_update', onStatusUpdate)
     socket.on('rider:order_ready', onOrderReady)
+    socket.on('disconnect', onServerDisconnect)
 
     return () => {
       socket.off('rider:new_job', onDirectJob)
       socket.off('order:broadcast', onBroadcastJob)
       socket.off('order:status_update', onStatusUpdate)
       socket.off('rider:order_ready', onOrderReady)
+      socket.off('disconnect', onServerDisconnect)
       socket.disconnect()
     }
   }, [isAuthenticated, accessToken, addPendingJob, setActiveOrder, navigate])

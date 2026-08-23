@@ -52,7 +52,7 @@ export function useActiveOrders() {
     staleTime: 0,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
-    refetchInterval: 15_000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 15_000,
   })
 }
 

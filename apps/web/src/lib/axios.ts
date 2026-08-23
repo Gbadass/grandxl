@@ -43,7 +43,7 @@ instance.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
-    if (error.response?.status === 401 && !original._retry) {
+    if (error.response?.status === 401 && !original._retry && useAuthStore.getState().isAuthenticated) {
       // Account was permanently deleted — skip refresh, show proper message and redirect
       const errMessage = (error.response.data as { message?: string } | undefined)?.message
       if (errMessage === 'ACCOUNT_DELETED') {

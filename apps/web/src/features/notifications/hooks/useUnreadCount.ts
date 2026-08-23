@@ -11,7 +11,7 @@ export function useUnreadNotificationCount(): number {
       notificationsApi.getMine({ page: 1, limit: 1 }).then((r) => r.data.data.unreadCount),
     enabled: isAuthenticated,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 60_000,
     refetchOnWindowFocus: true,
   })
 

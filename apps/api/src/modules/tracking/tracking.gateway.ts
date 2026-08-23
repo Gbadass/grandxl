@@ -89,6 +89,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.logger.debug(`Client connected: ${payload.sub} (${payload.roles.join(',')})`)
     } catch (err) {
       this.logger.warn(`WS auth rejected client=${client.id}: ${(err as Error).message}`)
+      client.emit('auth:token_expired')
       client.disconnect()
     }
   }
@@ -257,6 +258,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   sendToUser(userId: string, event: string, data: unknown): void {
     this.server.to(`user_${userId}`).emit(event, data)
+  }
+
+  async getRoomSize(room: string): Promise<number> {
+    const sockets = await this.server.in(room).fetchSockets()
+    return sockets.length
   }
 
   sendToOrderRoom(orderId: string, event: string, data: unknown): void {

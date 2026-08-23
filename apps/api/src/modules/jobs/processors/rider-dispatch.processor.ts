@@ -55,11 +55,21 @@ export class RiderDispatchProcessor extends WorkerHost {
     // Phase 2 — no available riders: broadcast to nearest online+verified riders.
     // Cap at 10 to avoid a thundering-herd notification storm; the closest riders
     // are most likely to accept and arrive fastest anyway.
+    // Exclude riders who already declined (explicitly or by timer expiry) so they
+    // don't keep receiving the same offer on every retry round.
+    const declinedUserIds = new Set(
+      (order.declinedBy ?? []).map((id) => String(id))
+    )
     const nearby = await this.ridersService.findNearbyOnlineVerified(lng, lat)
-    const broadcastTargets = nearby.slice(0, 10)
+    const pool = nearby.length > 0
+      ? nearby
+      : await this.ridersService.findAllOnlineVerified()
+    const broadcastTargets = pool
+      .filter((r) => !declinedUserIds.has(String(r.userId)))
+      .slice(0, 10)
     if (broadcastTargets.length > 0) {
       const userIds = broadcastTargets.map((r) => String(r.userId))
-      this.trackingService.broadcastOrderToRiders(userIds, order)
+      await this.trackingService.broadcastOrderToRiders(userIds, order)
 
       // Push notifications — so riders with the app in background/closed still hear the ping.
       void Promise.allSettled(

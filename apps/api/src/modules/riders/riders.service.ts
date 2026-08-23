@@ -237,6 +237,16 @@ export class RidersService {
       .lean() as unknown as RiderDocument[]
   }
 
+  // Fallback when no riders have a currentLocation saved yet — returns all online+verified
+  // riders regardless of geo position. Used so dispatch still works when riders haven't
+  // shared their location (e.g. first run, location permission not yet granted).
+  async findAllOnlineVerified(): Promise<RiderDocument[]> {
+    return this.riderModel
+      .find({ isOnline: true, isVerified: true })
+      .limit(50)
+      .lean() as unknown as RiderDocument[]
+  }
+
   // Rider voluntarily accepts a broadcast order — atomic first-writer-wins.
   // We use findOneAndUpdate with isAvailable:true as a filter condition so that
   // two concurrent accept calls cannot both claim the same rider slot (TOCTOU fix).

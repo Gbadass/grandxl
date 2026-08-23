@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { TrackingGateway } from './tracking.gateway'
 import { type OrderStatus, OrderStatus as OS } from '@grandxl/types'
 
 // Thin wrapper so other modules can push Socket.io events without importing the gateway directly
 @Injectable()
 export class TrackingService {
+  private readonly logger = new Logger(TrackingService.name)
+
   constructor(private readonly gateway: TrackingGateway) {}
 
   notifyOrderStatusUpdate(
@@ -38,9 +40,13 @@ export class TrackingService {
     this.gateway.sendToUser(riderId, 'rider:new_job', { order })
   }
 
-  broadcastOrderToRiders(riderUserIds: string[], order: unknown): void {
+  async broadcastOrderToRiders(riderUserIds: string[], order: unknown): Promise<void> {
     for (const userId of riderUserIds) {
+      const roomSize = await this.gateway.getRoomSize(`user_${userId}`)
       this.gateway.sendToUser(userId, 'order:broadcast', { order })
+      // This log tells us definitively whether the rider's socket is connected.
+      // roomSize=0 means the event was emitted to an empty room — rider not connected.
+      this.logger.warn(`[dispatch] emitted order:broadcast to user_${userId} — ${roomSize} socket(s) in room`)
     }
   }
 

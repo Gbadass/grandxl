@@ -356,7 +356,7 @@ function EditProfileSheet({ open, onClose }: EditProfileSheetProps) {
 export default function ProfilePage() {
   const { t } = useTranslation('profile')
   const navigate = useNavigate()
-  const { user, clearAuth } = useAuthStore()
+  const { user, isAuthenticated, clearAuth } = useAuthStore()
   const { mutate: logout, isPending: loggingOut } = useLogout()
   const [editOpen, setEditOpen] = useState(false)
 
@@ -365,6 +365,41 @@ export default function ProfilePage() {
     clearAuth()
     navigate('/login', { replace: true })
     return null
+  }
+
+  // Guest state — show sign-in prompt instead of redirecting
+  if (!isAuthenticated) {
+    return (
+      <div className="max-w-2xl mx-auto pb-24">
+        <div className="bg-gradient-to-br from-primary/5 to-orange-50 px-5 pt-12 pb-10 text-center">
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gray-100">
+            <User size={36} className="text-gray-400" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900">{t('guest_title', 'Sign in to your account')}</h2>
+          <p className="mt-1 text-sm text-gray-500">{t('guest_subtitle', 'Track orders, save addresses, and more')}</p>
+          <div className="mt-6 flex flex-col gap-3 px-4">
+            <button
+              onClick={() => navigate(ROUTES.LOGIN, { state: { returnTo: ROUTES.PROFILE } })}
+              className="w-full rounded-2xl bg-primary py-4 text-base font-bold text-white shadow-lg shadow-primary/20"
+            >
+              {t('sign_in', 'Sign in')}
+            </button>
+            <button
+              onClick={() => navigate(ROUTES.REGISTER)}
+              className="w-full rounded-2xl border border-gray-200 py-4 text-base font-semibold text-gray-700"
+            >
+              {t('create_account', 'Create account')}
+            </button>
+          </div>
+        </div>
+        {/* Still show preferences for guests */}
+        <div className="mt-2 rounded-2xl mx-4 overflow-hidden border border-gray-100 bg-white">
+          <p className="px-4 pt-4 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{t('preferences', 'Preferences')}</p>
+          <MenuItem icon={Moon} label={t('darkMode', 'Dark mode')} onClick={() => {}} delay={0} />
+          <MenuItem icon={Globe} label={t('language', 'Language')} sublabel="English" onClick={() => {}} delay={0.05} />
+        </div>
+      </div>
+    )
   }
 
   const initials = user

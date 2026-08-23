@@ -676,6 +676,47 @@ export default function ActiveDeliveryPage() {
           </div>
         </motion.div>
 
+        {/* Order items — shown while heading to restaurant so rider knows what to collect */}
+        <AnimatePresence>
+          {isPendingPickup && order.items.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.11 }}
+              className="rounded-3xl border border-zinc-800 bg-zinc-900 p-4"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-600 mb-3">
+                {t('item_count', { count: order.items.length })} · {t('show_order_number')}
+              </p>
+              <div className="space-y-2.5">
+                {order.items.map((item, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[11px] font-bold text-zinc-400">
+                      {item.quantity}×
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-zinc-200 leading-snug">{item.name}</p>
+                      {item.selectedVariants.length > 0 && (
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          {item.selectedVariants.map((v) => `${v.variantName}: ${v.optionName}`).join(' · ')}
+                        </p>
+                      )}
+                      {item.selectedAddOns.length > 0 && (
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          + {item.selectedAddOns.map((a) => a.name).join(', ')}
+                        </p>
+                      )}
+                      {item.note && (
+                        <p className="text-xs text-amber-400 mt-0.5 italic">"{item.note}"</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Tip breakdown */}
         <AnimatePresence>
           {(order.pricing.tip ?? 0) > 0 && (

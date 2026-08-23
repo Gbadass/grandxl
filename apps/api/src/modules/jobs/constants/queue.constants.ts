@@ -5,8 +5,10 @@ export const SETTLEMENT_QUEUE = 'settlement'
 
 export const ORDER_TIMEOUT_DELAY_MS = 30 * 60 * 1000 // 30 minutes — auto-cancel unpaid order
 export const RIDER_DISPATCH_RETRY_DELAY_MS = 2 * 60 * 1000 // 2 minutes (used for fixed-delay fallback only)
-// Exponential base: 30s → 60s → 120s → 240s → 480s (≈ 15 min total across 5 attempts)
-export const RIDER_DISPATCH_BACKOFF_BASE_MS = 30 * 1000
+// Exponential base: 60s → 120s → 240s → 480s → 960s (≈ 31 min total across 5 attempts)
+// Must be > OFFER_SECONDS (45s) so every offer in round N expires before round N+1 fires.
+// This guarantees declinedBy is fully populated when the next broadcast builds its list.
+export const RIDER_DISPATCH_BACKOFF_BASE_MS = 60 * 1000
 export const RIDER_DISPATCH_MAX_ATTEMPTS = 5
 // Release a scheduled order to the restaurant this many minutes before the
 // customer's requested delivery time. Gives the kitchen time to prepare.

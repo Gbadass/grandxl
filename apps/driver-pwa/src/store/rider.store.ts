@@ -35,7 +35,11 @@ export const useRiderStore = create<RiderState & RiderActions>((set, get) => ({
   setActiveOrder: (order) => set({ activeOrder: order }),
 
   addPendingJob: (order) =>
-    set((s) => ({ pendingJobs: [order, ...s.pendingJobs] })),
+    set((s) => ({
+      pendingJobs: s.pendingJobs.some((o) => o._id === order._id)
+        ? s.pendingJobs
+        : [order, ...s.pendingJobs],
+    })),
 
   removePendingJob: (orderId) =>
     set((s) => ({ pendingJobs: s.pendingJobs.filter((o) => o._id !== orderId) })),

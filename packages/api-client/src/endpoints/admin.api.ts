@@ -156,6 +156,12 @@ export const adminOrdersApi = {
 
   clearAll: () =>
     getClient().delete<ApiResponse<{ cleared: number }>>('/admin/orders/all'),
+
+  redispatch: (id: string) =>
+    getClient().post<ApiResponse<{ message: string }>>(`/admin/orders/${id}/redispatch`),
+
+  dispatchDebug: (id: string) =>
+    getClient().get(`/admin/orders/${id}/dispatch-debug`),
 }
 
 // ── Admin — Reviews ──────────────────────────────────────────────────────────

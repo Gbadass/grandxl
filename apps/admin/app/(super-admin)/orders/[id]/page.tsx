@@ -39,7 +39,7 @@ export default function AdminOrderDetailPage() {
 
   const order = data?.data?.data
   const riders = (ridersData?.data?.data?.data ?? []) as Rider[]
-  const verifiedRiders = riders.filter((r) => r.isVerified && r.isOnline)
+  const verifiedRiders = riders.filter((r) => r.isVerified)
 
   const assignMutation = useMutation({
     mutationFn: () => adminRidersApi.assignToOrder(selectedRiderId, id),
@@ -49,6 +49,18 @@ export default function AdminOrderDetailPage() {
       setSelectedRiderId('')
     },
     onError: () => toast.error('Failed to assign rider'),
+  })
+
+  const redispatchMutation = useMutation({
+    mutationFn: () => adminOrdersApi.redispatch(id),
+    onSuccess: () => toast.success('Dispatch re-queued — rider will be notified shortly'),
+    onError: () => toast.error('Failed to re-queue dispatch'),
+  })
+
+  const debugMutation = useMutation({
+    mutationFn: () => adminOrdersApi.dispatchDebug(id),
+    onSuccess: (res) => alert(JSON.stringify(res.data, null, 2)),
+    onError: () => toast.error('Debug call failed'),
   })
 
   if (isInitializing || isLoading) {
@@ -122,7 +134,34 @@ export default function AdminOrderDetailPage() {
           {canAssign && (
             <div className="rounded-xl border border-orange-200 bg-orange-50 p-6">
               <h2 className="mb-1 font-semibold text-orange-900">No Rider Assigned</h2>
-              <p className="mb-4 text-sm text-orange-700">This order has no rider. Assign an available verified rider manually.</p>
+              <p className="mb-4 text-sm text-orange-700">This order has no rider. Re-queue automatic dispatch or assign a rider manually below.</p>
+
+              {/* Re-dispatch */}
+              <div className="mb-4 flex items-center justify-between rounded-lg border border-orange-200 bg-white px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Re-queue dispatch</p>
+                  <p className="text-xs text-gray-500">Clears previous declines and broadcasts to nearby riders again</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => debugMutation.mutate()}
+                    disabled={debugMutation.isPending}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {debugMutation.isPending ? '…' : 'Debug'}
+                  </button>
+                  <button
+                    onClick={() => redispatchMutation.mutate()}
+                    disabled={redispatchMutation.isPending}
+                    className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    {redispatchMutation.isPending ? 'Queuing…' : 'Redispatch'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Manual assign */}
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-orange-600">Or assign manually</p>
               <div className="flex gap-3">
                 <select
                   value={selectedRiderId}
@@ -130,16 +169,20 @@ export default function AdminOrderDetailPage() {
                   className="flex-1 rounded-lg border border-orange-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100"
                 >
                   <option value="">Select a rider…</option>
-                  {verifiedRiders.map((r) => (
-                    <option key={r._id} value={r._id}>
-                      {r.vehicleType} — {r.vehiclePlate ?? 'No plate'} ({r.totalDeliveries} deliveries)
-                    </option>
-                  ))}
+                  {verifiedRiders.map((r) => {
+                    const user = r.userId as import('@grandxl/types').RiderUser | null
+                    const name = user ? `${user.firstName} ${user.lastName}` : 'Unknown'
+                    return (
+                      <option key={r._id} value={r._id}>
+                        {r.isOnline ? '🟢' : '⚫'} {name} — {r.vehicleType} {r.vehiclePlate ? `(${r.vehiclePlate})` : ''} · {r.totalDeliveries} deliveries
+                      </option>
+                    )
+                  })}
                 </select>
                 <button
                   onClick={() => assignMutation.mutate()}
                   disabled={!selectedRiderId || assignMutation.isPending}
-                  className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
+                  className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 disabled:opacity-50"
                 >
                   {assignMutation.isPending ? 'Assigning…' : 'Assign Rider'}
                 </button>

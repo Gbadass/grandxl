@@ -62,7 +62,7 @@ export class OrdersController {
   }
 
   @Get('my')
-  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
+  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Get the current customer order history' })
   @ApiOkResponse({ description: 'Paginated order list' })
   async getMyOrders(
@@ -73,7 +73,7 @@ export class OrdersController {
   }
 
   @Get('my/:id')
-  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
+  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Get a single order (customer must own it)' })
   @ApiOkResponse({ description: 'Order details' })
   async getMyOrder(
@@ -85,7 +85,7 @@ export class OrdersController {
 
   @Post('my/:id/rate')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER)
+  @Roles(UserRole.CUSTOMER, UserRole.RESTAURANT_OWNER, UserRole.RIDER, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Rate a delivered order — 1–5 stars + optional review text' })
   @ApiOkResponse({ description: 'Rating recorded' })
   async rateOrder(
