@@ -228,9 +228,6 @@ export class OrdersService {
     if (!restaurant.isOpen) {
       throw new BadRequestException('Restaurant is currently closed')
     }
-    if (restaurant.openingHours && !isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours)) {
-      throw new BadRequestException('Restaurant is currently outside their opening hours')
-    }
 
     const serviceFeePercent = (platformConfig?.serviceFeePercent ?? DEFAULT_SERVICE_FEE_PERCENT) / 100
     const serviceFeeCap = platformConfig?.serviceFeeCapKobo ?? DEFAULT_SERVICE_FEE_CAP_KOBO
