@@ -77,16 +77,16 @@ export class OrderItemInputDto {
 }
 
 class DeliveryCoordinatesDto {
-  @ApiProperty({ example: 6.5244, description: 'Latitude within Nigeria (4–14°N)' })
+  @ApiProperty({ example: 6.5244, description: 'Latitude (WGS-84)' })
   @IsNumber()
-  @Min(4, { message: 'Delivery address must be within Nigeria' })
-  @Max(14, { message: 'Delivery address must be within Nigeria' })
+  @Min(-90)
+  @Max(90)
   lat!: number
 
-  @ApiProperty({ example: 3.3792, description: 'Longitude within Nigeria (3–15°E)' })
+  @ApiProperty({ example: 3.3792, description: 'Longitude (WGS-84)' })
   @IsNumber()
-  @Min(3, { message: 'Delivery address must be within Nigeria' })
-  @Max(15, { message: 'Delivery address must be within Nigeria' })
+  @Min(-180)
+  @Max(180)
   lng!: number
 }
 

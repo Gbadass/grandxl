@@ -6,6 +6,9 @@ RUN corepack enable && corepack prepare pnpm@10.34.1 --activate
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
+ARG NEXT_PUBLIC_GOOGLE_MAPS_KEY
+ENV NEXT_PUBLIC_GOOGLE_MAPS_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_KEY
+
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY packages/ ./packages/
 COPY apps/admin/ ./apps/admin/

@@ -182,15 +182,21 @@ export default function CheckoutPage() {
         selectedAddOns: item.selectedAddOns,
         note: item.note ?? undefined,
       })),
-      deliveryAddress: {
-        street: selectedAddress.street,
-        city: selectedAddress.city,
-        state: selectedAddress.state,
-        coordinates: {
-          lat: selectedAddress.coordinates.coordinates[1],
-          lng: selectedAddress.coordinates.coordinates[0],
-        },
-      },
+      deliveryAddress: (() => {
+        // Coordinates from the saved address (GeoJSON [lng, lat])
+        const addrLng = selectedAddress.coordinates?.coordinates?.[0] ?? 0
+        const addrLat = selectedAddress.coordinates?.coordinates?.[1] ?? 0
+        // Fall back to live GPS when address has no geocoded coords (e.g. saved
+        // without a Maps API key on the server).
+        const resolvedLat = addrLat !== 0 ? addrLat : (coordinates?.lat ?? addrLat)
+        const resolvedLng = addrLng !== 0 ? addrLng : (coordinates?.lng ?? addrLng)
+        return {
+          street: selectedAddress.street,
+          city: selectedAddress.city,
+          state: selectedAddress.state,
+          coordinates: { lat: resolvedLat, lng: resolvedLng },
+        }
+      })(),
       paymentMethod,
       customerNote: customerNote.trim() || undefined,
       deliveryInstructions: deliveryInstructions.trim() || undefined,
