@@ -358,9 +358,10 @@ export default function ActiveDeliveryPage() {
   const isPendingPickup = order
     ? [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY].includes(order.status as OrderStatus)
     : false
-  // Rider can confirm pickup from PREPARING (restaurant auto-notified) or READY (restaurant manually marked)
+  // Rider can confirm pickup from any pre-pickup status — restaurant acknowledgement
+  // is optional since many restaurants don't actively manage their portal.
   const isReadyForPickup = order
-    ? [OrderStatus.PREPARING, OrderStatus.READY].includes(order.status as OrderStatus)
+    ? [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY].includes(order.status as OrderStatus)
     : false
   const isPickedUp = order?.status === OrderStatus.PICKED_UP
 

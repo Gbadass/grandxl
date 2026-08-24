@@ -45,7 +45,9 @@ import type { RestaurantHours } from '@grandxl/utils'
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PENDING]:    [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
-  [OrderStatus.CONFIRMED]:  [OrderStatus.PREPARING, OrderStatus.CANCELLED],
+  // PICKED_UP allowed from CONFIRMED — rider can confirm pickup even if the
+  // restaurant never acknowledged the order in their portal (common in practice).
+  [OrderStatus.CONFIRMED]:  [OrderStatus.PREPARING, OrderStatus.PICKED_UP, OrderStatus.CANCELLED],
   // PICKED_UP allowed directly from PREPARING — rider can confirm pickup without
   // waiting for the restaurant to mark READY (handles unattended restaurant screens).
   [OrderStatus.PREPARING]:  [OrderStatus.READY, OrderStatus.PICKED_UP],
