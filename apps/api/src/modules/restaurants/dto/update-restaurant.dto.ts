@@ -13,4 +13,9 @@ export class UpdateRestaurantDto extends PartialType(CreateRestaurantDto) {
   @IsOptional()
   @IsString()
   coverImage?: string | null
+
+  @ApiPropertyOptional({ description: 'Cloudinary URL for the restaurant logo' })
+  @IsOptional()
+  @IsString()
+  logo?: string | null
 }

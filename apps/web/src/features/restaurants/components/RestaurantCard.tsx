@@ -3,8 +3,7 @@ import { motion } from 'framer-motion'
 import { Star, Clock, Heart } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { Restaurant } from '@grandxl/types'
-import { formatMoney, isRestaurantOpen } from '@grandxl/utils'
-import type { RestaurantHours } from '@grandxl/utils'
+import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../store/auth.store'
 import { useFavorites } from '../../../hooks/useFavorites'
 
@@ -35,8 +34,9 @@ function initials(name: string) {
 
 export function RestaurantCard({ restaurant }: Props) {
   const isFree = restaurant.deliveryFeeFixed === 0
-  // Closed if manually toggled off, OR if outside today's opening hours schedule
-  const isOpen = restaurant.isOpen && isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours)
+  // isOpen is the owner's live toggle — it's the authoritative "accepting orders" signal.
+  // Hours schedule is informational; automatic enforcement belongs in a server-side cron.
+  const isOpen = restaurant.isOpen
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const { isFavorited, toggleFavorite } = useFavorites()
   const { t } = useTranslation('restaurants')

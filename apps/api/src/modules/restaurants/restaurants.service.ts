@@ -249,6 +249,7 @@ export class RestaurantsService {
     if (dto.estimatedDeliveryTime !== undefined) updates.estimatedDeliveryTime = dto.estimatedDeliveryTime
     if (dto.isOpen !== undefined) updates.isOpen = dto.isOpen
     if (dto.coverImage !== undefined) updates.coverImage = dto.coverImage
+    if (dto.logo !== undefined) updates.logo = dto.logo
 
     if (dto.address !== undefined) {
       updates.address = {
