@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { MapPin, Home, Briefcase, Plus, Navigation, Trash2, Check, X, AlertCircle } from 'lucide-react'
+import { MapPin, Home, Briefcase, Plus, Navigation, Trash2, Check, X, AlertCircle, TriangleAlert } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { Address } from '@grandxl/types'
@@ -67,6 +67,12 @@ function AddressCard({
         </div>
         <p className="text-xs text-gray-500 mt-0.5 truncate">{address.street}</p>
         <p className="text-xs text-gray-400">{address.city}, {address.state}</p>
+        {!address.coordinates && (
+          <p className="flex items-center gap-1 mt-1 text-[11px] text-amber-600 font-medium">
+            <TriangleAlert size={10} className="shrink-0" />
+            {t('noLocationPin')}
+          </p>
+        )}
       </div>
 
       <button
@@ -117,15 +123,19 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
         setGpsCoords(coords)
         try {
           const geo = await reverseGeocode(coords.lat, coords.lng)
-          const resolved = geo ?? { city: 'Your location', state: '', display: 'Location detected' }
-          setGpsGeo(resolved)
-          setForm((f) => ({
-            ...f,
-            city: f.city || resolved.city,
-            state: f.state || resolved.state,
-          }))
+          if (geo) {
+            setGpsGeo(geo)
+            setForm((f) => ({
+              ...f,
+              city: f.city || geo.city,
+              state: f.state || geo.state,
+            }))
+          } else {
+            // Coordinates captured but couldn't reverse geocode — user fills city/state manually
+            setGpsGeo({ city: '', state: '', display: 'GPS pinned' })
+          }
         } catch {
-          setGpsGeo({ city: 'Your location', state: '', display: 'Location detected' })
+          setGpsGeo({ city: '', state: '', display: 'GPS pinned' })
         }
         setGpsDetected(true)
         setGpsLoading(false)
@@ -211,7 +221,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           {gpsLoading
             ? t('detecting')
             : gpsDetected
-            ? (gpsGeo?.display ?? gpsGeo?.city ?? t('locationDetected', { city: '', state: '' }))
+            ? (gpsGeo?.display || t('gpsPinned'))
             : t('useCurrentLocation')
           }
         </span>
@@ -220,11 +230,11 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
         )}
       </button>
 
-      {/* After GPS detect: prompt user to enter street manually */}
+      {/* After GPS detect: prompt user to fill in address fields */}
       {gpsDetected && (
         <p className="flex items-center gap-1.5 text-xs text-primary font-medium -mt-1">
           <Navigation size={10} className="shrink-0" />
-          {t('enterStreetNow')}
+          {gpsGeo?.city ? t('enterStreetNow') : t('enterAddressNow')}
         </p>
       )}
 

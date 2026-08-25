@@ -19,7 +19,9 @@
   "locationDetected": "{{city}}, {{state}} detected",
   "tapToRefresh": "Tap to refresh",
   "useCurrentLocation": "Use my current location",
+  "gpsPinned": "GPS pinned — enter your address below",
   "enterStreetNow": "GPS pinned — now enter your street address below",
+  "enterAddressNow": "GPS pinned — enter street, city and state below",
   "streetPlaceholder": "Street address *",
   "nearLabel": "Near:",
   "cityPlaceholder": "City",
@@ -30,5 +32,6 @@
   "deliverHere": "Deliver here",
   "yourDetectedLocation": "Your detected location",
   "useThis": "Use this",
-  "addNewAddress": "Add new address"
+  "addNewAddress": "Add new address",
+  "noLocationPin": "No GPS pin — delete and re-add with location"
 }
