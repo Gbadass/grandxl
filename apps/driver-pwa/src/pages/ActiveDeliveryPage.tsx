@@ -41,8 +41,13 @@ const destinationIcon = new L.DivIcon({
 
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap()
+  const fitted = useRef(false)
   useEffect(() => {
-    if (points.length < 2) return
+    // Fit once when we first have both rider + destination — never again.
+    // Re-fitting on every GPS tick resets the viewport every few seconds
+    // and makes it impossible for the rider to pan or zoom the map.
+    if (points.length < 2 || fitted.current) return
+    fitted.current = true
     map.fitBounds(points.map(([lat, lng]) => [lat, lng] as [number, number]), { padding: [40, 40] })
   }, [map, points])
   return null
@@ -520,9 +525,10 @@ export default function ActiveDeliveryPage() {
     ...(riderPos ? [riderPos] : []),
     ...(destination ? [[destination.lat, destination.lng] as [number, number]] : []),
   ], [riderPos, destination])
-  const mapCenter: [number, number] = destination
-    ? [destination.lat, destination.lng]
-    : [9.0765, 7.3986] // Nigeria fallback
+  const mapCenter = useMemo<[number, number]>(
+    () => destination ? [destination.lat, destination.lng] : [9.0765, 7.3986],
+    [destination],
+  )
 
   return (
     <div className="min-h-full pb-6">
