@@ -47,12 +47,18 @@ jobs:
             echo "==> Building Docker images"
             docker compose -f docker-compose.prod.yml build --parallel
 
-            echo "==> Restarting services"
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            echo "==> Stopping existing containers (prevents name conflicts)"
+            docker compose -f docker-compose.prod.yml down --remove-orphans
 
-            echo "==> Waiting for API health check"
+            echo "==> Starting services"
+            docker compose -f docker-compose.prod.yml up -d
+
+            echo "==> Waiting for services to start"
             sleep 10
             docker compose -f docker-compose.prod.yml ps
+
+            echo "==> Reloading nginx config"
+            docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload || true
 
             echo "==> Cleaning up unused images"
             docker image prune -f
