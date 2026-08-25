@@ -41,10 +41,33 @@ export class TrackingService {
   }
 
   async broadcastOrderToRiders(riderUserIds: string[], order: unknown): Promise<void> {
+    // Strip customer PII before broadcasting to unassigned candidate riders.
+    // They only need enough to decide whether to accept — not the customer's
+    // identity, exact address, or payment details.
+    const o = order as Record<string, unknown>
+    const addr = (o['deliveryAddress'] ?? {}) as Record<string, unknown>
+    const pricing = (o['pricing'] ?? {}) as Record<string, unknown>
+    const items = (o['items'] as unknown[]) ?? []
+
+    const sanitized = {
+      _id:                  o['_id'],
+      orderNumber:          o['orderNumber'],
+      restaurantId:         o['restaurantId'],
+      restaurantName:       o['restaurantName'],
+      restaurantPickupAddress: o['restaurantPickupAddress'],
+      // Delivery neighbourhood only — no street, no GPS coordinates
+      deliveryNeighbourhood: { city: addr['city'], state: addr['state'] },
+      itemCount:            items.length,
+      pricing: {
+        deliveryFee: pricing['deliveryFee'],
+        tip:         pricing['tip'],
+      },
+      status: o['status'],
+    }
+
     for (const userId of riderUserIds) {
       const roomSize = await this.gateway.getRoomSize(`user_${userId}`)
-      this.gateway.sendToUser(userId, 'order:broadcast', { order })
-      // This log tells us definitively whether the rider's socket is connected.
+      this.gateway.sendToUser(userId, 'order:broadcast', { order: sanitized })
       // roomSize=0 means the event was emitted to an empty room — rider not connected.
       this.logger.warn(`[dispatch] emitted order:broadcast to user_${userId} — ${roomSize} socket(s) in room`)
     }
