@@ -441,9 +441,15 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS)
     await this.usersService.updatePasswordHash(userId, passwordHash)
 
-    // Invalidate reset token + any active refresh tokens
-    await this.redis.del(`${REDIS_PWD_RESET_PREFIX}${dto.token}`)
-    await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${userId}`)
+    // Invalidate the reset token and ALL active refresh token families for this user.
+    // After A6 each device session lives at rt:{userId}:{familyId} — delete all of them.
+    const familyKeys = await this.redis.keys(`${REDIS_REFRESH_TOKEN_PREFIX}${userId}:*`)
+    const keysToDelete = [
+      `${REDIS_PWD_RESET_PREFIX}${dto.token}`,
+      `${REDIS_REFRESH_TOKEN_PREFIX}${userId}`, // legacy single-slot key (pre-A6)
+      ...familyKeys,
+    ]
+    await this.redis.del(...keysToDelete)
   }
 
   // ── Admin Login (email + password + brute force protection) ─────
