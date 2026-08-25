@@ -443,11 +443,39 @@ export class PayoutsService {
         return
       }
 
-      payout.status       = PayoutStatus.PENDING
-      payout.decisionNote = `Transfer ${event.replace('transfer.', '')} — reason: ${data.reason ?? 'unknown'}. Will retry on next approval.`
-      payout.paystackTransferCode = undefined
-      payout.transferReference    = undefined
-      await payout.save()
+      // Mirror the transfer.success transaction pattern: both the payout status
+      // rollback and the earnings restoration must be atomic. If only one persists,
+      // the rider's earnings balance is permanently wrong.
+      const session = await this.connection.startSession()
+      try {
+        await session.withTransaction(async () => {
+          const reverted = await this.payoutModel.findOneAndUpdate(
+            { _id: payout._id, status: PayoutStatus.APPROVED },
+            {
+              $set: {
+                status:              PayoutStatus.PENDING,
+                decisionNote:        `Transfer ${event.replace('transfer.', '')} — reason: ${data.reason ?? 'unknown'}. Will retry on next approval.`,
+                paystackTransferCode: null,
+                transferReference:    null,
+              },
+            },
+            { new: true, session },
+          )
+          if (!reverted) {
+            // Already transitioned by a concurrent call — idempotent, nothing to do.
+            return
+          }
+
+          // Restore the rider's earnings so they can request a payout again.
+          await this.riderModel.updateOne(
+            { _id: payout.riderId },
+            { $inc: { 'earnings.totalKobo': payout.amountKobo } },
+            { session },
+          )
+        })
+      } finally {
+        await session.endSession()
+      }
 
       this.logger.warn(`Webhook: payout ${payout._id.toString()} reverted to PENDING — ${event}`)
     }
