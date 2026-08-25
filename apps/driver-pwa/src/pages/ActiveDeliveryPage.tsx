@@ -11,7 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ordersApi, ridersApi, chatApi } from '@grandxl/api-client'
 import type { ChatMessage, CustomerContact } from '@grandxl/api-client'
 import { OrderStatus } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, isWithinRadius } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
 import { useAuthStore } from '../store/auth.store'
 import { ROUTES } from '../router/routes'
@@ -486,6 +486,23 @@ export default function ActiveDeliveryPage() {
 
   async function markDelivered() {
     if (acting) return
+
+    // Verify rider is within 300 m of the drop-off before allowing DELIVERED.
+    // Blocks fraudulent "delivered from the sofa" taps. If GPS is unavailable we
+    // warn but still allow — no GPS should not permanently block delivery.
+    if (destination && riderPos) {
+      const [rLat, rLng] = riderPos
+      const nearDropOff = isWithinRadius(
+        { lat: destination.lat, lng: destination.lng },
+        { lat: rLat, lng: rLng },
+        0.3, // 300 m
+      )
+      if (!nearDropOff) {
+        toast.error(t('too_far_from_dropoff', 'You are too far from the drop-off location. Get closer and try again.'))
+        return
+      }
+    }
+
     setActing(true)
     try {
       await ordersApi.updateStatus(order!._id, { status: OrderStatus.DELIVERED })
