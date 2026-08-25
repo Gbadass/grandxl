@@ -636,7 +636,10 @@ export default function ActiveDeliveryPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-0.5">{t('pick_up_from')}</p>
-                    <p className="text-sm text-zinc-200 font-medium">{order.restaurantPickupAddress.street}</p>
+                    {order.restaurantName && (
+                      <p className="text-sm font-bold text-zinc-200">{order.restaurantName}</p>
+                    )}
+                    <p className="text-sm text-zinc-400">{order.restaurantPickupAddress.street}</p>
                     <p className="text-xs text-zinc-500 mt-0.5">{order.restaurantPickupAddress.city}, {order.restaurantPickupAddress.state}</p>
                     <p className="text-xs text-zinc-600 mt-1">{t('show_order_number')}</p>
                   </div>

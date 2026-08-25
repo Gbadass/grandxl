@@ -142,7 +142,10 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
             </div>
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t('pickup_label')}</p>
-              <p className="truncate text-sm font-medium text-white">
+              {order.restaurantName && (
+                <p className="truncate text-sm font-bold text-white">{order.restaurantName}</p>
+              )}
+              <p className="truncate text-xs text-zinc-400">
                 {pickup ? `${pickup.street}, ${pickup.city}` : 'Restaurant address'}
               </p>
             </div>

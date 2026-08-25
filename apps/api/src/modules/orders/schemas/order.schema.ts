@@ -78,6 +78,10 @@ export class OrderDocument extends Document {
   @Prop({ type: Types.ObjectId, ref: 'RestaurantDocument', required: true })
   restaurantId!: Types.ObjectId
 
+  // Snapshotted at creation so riders see the restaurant name without a separate fetch.
+  @Prop({ type: String, default: '' })
+  restaurantName!: string
+
   // Snapshotted at creation — used by TrackingGateway to notify the restaurant
   // owner when the rider is nearby, without a separate restaurant collection lookup.
   @Prop({ type: Types.ObjectId, ref: 'UserDocument', required: true })

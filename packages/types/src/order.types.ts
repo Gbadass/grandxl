@@ -59,6 +59,7 @@ export interface Order {
   orderNumber: string // GXL-YYYYMMDD-XXXX
   customerId: string
   restaurantId: string
+  restaurantName: string
   riderId: string | null
   status: OrderStatus
   items: OrderItem[]

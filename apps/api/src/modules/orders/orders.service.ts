@@ -405,6 +405,7 @@ export class OrdersService {
       orderNumber: await this.nextOrderNumber(),
       customerId: new Types.ObjectId(customerId),
       restaurantId:      new Types.ObjectId(dto.restaurantId),
+      restaurantName:    restaurant.name,
       restaurantOwnerId: new Types.ObjectId(restaurant.ownerId.toString()),
       riderId: null,
       status: OrderStatus.PENDING,
