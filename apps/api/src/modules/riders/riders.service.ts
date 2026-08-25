@@ -151,14 +151,32 @@ export class RidersService {
     const rider = await this.riderModel.findById(riderId)
     if (!rider) throw new NotFoundException('Rider not found')
     if (!rider.isVerified) throw new ForbiddenException('Rider is not verified')
-    if (!rider.isOnline || !rider.isAvailable) {
-      throw new BadRequestException('Rider is not available')
+    if (!rider.isOnline) throw new BadRequestException('Rider is offline')
+
+    // Auto-heal: same logic as acceptOrder — reset a stuck unavailable flag if the
+    // rider has no genuinely active order. Allows admins to assign a rider whose
+    // isAvailable got stuck false after an edge-case cancellation.
+    if (!rider.isAvailable) {
+      const activeOrder = await this.ordersService.findActiveOrderByRider(String(rider._id))
+      if (!activeOrder) {
+        await this.riderModel.findByIdAndUpdate(rider._id, { $set: { isAvailable: true } })
+      }
     }
 
-    await this.ordersService.assignRider(orderId, riderId, rider.userId.toString())
+    // Atomically claim the rider slot — prevents two concurrent admin assigns from
+    // both passing the availability check (TOCTOU guard, same as acceptOrder).
+    const claimed = await this.riderModel.findOneAndUpdate(
+      { _id: rider._id, isAvailable: true },
+      { $set: { isAvailable: false } },
+    )
+    if (!claimed) throw new BadRequestException('Rider is not available')
 
-    // Mark rider as busy until delivery completes
-    await this.riderModel.findByIdAndUpdate(riderId, { $set: { isAvailable: false } })
+    try {
+      await this.ordersService.assignRider(orderId, riderId, rider.userId.toString())
+    } catch (err) {
+      void this.riderModel.findByIdAndUpdate(rider._id, { $set: { isAvailable: true } }).catch(() => undefined)
+      throw err
+    }
   }
 
   async releaseRider(riderId: string): Promise<void> {

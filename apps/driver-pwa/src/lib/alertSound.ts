@@ -43,3 +43,19 @@ export function playJobAlert(): void {
   beep(1047, 180, 220, 0.5)
   beep(1319, 280, 440, 0.6)
 }
+
+let alertLoop: ReturnType<typeof setInterval> | null = null
+
+/** Plays the alert immediately then repeats every 4 s until stopJobAlertLoop() is called. */
+export function startJobAlertLoop(): void {
+  stopJobAlertLoop()
+  playJobAlert()
+  alertLoop = setInterval(playJobAlert, 4000)
+}
+
+export function stopJobAlertLoop(): void {
+  if (alertLoop !== null) {
+    clearInterval(alertLoop)
+    alertLoop = null
+  }
+}

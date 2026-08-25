@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useRiderStore } from '../../store/rider.store'
 import { ridersApi } from '@grandxl/api-client'
 import { formatMoney } from '@grandxl/utils'
+import { startJobAlertLoop, stopJobAlertLoop } from '../../lib/alertSound'
 import type { Order } from '@grandxl/types'
 
 const OFFER_SECONDS = 45
@@ -31,9 +32,16 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const dismiss = useCallback(() => {
+    stopJobAlertLoop()
     removePendingJob(order._id)
     onDismiss()
   }, [order._id, removePendingJob, onDismiss])
+
+  // Start looping alert on mount — stops when rider accepts, declines, or timer expires
+  useEffect(() => {
+    startJobAlertLoop()
+    return stopJobAlertLoop
+  }, [])
 
   useEffect(() => {
     intervalRef.current = setInterval(() => {
@@ -50,6 +58,7 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
     mutationFn: () => ridersApi.acceptJob(order._id),
     onSuccess: () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
+      stopJobAlertLoop()
       setActiveOrder(order)
       removePendingJob(order._id)
       onDismiss()
@@ -58,11 +67,16 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : ''
       if (message.includes('409') || message.includes('conflict')) {
-        toast.error(t('job_taken_error'))
+        // 409 = already assigned to this rider (admin direct assignment) — treat as accepted
+        stopJobAlertLoop()
+        setActiveOrder(order)
+        removePendingJob(order._id)
+        onDismiss()
+        void navigate(`/delivery/${order._id}`, { replace: true })
       } else {
         toast.error(t('job_accept_error'))
+        dismiss()
       }
-      dismiss()
     },
   })
 

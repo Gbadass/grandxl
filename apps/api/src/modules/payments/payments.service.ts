@@ -263,10 +263,13 @@ export class PaymentsService {
     }
 
     if (transaction.orderId) {
-      await this.ordersService.markPaymentComplete(
+      const order = await this.ordersService.markPaymentComplete(
         transaction.orderId.toString(),
         data.reference,
       )
+      // null = order was not PENDING (already confirmed or cancelled).
+      // Paystack may retry webhooks — this is expected and safe to ignore.
+      if (!order) return
     }
   }
 

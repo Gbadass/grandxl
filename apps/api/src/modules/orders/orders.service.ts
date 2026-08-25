@@ -401,56 +401,81 @@ export class OrdersService {
       walletApplied = actualDebited
     }
 
-    const order = await new this.orderModel({
-      orderNumber: await this.nextOrderNumber(),
-      customerId: new Types.ObjectId(customerId),
-      restaurantId:      new Types.ObjectId(dto.restaurantId),
-      restaurantName:    restaurant.name,
-      restaurantOwnerId: new Types.ObjectId(restaurant.ownerId.toString()),
-      riderId: null,
-      status: OrderStatus.PENDING,
-      items: orderItems,
-      deliveryAddress: {
-        street: dto.deliveryAddress.street,
-        city: dto.deliveryAddress.city,
-        state: dto.deliveryAddress.state,
-        coordinates: {
-          type: 'Point',
-          coordinates: [dto.deliveryAddress.coordinates.lng, dto.deliveryAddress.coordinates.lat],
+    let order: OrderDocument
+    try {
+      order = await new this.orderModel({
+        orderNumber: await this.nextOrderNumber(),
+        customerId: new Types.ObjectId(customerId),
+        restaurantId:      new Types.ObjectId(dto.restaurantId),
+        restaurantName:    restaurant.name,
+        restaurantOwnerId: new Types.ObjectId(restaurant.ownerId.toString()),
+        riderId: null,
+        status: OrderStatus.PENDING,
+        items: orderItems,
+        deliveryAddress: {
+          street: dto.deliveryAddress.street,
+          city: dto.deliveryAddress.city,
+          state: dto.deliveryAddress.state,
+          coordinates: {
+            type: 'Point',
+            coordinates: [dto.deliveryAddress.coordinates.lng, dto.deliveryAddress.coordinates.lat],
+          },
         },
-      },
-      // Snapshot restaurant location so riders can navigate to pickup without a separate fetch
-      restaurantPickupAddress: {
-        street: restaurant.address.street,
-        city: restaurant.address.city,
-        state: restaurant.address.state,
-        coordinates: restaurant.address.coordinates,
-      },
-      pricing: {
-        subtotal,
-        deliveryFee: freeDelivery ? 0 : deliveryFee,
-        serviceFee,
-        discount,
-        vat,
-        tip,
-        walletApplied,
-        total,
-      },
-      payment: {
-        method: dto.paymentMethod,
-        // If wallet covers the entire bill, the order is paid the moment it's created.
-        status: walletApplied >= total ? PaymentStatus.COMPLETED : PaymentStatus.PENDING,
-        reference: walletApplied >= total ? `WALLET-FULL-${Date.now()}` : null,
-        paidAt: walletApplied >= total ? new Date() : null,
-      },
-      coupon: { code: dto.couponCode ?? null, discountAmount: discount },
-      customerNote: dto.customerNote ?? null,
-      deliveryInstructions: dto.deliveryInstructions ?? null,
-      estimatedTime: restaurant.estimatedDeliveryTime,
-      country: restaurant.country,
-      currency: restaurant.currency,
-      scheduledFor,
-    }).save()
+        // Snapshot restaurant location so riders can navigate to pickup without a separate fetch
+        restaurantPickupAddress: {
+          street: restaurant.address.street,
+          city: restaurant.address.city,
+          state: restaurant.address.state,
+          coordinates: restaurant.address.coordinates,
+        },
+        pricing: {
+          subtotal,
+          deliveryFee: freeDelivery ? 0 : deliveryFee,
+          serviceFee,
+          discount,
+          vat,
+          tip,
+          walletApplied,
+          total,
+        },
+        payment: {
+          method: dto.paymentMethod,
+          // If wallet covers the entire bill, the order is paid the moment it's created.
+          status: walletApplied >= total ? PaymentStatus.COMPLETED : PaymentStatus.PENDING,
+          reference: walletApplied >= total ? `WALLET-FULL-${Date.now()}` : null,
+          paidAt: walletApplied >= total ? new Date() : null,
+        },
+        coupon: { code: dto.couponCode ?? null, discountAmount: discount },
+        customerNote: dto.customerNote ?? null,
+        deliveryInstructions: dto.deliveryInstructions ?? null,
+        estimatedTime: restaurant.estimatedDeliveryTime,
+        country: restaurant.country,
+        currency: restaurant.currency,
+        scheduledFor,
+      }).save()
+    } catch (saveErr) {
+      // Wallet was already debited — refund it so the customer is not charged for a
+      // failed order. We surface errors here rather than swallowing them: a silent
+      // failure would mean the customer loses money with no recourse.
+      if (walletApplied > 0) {
+        await this.walletService.credit({
+          userId:        customerId,
+          amount:        walletApplied,
+          reason:        WalletTxnReason.REFUND,
+          description:   'Wallet refund — order could not be created',
+          referenceType: 'order_pending',
+          referenceId:   customerId,
+        }).catch((refundErr: unknown) =>
+          this.logger.error('CRITICAL: wallet refund failed after order save failure', refundErr)
+        )
+      }
+      // Coupon slot was atomically reserved in validateCoupon — release it so the
+      // customer can re-use the coupon. No usage record exists yet, so we decrement directly.
+      if (appliedCouponId) {
+        this.platformConfigService.releaseCouponSlot(appliedCouponId).catch(() => undefined)
+      }
+      throw saveErr
+    }
 
     // For scheduled orders: enqueue a delayed release. Restaurant won't see the
     // order in their live queue until the worker fires at scheduledFor - prep buffer.
@@ -507,10 +532,11 @@ export class OrdersService {
           })
         }
 
-        // Restore coupon slot so the customer can re-try with a different restaurant
+        // Release the coupon slot directly — recordCouponUsage is fire-and-forget so the
+        // usage record may not exist yet; decrement the count without relying on it.
         if (appliedCouponId) {
           this.platformConfigService
-            .revokeCouponUsage(order._id.toString())
+            .releaseCouponSlot(appliedCouponId)
             .catch(() => undefined)
         }
 
@@ -548,7 +574,7 @@ export class OrdersService {
           orderId,
           lng: dto.deliveryAddress.coordinates.lng,
           lat: dto.deliveryAddress.coordinates.lat,
-        }),
+        }, { jobId: `dispatch-${orderId}` }),
       ]).catch(() => undefined)
 
       return confirmed
@@ -710,13 +736,16 @@ export class OrdersService {
       updates.actualDeliveryAt = new Date()
     }
 
+    // Use the current status as a filter so two concurrent transitions cannot both
+    // silently succeed — only the first writer wins; the second gets a 409.
     const updated = await this.orderModel
-      .findByIdAndUpdate(orderId, { $set: updates }, { new: true })
+      .findOneAndUpdate({ _id: orderId, status: order.status }, { $set: updates }, { new: true })
       .exec()
-    if (!updated) throw new NotFoundException('Order not found')
+    if (!updated) throw new ConflictException('Order status was changed concurrently — please refresh and retry')
 
     // Refund wallet if order is cancelled and wallet was applied. Fire-and-forget;
-    // failure here shouldn't roll back the cancellation but must be logged.
+    // failure here shouldn't roll back the cancellation but must be logged — a silent
+    // failure means the customer loses money with no recourse.
     if (
       dto.status === OrderStatus.CANCELLED &&
       (order.pricing.walletApplied ?? 0) > 0
@@ -730,17 +759,21 @@ export class OrdersService {
           referenceType: 'order',
           referenceId:   orderId,
         })
-        .catch(() => undefined)
+        .catch((err: unknown) =>
+          this.logger.error(`CRITICAL: wallet refund failed on cancellation of order ${orderId}`, err)
+        )
     }
 
     // Initiate Paystack card refund if the order was paid by card. Fire-and-forget —
     // wallet has already been refunded above; a Paystack API hiccup must not block the
-    // cancellation response. Errors are logged inside initiateRefund().
+    // cancellation response. Log errors so ops can manually reconcile if Paystack fails.
     if (dto.status === OrderStatus.CANCELLED) {
       const cancelReason = dto.cancelReason ?? 'Order cancelled'
       this.paymentsService
         .initiateRefund(orderId, cancelReason)
-        .catch(() => undefined)
+        .catch((err: unknown) =>
+          this.logger.error(`Paystack refund initiation failed for cancelled order ${orderId}`, err)
+        )
     }
 
     // Restock items when the order is cancelled — items that auto-disabled at 0
@@ -802,7 +835,7 @@ export class OrdersService {
             orderId: orderIdStr,
             lng: updated.deliveryAddress.coordinates.coordinates[0],
             lat: updated.deliveryAddress.coordinates.coordinates[1],
-          })
+          }, { jobId: `dispatch-${orderIdStr}` })
         : Promise.resolve(),
       // On delivery: free up the rider and credit earnings
       dto.status === OrderStatus.DELIVERED && updated.riderId
@@ -811,9 +844,13 @@ export class OrdersService {
             updated.pricing.deliveryFee + (updated.pricing.tip ?? 0),
           )
         : Promise.resolve(),
-      // On cancellation: release the assigned rider (no earnings, no delivery count increment)
+      // On cancellation: release the assigned rider (no earnings, no delivery count increment).
+      // Auto-heal in acceptOrder means a missed release is self-correcting, but we log it
+      // so operators can spot patterns (e.g. a rider's socket failing repeatedly).
       dto.status === OrderStatus.CANCELLED && updated.riderId
-        ? this.ridersService.releaseRider(String(updated.riderId))
+        ? this.ridersService.releaseRider(String(updated.riderId)).catch((err: unknown) => {
+            this.logger.error(`releaseRider failed for rider ${String(updated.riderId)} on order cancellation — auto-heal will correct on next accept`, err)
+          })
         : Promise.resolve(),
       // On READY: push + socket to assigned rider so they know to go pick up the food
       dto.status === OrderStatus.READY && updated.riderId
@@ -937,9 +974,9 @@ export class OrdersService {
 
   // ── Used by PaymentsService ───────────────────────────────────────
 
-  async markPaymentComplete(orderId: string, reference: string): Promise<OrderDocument> {
-    const order = await this.orderModel.findByIdAndUpdate(
-      orderId,
+  async markPaymentComplete(orderId: string, reference: string): Promise<OrderDocument | null> {
+    const order = await this.orderModel.findOneAndUpdate(
+      { _id: orderId, status: OrderStatus.PENDING },
       {
         $set: {
           status: OrderStatus.CONFIRMED,
@@ -950,7 +987,12 @@ export class OrdersService {
       },
       { new: true },
     )
-    if (!order) throw new NotFoundException('Order not found')
+    if (!order) {
+      // Order is not in PENDING state — either already confirmed (duplicate webhook),
+      // or cancelled before payment landed. Both are safe to ignore.
+      this.logger.warn(`markPaymentComplete: order ${orderId} is not PENDING — ignoring late webhook (ref=${reference})`)
+      return null
+    }
 
     // Payment confirmed — NOW notify the restaurant and dispatch a rider.
     // This is the correct trigger point: Paystack webhook → charge.success → here.
@@ -963,7 +1005,7 @@ export class OrdersService {
         orderId,
         lat: order.deliveryAddress.coordinates.coordinates[1],
         lng: order.deliveryAddress.coordinates.coordinates[0],
-      }),
+      }, { jobId: `dispatch-${orderId}` }),
     ]).catch(() => undefined)
 
     return order
@@ -1161,7 +1203,7 @@ export class OrdersService {
           orderId: String(o._id),
           lng: o.deliveryAddress.coordinates.coordinates[0],
           lat: o.deliveryAddress.coordinates.coordinates[1],
-        }),
+        }, { jobId: `dispatch-${String(o._id)}` }),
       ),
     )
   }
@@ -1207,7 +1249,7 @@ export class OrdersService {
       orderId,
       lng: order.deliveryAddress.coordinates.coordinates[0],
       lat: order.deliveryAddress.coordinates.coordinates[1],
-    })
+    }, { jobId: `dispatch-${orderId}` })
   }
 
   async getRiderDeliveries(
@@ -1318,28 +1360,52 @@ export class OrdersService {
   async cancelIfTimedOut(orderId: string): Promise<void> {
     if (!Types.ObjectId.isValid(orderId)) return
 
-    const order = await this.orderModel.findOne({
-      _id: new Types.ObjectId(orderId),
-      status: OrderStatus.PENDING,
-      'payment.status': PaymentStatus.PENDING,
-    })
-    if (!order) return // Already confirmed or cancelled — nothing to do
-
-    const cancelled = await this.orderModel.findByIdAndUpdate(orderId, {
-      $set: {
-        status: OrderStatus.CANCELLED,
-        cancelReason: 'Payment not completed within 30 minutes',
+    // Atomic: only cancels if still PENDING+PENDING — prevents double-cancel if the timeout
+    // job runs twice (e.g. after a worker restart). new:false gives the pre-update doc so
+    // we have walletApplied, coupon, and scheduledReleaseJobId without a second read.
+    const order = await this.orderModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(orderId),
+        status: OrderStatus.PENDING,
+        'payment.status': PaymentStatus.PENDING,
       },
-    }, { new: true })
-
-    if (!cancelled) return
+      {
+        $set: {
+          status: OrderStatus.CANCELLED,
+          cancelReason: 'Payment not completed within 30 minutes',
+        },
+      },
+      { new: false },
+    )
+    if (!order) return // Already confirmed, paid, or cancelled — nothing to do
 
     // Remove the scheduled release job so the restaurant never receives a ghost notification
-    if (cancelled.scheduledReleaseJobId) {
+    if (order.scheduledReleaseJobId) {
       this.scheduledOrderQueue
-        .getJob(cancelled.scheduledReleaseJobId)
+        .getJob(order.scheduledReleaseJobId)
         .then((job) => job?.remove())
         .catch(() => undefined)
+    }
+
+    // Wallet portion was already debited but card never arrived — refund it.
+    if ((order.pricing.walletApplied ?? 0) > 0) {
+      this.walletService
+        .credit({
+          userId:        order.customerId.toString(),
+          amount:        order.pricing.walletApplied,
+          reason:        WalletTxnReason.REFUND,
+          description:   'Wallet refund — payment timed out',
+          referenceType: 'order',
+          referenceId:   orderId,
+        })
+        .catch((err: unknown) =>
+          this.logger.error(`CRITICAL: wallet timeout refund failed for order ${orderId}`, err)
+        )
+    }
+
+    // Release coupon slot — usage record exists by the time the 30-min timeout fires.
+    if (order.coupon?.code) {
+      this.platformConfigService.revokeCouponUsage(orderId).catch(() => undefined)
     }
 
     const customerId = order.customerId.toString()

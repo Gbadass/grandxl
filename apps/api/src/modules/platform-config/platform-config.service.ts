@@ -181,8 +181,20 @@ export class PlatformConfigService implements OnModuleInit {
 
     if (!coupon) throw new BadRequestException('Invalid or expired coupon code')
 
-    if (coupon.usageLimit > 0 && coupon.usageCount >= coupon.usageLimit) {
-      throw new BadRequestException('Coupon usage limit has been reached')
+    if (coupon.usageLimit > 0) {
+      if (customerId) {
+        // Real order path: atomically claim the slot so two concurrent requests
+        // cannot both pass the usageCount check and over-use the coupon.
+        // findOneAndUpdate returns null if usageCount is already at the limit.
+        const reserved = await this.couponModel.findOneAndUpdate(
+          { _id: coupon._id, usageCount: { $lt: coupon.usageLimit } },
+          { $inc: { usageCount: 1 } },
+        )
+        if (!reserved) throw new BadRequestException('Coupon usage limit has been reached')
+      } else if (coupon.usageCount >= coupon.usageLimit) {
+        // Preview/estimate path — read-only check, no slot reservation
+        throw new BadRequestException('Coupon usage limit has been reached')
+      }
     }
 
     // Per-user limit check — only enforced when called from order creation (customerId provided)
@@ -239,21 +251,27 @@ export class PlatformConfigService implements OnModuleInit {
   }
 
   async recordCouponUsage(couponId: string, customerId: string, orderId: string): Promise<void> {
-    await Promise.all([
-      this.couponModel.findByIdAndUpdate(couponId, { $inc: { usageCount: 1 } }),
-      this.couponUsageModel.create({
-        couponId: new Types.ObjectId(couponId),
-        userId:   new Types.ObjectId(customerId),
-        orderId:  new Types.ObjectId(orderId),
-      }),
-    ])
+    // usageCount was already atomically incremented in validateCoupon — only create the
+    // usage record here so revokeCouponUsage can find it on cancellation.
+    await this.couponUsageModel.create({
+      couponId: new Types.ObjectId(couponId),
+      userId:   new Types.ObjectId(customerId),
+      orderId:  new Types.ObjectId(orderId),
+    })
   }
 
   // Called when an order using a coupon is cancelled — restores the user's usage slot.
+  // Expects the usage record to exist (i.e. recordCouponUsage already ran successfully).
   async revokeCouponUsage(orderId: string): Promise<void> {
     const usage = await this.couponUsageModel.findOneAndDelete({ orderId: new Types.ObjectId(orderId) })
     if (usage) {
       await this.couponModel.findByIdAndUpdate(usage.couponId, { $inc: { usageCount: -1 } })
     }
+  }
+
+  // Decrements the coupon slot without requiring a usage record — used when the order
+  // failed before recordCouponUsage could create one (save failure, stock exhaustion).
+  async releaseCouponSlot(couponId: string): Promise<void> {
+    await this.couponModel.findByIdAndUpdate(couponId, { $inc: { usageCount: -1 } })
   }
 }

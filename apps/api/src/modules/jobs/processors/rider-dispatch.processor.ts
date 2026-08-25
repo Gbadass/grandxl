@@ -44,15 +44,8 @@ export class RiderDispatchProcessor extends WorkerHost {
 
     const customerId = order.customerId.toString()
 
-    // Phase 1 — auto-assign a nearby available rider
-    const available = await this.ridersService.findNearestAvailable(lng, lat)
-    if (available.length > 0) {
-      await this.ridersService.assignOrder(available[0]._id.toString(), orderId)
-      this.logger.debug(`Auto-assigned rider ${String(available[0]._id)} to order ${orderId}`)
-      return
-    }
-
-    // Phase 2 — no available riders: broadcast to nearest online+verified riders.
+    // Always broadcast so riders explicitly accept — no stealth auto-assignment.
+    // Phase 1 intentionally removed: every job requires a deliberate rider tap.
     // Cap at 10 to avoid a thundering-herd notification storm; the closest riders
     // are most likely to accept and arrive fastest anyway.
     // Exclude riders who already declined (explicitly or by timer expiry) so they

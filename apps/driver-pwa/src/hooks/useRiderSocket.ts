@@ -5,7 +5,7 @@ import { socket } from '../lib/socket'
 import axiosInstance from '../lib/axios'
 import { useAuthStore } from '../store/auth.store'
 import { useRiderStore } from '../store/rider.store'
-import { playJobAlert, primeAudio } from '../lib/alertSound'
+import { primeAudio } from '../lib/alertSound'
 import { OrderStatus } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
 
@@ -46,16 +46,14 @@ export function useRiderSocket() {
     socket.connect()
 
     function onDirectJob({ order }: { order: Order }) {
-      setActiveOrder(order)
-      playJobAlert()
-      toast.success(`Delivery assigned — ${order.orderNumber}`, { id: `job-${order._id}`, duration: 5000 })
-      void navigate(`/delivery/${order._id}`, { replace: true })
+      // Treat admin-assigned jobs the same as broadcasts — rider must explicitly accept.
+      // JobOfferSheet manages the looping alert and accept/decline UI.
+      addPendingJob(order)
     }
 
     function onBroadcastJob({ order }: { order: Order }) {
-      // Adds to pendingJobs — JobOfferSheet picks it up and shows the bottom sheet
+      // Adds to pendingJobs — JobOfferSheet picks it up, shows the sheet, and loops the alert.
       addPendingJob(order)
-      playJobAlert()
     }
 
     function onStatusUpdate({ orderId, status }: { orderId: string; status: OrderStatus }) {
