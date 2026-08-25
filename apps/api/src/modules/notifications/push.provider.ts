@@ -14,14 +14,15 @@ export class PushProvider {
   private readonly logger = new Logger(PushProvider.name)
   private readonly expo = new Expo()
 
+  // Returns true if Expo reported DeviceNotRegistered — caller should prune the token.
   async sendPushNotification(
     expoPushToken: string,
     payload: PushPayload,
-  ): Promise<void> {
+  ): Promise<{ dead: boolean }> {
     if (!Expo.isExpoPushToken(expoPushToken)) {
       const preview = String(expoPushToken).slice(0, 20)
       this.logger.warn(`Invalid Expo push token "${preview}…" — skipping`)
-      return
+      return { dead: false }
     }
 
     const message: ExpoPushMessage = {
@@ -33,7 +34,8 @@ export class PushProvider {
       badge: payload.badge,
     }
 
-    await this.sendBatch([message])
+    const deadTokens = await this.sendBatch([message])
+    return { dead: deadTokens.includes(expoPushToken) }
   }
 
   async sendBulkPushNotifications(
@@ -55,8 +57,11 @@ export class PushProvider {
     await this.sendBatch(messages)
   }
 
-  private async sendBatch(messages: ExpoPushMessage[]): Promise<void> {
+  // Returns the list of tokens that Expo flagged as DeviceNotRegistered so callers
+  // can prune them. All other errors are logged but not surfaced.
+  private async sendBatch(messages: ExpoPushMessage[]): Promise<string[]> {
     const chunks = this.expo.chunkPushNotifications(messages)
+    const deadTokens: string[] = []
 
     for (const chunk of chunks) {
       let tickets: ExpoPushTicket[]
@@ -68,14 +73,21 @@ export class PushProvider {
       }
 
       // Surface per-ticket errors — most common: DeviceNotRegistered, InvalidCredentials.
-      for (const ticket of tickets) {
+      for (let i = 0; i < tickets.length; i++) {
+        const ticket = tickets[i]
         if (ticket.status === 'error') {
           const code = ticket.details?.error ?? 'unknown'
           this.logger.warn(`Expo push ticket error: code=${code} message="${ticket.message}"`)
+          if (code === 'DeviceNotRegistered') {
+            const token = chunk[i]?.to
+            if (typeof token === 'string') deadTokens.push(token)
+          }
         } else {
           this.logger.log(`✓ Expo accepted ticket id=${ticket.id}`)
         }
       }
     }
+
+    return deadTokens
   }
 }

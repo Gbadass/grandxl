@@ -65,11 +65,17 @@ export class NotificationsService {
 
       const pushJobs: Promise<unknown>[] = []
 
-      // Expo push (mobile apps)
+      // Expo push (mobile apps) — prune token if Expo reports DeviceNotRegistered
       if (user.expoPushToken) {
         this.logger.log(`→ expo push user=${userId} title="${title}"`)
         pushJobs.push(
-          this.pushProvider.sendPushNotification(user.expoPushToken, { title, body, data }),
+          this.pushProvider.sendPushNotification(user.expoPushToken, { title, body, data })
+            .then(({ dead }) => {
+              if (dead) {
+                this.logger.warn(`Expo token dead for user=${userId} — pruning`)
+                void this.usersService.clearExpoPushToken(userId).catch(() => undefined)
+              }
+            }),
         )
       }
 

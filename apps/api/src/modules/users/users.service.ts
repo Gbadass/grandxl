@@ -224,6 +224,10 @@ export class UsersService implements OnModuleInit {
     await this.userModel.updateOne({ _id: userId }, { expoPushToken: token })
   }
 
+  async clearExpoPushToken(userId: string): Promise<void> {
+    await this.userModel.updateOne({ _id: userId }, { $unset: { expoPushToken: '' } })
+  }
+
   async saveWebPushSubscription(
     userId: string,
     sub: { endpoint: string; keys: { p256dh: string; auth: string } },
