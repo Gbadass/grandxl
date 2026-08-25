@@ -56,6 +56,8 @@ const ADMIN_LOCKOUT_SECONDS = 15 * 60 // 15 minutes
 export interface AuthTokens {
   accessToken: string
   refreshToken: string
+  familyId: string
+  jti: string
 }
 
 export interface AuthResponse {
@@ -117,7 +119,7 @@ export class AuthService {
     })
 
     const tokens = await this.issueTokens(user)
-    await this.storeRefreshToken(user._id.toString(), tokens.refreshToken)
+    await this.storeRefreshToken(user._id.toString(), tokens.familyId, tokens.jti)
 
     // Apply referral code if provided — fire-and-forget on failure
     if (dto.referralCode) {
@@ -140,7 +142,7 @@ export class AuthService {
     const user = await this.usersService.findByIdOrThrow(userId)
 
     const tokens = await this.issueTokens(user)
-    await this.storeRefreshToken(user._id.toString(), tokens.refreshToken)
+    await this.storeRefreshToken(user._id.toString(), tokens.familyId, tokens.jti)
 
     return {
       accessToken: tokens.accessToken,
@@ -173,7 +175,7 @@ export class AuthService {
 
     const refreshed = await this.usersService.findByIdOrThrow(user._id.toString())
     const tokens = await this.issueTokens(refreshed)
-    await this.storeRefreshToken(refreshed._id.toString(), tokens.refreshToken)
+    await this.storeRefreshToken(refreshed._id.toString(), tokens.familyId, tokens.jti)
 
     return {
       accessToken: tokens.accessToken,
@@ -261,7 +263,7 @@ export class AuthService {
     user = await this.usersService.findByIdOrThrow(user._id.toString())
 
     const tokens = await this.issueTokens(user)
-    await this.storeRefreshToken(user._id.toString(), tokens.refreshToken)
+    await this.storeRefreshToken(user._id.toString(), tokens.familyId, tokens.jti)
 
     return {
       accessToken: tokens.accessToken,
@@ -294,7 +296,7 @@ export class AuthService {
     if (existing) {
       await this.usersService.markVerified(existing._id.toString())
       const tokens = await this.issueTokens(existing)
-      await this.storeRefreshToken(existing._id.toString(), tokens.refreshToken)
+      await this.storeRefreshToken(existing._id.toString(), tokens.familyId, tokens.jti)
       return {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -319,7 +321,7 @@ export class AuthService {
     }
 
     const tokens = await this.issueTokens(fresh)
-    await this.storeRefreshToken(fresh._id.toString(), tokens.refreshToken)
+    await this.storeRefreshToken(fresh._id.toString(), tokens.familyId, tokens.jti)
 
     return {
       accessToken: tokens.accessToken,
@@ -373,7 +375,7 @@ export class AuthService {
     await this.usersService.updateLastLogin(user._id.toString())
 
     const tokens = await this.issueTokens(user)
-    await this.storeRefreshToken(user._id.toString(), tokens.refreshToken)
+    await this.storeRefreshToken(user._id.toString(), tokens.familyId, tokens.jti)
 
     return {
       accessToken: tokens.accessToken,
@@ -384,8 +386,17 @@ export class AuthService {
 
   // ── Logout ──────────────────────────────────────────────────────
 
-  async logout(userId: string): Promise<void> {
-    await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${userId}`)
+  async logout(userId: string, familyId?: string): Promise<void> {
+    if (familyId) {
+      await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${userId}:${familyId}`)
+    } else {
+      // Transition safety: old access tokens issued before this deploy won't carry familyId.
+      // Fall back to deleting all family keys for this user via a scan.
+      const keys = await this.redis.keys(`${REDIS_REFRESH_TOKEN_PREFIX}${userId}:*`)
+      if (keys.length) await this.redis.del(...keys)
+      // Also delete the legacy key format used before family tracking.
+      await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${userId}`)
+    }
   }
 
   // ── Refresh (web — cookie) ───────────────────────────────────────
@@ -491,7 +502,7 @@ export class AuthService {
     await this.usersService.updateLastLogin(user!._id.toString())
 
     const tokens = await this.issueTokens(user!)
-    await this.storeRefreshToken(user!._id.toString(), tokens.refreshToken)
+    await this.storeRefreshToken(user!._id.toString(), tokens.familyId, tokens.jti)
 
     return {
       accessToken: tokens.accessToken,
@@ -548,7 +559,7 @@ export class AuthService {
     await this.usersService.updateLastLogin(user!._id.toString())
 
     const tokens = await this.issueTokens(user!)
-    await this.storeRefreshToken(user!._id.toString(), tokens.refreshToken)
+    await this.storeRefreshToken(user!._id.toString(), tokens.familyId, tokens.jti)
 
     return {
       accessToken: tokens.accessToken,
@@ -559,37 +570,45 @@ export class AuthService {
 
   // ── Private helpers ─────────────────────────────────────────────
 
-  private async issueTokens(user: UserDocument): Promise<AuthTokens> {
+  // familyId ties all rotations in one login session together.
+  // Pass an existing familyId on refresh to continue the session; omit on new login.
+  private async issueTokens(user: UserDocument, familyId?: string): Promise<AuthTokens> {
     // Legacy fallback: some docs may still carry single `role` instead of `roles[]`.
     const legacy = user as UserDocument & { role?: UserRole }
     const roles: UserRole[] = (user.roles && user.roles.length > 0)
       ? (user.roles as UserRole[])
       : legacy.role ? [legacy.role] : []
 
-    const payload: JwtPayload = {
+    const fid = familyId ?? crypto.randomUUID()
+    const jti = crypto.randomUUID()
+
+    const basePayload: JwtPayload = {
       sub: user._id.toString(),
       roles,
       country: user.country,
+      familyId: fid,
     }
 
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync(basePayload, {
         secret: this.config.getOrThrow<string>('JWT_SECRET'),
         expiresIn: '15m',
       }),
-      this.jwtService.signAsync(payload, {
+      // Refresh token also carries jti so rotateRefreshToken can compare it.
+      this.jwtService.signAsync({ ...basePayload, jti }, {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
         expiresIn: '7d',
       }),
     ])
 
-    return { accessToken, refreshToken }
+    return { accessToken, refreshToken, familyId: fid, jti }
   }
 
-  private async storeRefreshToken(userId: string, refreshToken: string): Promise<void> {
-    const hash = await bcrypt.hash(refreshToken, BCRYPT_ROUNDS)
+  private async storeRefreshToken(userId: string, familyId: string, jti: string): Promise<void> {
+    // Store a bcrypt hash of the jti (UUID) — fast to hash, impossible to invert.
+    const hash = await bcrypt.hash(jti, BCRYPT_ROUNDS)
     await this.redis.setex(
-      `${REDIS_REFRESH_TOKEN_PREFIX}${userId}`,
+      `${REDIS_REFRESH_TOKEN_PREFIX}${userId}:${familyId}`,
       REFRESH_TOKEN_TTL_SECONDS,
       hash,
     )
@@ -605,15 +624,21 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token')
     }
 
-    const stored = await this.redis.get(`${REDIS_REFRESH_TOKEN_PREFIX}${payload.sub}`)
-    if (!stored) {
-      throw new UnauthorizedException('Refresh token revoked. Please log in again.')
+    // Tokens issued before this deploy won't have familyId/jti — force re-login once.
+    if (!payload.familyId || !payload.jti) {
+      throw new UnauthorizedException('Session expired. Please log in again.')
     }
 
-    const valid = await bcrypt.compare(refreshToken, stored)
+    const familyKey = `${REDIS_REFRESH_TOKEN_PREFIX}${payload.sub}:${payload.familyId}`
+    const storedHash = await this.redis.get(familyKey)
+    if (!storedHash) {
+      throw new UnauthorizedException('Session expired. Please log in again.')
+    }
+
+    const valid = await bcrypt.compare(payload.jti, storedHash)
     if (!valid) {
-      // Possible token reuse — revoke all sessions for this user
-      await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${payload.sub}`)
+      // Token reuse detected — kill this device's family only, not all sessions.
+      await this.redis.del(familyKey)
       throw new UnauthorizedException('Token reuse detected. Please log in again.')
     }
 
@@ -622,16 +647,17 @@ export class AuthService {
     // Revoke the session for deleted or suspended accounts so the refresh
     // loop cannot keep issuing new cookies indefinitely.
     if (user.deletedAt) {
-      await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${payload.sub}`)
+      await this.redis.del(familyKey)
       throw new UnauthorizedException('ACCOUNT_DELETED')
     }
     if (!user.isActive) {
-      await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${payload.sub}`)
+      await this.redis.del(familyKey)
       throw new UnauthorizedException('Account suspended')
     }
 
-    const tokens = await this.issueTokens(user)
-    await this.storeRefreshToken(user._id.toString(), tokens.refreshToken)
+    // Reuse the same familyId — this is the same device session, just a new jti.
+    const tokens = await this.issueTokens(user, payload.familyId)
+    await this.storeRefreshToken(user._id.toString(), tokens.familyId, tokens.jti)
 
     return {
       accessToken: tokens.accessToken,

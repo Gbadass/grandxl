@@ -110,7 +110,7 @@ export class AuthController {
     @CurrentUser() user: JwtPayload,
     @Res({ passthrough: true }) res: Response,
   ) {
-    await this.authService.logout(user.sub)
+    await this.authService.logout(user.sub, user.familyId)
     res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
       secure: process.env['NODE_ENV'] === 'production',

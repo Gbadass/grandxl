@@ -44,6 +44,8 @@ export interface JwtPayload {
   sub: string
   roles: UserRole[]
   country: string
+  familyId?: string
+  jti?: string
   iat?: number
   exp?: number
 }
