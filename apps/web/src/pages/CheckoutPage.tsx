@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -76,6 +76,7 @@ export default function CheckoutPage() {
   const [customerNote, setCustomerNote] = useState('')
   const [deliveryInstructions, setDeliveryInstructions] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const isSubmittingRef = useRef(false)
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null)
 
   // --- Coupon code ---
@@ -161,17 +162,25 @@ export default function CheckoutPage() {
   }
 
   async function handlePlaceOrder() {
-    if (isSubmitting) return
+    // useRef guard is synchronous — closes the race between two rapid taps that both
+    // pass a useState check before the first setIsSubmitting(true) re-renders.
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     if (!user) {
+      isSubmittingRef.current = false
       void navigate(ROUTES.LOGIN, { state: { returnTo: ROUTES.CHECKOUT } })
       return
     }
     if (!selectedAddress) {
+      isSubmittingRef.current = false
       toast.error(t('checkout:addAddressFirst'))
       setAddressSheetOpen(true)
       return
     }
-    if (!restaurantId) return
+    if (!restaurantId) {
+      isSubmittingRef.current = false
+      return
+    }
 
     // Resolve delivery coordinates — GeoJSON stores [lng, lat]
     const addrLng = selectedAddress.coordinates?.coordinates?.[0] ?? 0
@@ -187,16 +196,16 @@ export default function CheckoutPage() {
 
     // Guard: both 0,0 means no coordinates at all — prompt user to re-enter address with GPS
     if (resolvedLat === 0 && resolvedLng === 0) {
+      isSubmittingRef.current = false
       toast.error(t('checkout:addressNeedsLocation'))
       setAddressSheetOpen(true)
-      setIsSubmitting(false)
       return
     }
     // Guard: out-of-range values (stale bad data) — clear and ask user to re-enter
     if (resolvedLat < -90 || resolvedLat > 90 || resolvedLng < -180 || resolvedLng > 180) {
+      isSubmittingRef.current = false
       toast.error(t('checkout:addressNeedsLocation'))
       setAddressSheetOpen(true)
-      setIsSubmitting(false)
       return
     }
 
@@ -253,6 +262,7 @@ export default function CheckoutPage() {
         sessionStorage.setItem('pendingPaystackOrderId', order._id)
         sessionStorage.setItem('pendingPaystackReference', paystackRef)
 
+        isSubmittingRef.current = false
         setIsSubmitting(false) // re-enable the button while popup is open
 
         // Open Paystack inline popup — stays on this page, no full-page redirect.
@@ -302,6 +312,7 @@ export default function CheckoutPage() {
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, t('common:error')))
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
