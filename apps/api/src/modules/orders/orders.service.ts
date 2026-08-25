@@ -1142,6 +1142,8 @@ export class OrdersService {
     )
     const liveOrder = preparing ?? order
 
+    void this.recordRiderAssigned(orderId).catch(() => undefined)
+
     void Promise.all([
       this.notificationsService.onRiderAssigned(riderUserId, liveOrder.orderNumber, orderIdStr),
       // Push + SMS to restaurant: "Rider X is on the way, have it ready"
@@ -1238,6 +1240,25 @@ export class OrdersService {
         usingFallback: nearbyOnlineVerified.length === 0,
       },
     }
+  }
+
+  // Called by the dispatch processor on each broadcast round to track timing/volume.
+  async recordDispatchRound(orderId: string, broadcastCount: number, isFirstRound: boolean): Promise<void> {
+    const update: Record<string, unknown> = {
+      $inc: { dispatchRounds: 1, dispatchBroadcastCount: broadcastCount },
+    }
+    if (isFirstRound) {
+      update['$set'] = { firstDispatchAt: new Date() }
+    }
+    await this.orderModel.updateOne({ _id: new Types.ObjectId(orderId) }, update)
+  }
+
+  // Called when a rider is assigned so we can measure time-to-assign.
+  async recordRiderAssigned(orderId: string): Promise<void> {
+    await this.orderModel.updateOne(
+      { _id: new Types.ObjectId(orderId) },
+      { $set: { riderAssignedAt: new Date() } },
+    )
   }
 
   // Called by the dispatch processor at the start of each retry round so riders

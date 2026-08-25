@@ -61,6 +61,13 @@ export class RiderDispatchProcessor extends WorkerHost {
       const userIds = broadcastTargets.map((r) => String(r.userId))
       await this.trackingService.broadcastOrderToRiders(userIds, order)
 
+      // Record this round for dispatch observability metrics.
+      void this.ordersService.recordDispatchRound(
+        orderId,
+        userIds.length,
+        job.attemptsMade === 0,
+      ).catch(() => undefined)
+
       // Push notifications — so riders with the app in background/closed still hear the ping.
       void Promise.allSettled(
         userIds.map((userId) =>

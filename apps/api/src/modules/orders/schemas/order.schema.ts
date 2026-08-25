@@ -166,6 +166,19 @@ export class OrderDocument extends Document {
   @Prop({ type: [{ type: Types.ObjectId, ref: 'UserDocument' }], default: [] })
   declinedBy!: Types.ObjectId[]
 
+  // ── Dispatch observability ────────────────────────────────────────
+  @Prop({ type: Date, default: null })
+  firstDispatchAt!: Date | null  // when the first broadcast round fired
+
+  @Prop({ type: Date, default: null })
+  riderAssignedAt!: Date | null  // when riderId was first set
+
+  @Prop({ type: Number, default: 0 })
+  dispatchRounds!: number        // how many broadcast rounds ran
+
+  @Prop({ type: Number, default: 0 })
+  dispatchBroadcastCount!: number // total riders broadcast to across all rounds
+
   @Prop({ type: Date, default: null })
   restaurantClearedAt!: Date | null
 
