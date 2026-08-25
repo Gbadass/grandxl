@@ -127,6 +127,86 @@ export class EmailProvider {
     })
   }
 
+  async sendRestaurantApproved(
+    email: string,
+    firstName: string,
+    restaurantName: string,
+  ): Promise<void> {
+    const dashboardUrl = `${this.config.get<string>('ADMIN_URL', 'http://localhost:3000')}/restaurant/dashboard`
+    await this.send({
+      to: email,
+      subject: `🎉 ${restaurantName} is now live on GrandXL!`,
+      html: `
+        <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;color:#111">
+          <h2 style="margin-bottom:8px">Congratulations, ${firstName}! 🎉</h2>
+          <p style="color:#555;line-height:1.55">
+            <strong>${restaurantName}</strong> has been approved and is now live on GrandXL.
+            Customers can discover and order from your restaurant right now.
+          </p>
+
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 18px;margin:18px 0">
+            <p style="margin:0;color:#166534;font-weight:600">You're ready to go — here's what to do next:</p>
+            <ul style="margin:8px 0 0;padding-left:18px;color:#14532d;line-height:1.6">
+              <li>Make sure your menu is complete and up to date</li>
+              <li>Set your opening hours in Settings</li>
+              <li>Go online to start receiving orders</li>
+            </ul>
+          </div>
+
+          <a href="${dashboardUrl}"
+             style="background:#f97316;color:#fff;padding:12px 24px;border-radius:9999px;text-decoration:none;display:inline-block;margin:8px 0;font-weight:600">
+            Open Dashboard
+          </a>
+
+          <p style="margin-top:24px;color:#888;font-size:13px">
+            Need help? Reply to this email or reach us at
+            <a href="mailto:partners@grandxl.com" style="color:#f97316">partners@grandxl.com</a>.
+          </p>
+          <p style="margin-top:24px;color:#aaa;font-size:12px">— The GrandXL Team</p>
+        </div>
+      `,
+    })
+  }
+
+  async sendRestaurantRejected(
+    email: string,
+    firstName: string,
+    restaurantName: string,
+    reason: string,
+  ): Promise<void> {
+    const supportEmail = 'partners@grandxl.com'
+    await this.send({
+      to: email,
+      subject: `Update on your GrandXL application — ${restaurantName}`,
+      html: `
+        <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;color:#111">
+          <h2 style="margin-bottom:8px">Hi ${firstName},</h2>
+          <p style="color:#555;line-height:1.55">
+            Thank you for applying to join GrandXL. After reviewing your application for
+            <strong>${restaurantName}</strong>, we're unable to approve it at this time.
+          </p>
+
+          <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:12px;padding:16px 18px;margin:18px 0">
+            <p style="margin:0;color:#9f1239;font-weight:600">Reason:</p>
+            <p style="margin:8px 0 0;color:#881337;line-height:1.55">${reason}</p>
+          </div>
+
+          <p style="color:#555;line-height:1.55">
+            If you believe this is an error or you'd like to reapply after addressing the issue,
+            please reply to this email and our team will assist you.
+          </p>
+
+          <a href="mailto:${supportEmail}"
+             style="background:#111;color:#fff;padding:12px 24px;border-radius:9999px;text-decoration:none;display:inline-block;margin:8px 0;font-weight:600">
+            Contact Support
+          </a>
+
+          <p style="margin-top:24px;color:#aaa;font-size:12px">— The GrandXL Team</p>
+        </div>
+      `,
+    })
+  }
+
   async sendOwnerWelcomeCredentials(
     email: string,
     firstName: string,

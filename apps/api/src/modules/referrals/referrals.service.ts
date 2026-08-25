@@ -64,20 +64,17 @@ export class ReferralsService {
   // ── Called when the referee completes their first order ──────────────────
 
   async onFirstOrderCompleted(orderId: string, customerId: string): Promise<void> {
-    // Find a pending referral where this customer is the referee
-    const referral = await this.referralModel.findOne({
-      refereeId: new Types.ObjectId(customerId),
-      status:    'pending',
-    })
+    // Atomically flip status from pending → rewarded. If two concurrent DELIVERED
+    // events race here, only one will match the { status: 'pending' } filter and
+    // get the document back. The other receives null and exits — no double credit.
+    const referral = await this.referralModel.findOneAndUpdate(
+      { refereeId: new Types.ObjectId(customerId), status: 'pending' },
+      { $set: { status: 'rewarded', refereeOrderId: new Types.ObjectId(orderId) } },
+      { new: false }, // return the pre-update doc so we have rewardAmountKobo
+    )
 
-    if (!referral) return // Not a referred user — nothing to do
+    if (!referral) return // Not a referred user, or already rewarded by a concurrent call
 
-    // Check if the referee has any previous DELIVERED orders (this must be their first)
-    // We do this check by seeing if there are OTHER rewarded/completed referral records.
-    // Actually, we rely on there being only one pending referral per referee and reward
-    // on first trigger of this method (subsequent calls skip because status is 'rewarded').
-
-    // Credit the referrer
     try {
       await this.walletService.credit({
         userId:        referral.referrerId.toString(),
@@ -88,16 +85,14 @@ export class ReferralsService {
         referenceId:   (referral._id as Types.ObjectId).toString(),
       })
 
-      // Mark the referral as rewarded
-      referral.status = 'rewarded'
-      referral.refereeOrderId = new Types.ObjectId(orderId)
-      await referral.save()
-
       this.logger.log(
         `Referral rewarded: referrer=${referral.referrerId} reward=${referral.rewardAmountKobo} kobo orderId=${orderId}`,
       )
     } catch (err) {
-      this.logger.error(`Failed to credit referral reward: ${(err as Error).message}`, (err as Error).stack)
+      // Wallet credit failed after we already flipped status — roll back so the
+      // reward can be retried manually rather than being silently lost.
+      await this.referralModel.findByIdAndUpdate(referral._id, { $set: { status: 'pending', refereeOrderId: null } })
+      this.logger.error(`Failed to credit referral reward — status rolled back: ${(err as Error).message}`, (err as Error).stack)
     }
   }
 

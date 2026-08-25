@@ -20,7 +20,12 @@ async function main() {
 
   const existing = await db.collection('users').findOne({ email: ADMIN_EMAIL })
   if (existing) {
-    console.log('Super admin already exists:', ADMIN_EMAIL)
+    if (Array.isArray(existing.roles) && existing.roles.includes('super_admin')) {
+      console.log('Super admin already exists:', ADMIN_EMAIL)
+    } else {
+      await db.collection('users').updateOne({ email: ADMIN_EMAIL }, { $set: { roles: ['super_admin'] } })
+      console.log('✅ Updated existing user to super_admin:', ADMIN_EMAIL)
+    }
     await mongoose.disconnect()
     return
   }
@@ -32,7 +37,7 @@ async function main() {
     lastName: 'Admin',
     email: ADMIN_EMAIL,
     phone: null,
-    role: 'super_admin',
+    roles: ['super_admin'],
     passwordHash,
     isVerified: true,
     isActive: true,

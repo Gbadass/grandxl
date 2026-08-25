@@ -459,6 +459,13 @@ export class RestaurantsService {
       updated.ownerId.toString(), updated.name, 'approved',
     ).catch(() => undefined)
 
+    // Email the owner so they know even if they missed the push notification
+    void this.usersService.findById(updated.ownerId.toString()).then((owner) => {
+      if (owner?.email) {
+        void this.email.sendRestaurantApproved(owner.email, owner.firstName, updated.name)
+      }
+    }).catch(() => undefined)
+
     return updated
   }
 
@@ -484,6 +491,12 @@ export class RestaurantsService {
     void this.notifications.onAdminActionOnRestaurant(
       updated.ownerId.toString(), updated.name, 'rejected', reason,
     ).catch(() => undefined)
+
+    void this.usersService.findById(updated.ownerId.toString()).then((owner) => {
+      if (owner?.email) {
+        void this.email.sendRestaurantRejected(owner.email, owner.firstName, updated.name, reason)
+      }
+    }).catch(() => undefined)
 
     return updated
   }

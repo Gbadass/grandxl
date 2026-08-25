@@ -472,7 +472,7 @@ export class OrdersService {
       // Coupon slot was atomically reserved in validateCoupon — release it so the
       // customer can re-use the coupon. No usage record exists yet, so we decrement directly.
       if (appliedCouponId) {
-        this.platformConfigService.releaseCouponSlot(appliedCouponId, customerId).catch(() => undefined)
+        this.platformConfigService.releaseCouponSlot(appliedCouponId, customerId, undefined).catch(() => undefined)
       }
       throw saveErr
     }
@@ -533,10 +533,10 @@ export class OrdersService {
         }
 
         // Release the coupon slot directly — recordCouponUsage is fire-and-forget so the
-        // usage record may not exist yet; decrement the count without relying on it.
+        // usage record may not exist yet; pass orderId so any orphaned doc is also cleaned up.
         if (appliedCouponId) {
           this.platformConfigService
-            .releaseCouponSlot(appliedCouponId, customerId)
+            .releaseCouponSlot(appliedCouponId, customerId, order._id.toString())
             .catch(() => undefined)
         }
 

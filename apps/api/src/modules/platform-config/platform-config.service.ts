@@ -304,14 +304,19 @@ export class PlatformConfigService implements OnModuleInit {
 
   // Decrements the coupon slot without requiring a usage record — used when the order
   // failed before recordCouponUsage could create one (save failure, stock exhaustion).
-  // Pass customerId so the per-user reservation from validateCoupon is also released.
-  async releaseCouponSlot(couponId: string, customerId?: string): Promise<void> {
+  // Also deletes any orphaned CouponUsage doc that the fire-and-forget recordCouponUsage
+  // may have created before the failure was detected, preventing a future revokeCouponUsage
+  // call from finding it and double-decrementing the counts.
+  async releaseCouponSlot(couponId: string, customerId?: string, orderId?: string): Promise<void> {
     await this.couponModel.findByIdAndUpdate(couponId, { $inc: { usageCount: -1 } })
     if (customerId) {
       await this.couponUserSlotModel.updateOne(
         { couponId: new Types.ObjectId(couponId), userId: new Types.ObjectId(customerId) },
         { $inc: { usedCount: -1 } },
       )
+    }
+    if (orderId) {
+      await this.couponUsageModel.deleteOne({ orderId: new Types.ObjectId(orderId) })
     }
   }
 }
