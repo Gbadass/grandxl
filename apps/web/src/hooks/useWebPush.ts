@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { notificationsApi, usersApi } from '@grandxl/api-client'
 import { useAuthStore } from '../store/auth.store'
 
@@ -13,22 +13,33 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 export function useWebPush() {
   const user = useAuthStore((s) => s.user)
+  const subscribedRef = useRef(false)
 
   useEffect(() => {
-    if (!user) return
+    if (!user || subscribedRef.current) return
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
 
     void (async () => {
       try {
         const reg = await navigator.serviceWorker.ready
 
-        // Already subscribed — nothing to do
         const existing = await reg.pushManager.getSubscription()
-        if (existing) return
+        if (existing) {
+          // Re-save on every login — backend record may have been cleared
+          const sub = existing.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } }
+          await usersApi.saveWebPushSubscription(sub).catch(() => undefined)
+          subscribedRef.current = true
+          return
+        }
+
+        const permission = await Notification.requestPermission()
+        if (permission !== 'granted') return
 
         const { data } = await notificationsApi.getVapidPublicKey()
-        const applicationServerKey = urlBase64ToUint8Array(data.data.publicKey)
+        const vapidKey = data.data.publicKey
+        if (!vapidKey) return
 
+        const applicationServerKey = urlBase64ToUint8Array(vapidKey)
         const subscription = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
@@ -41,6 +52,7 @@ export function useWebPush() {
           endpoint: json.endpoint,
           keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
         })
+        subscribedRef.current = true
       } catch {
         // Permission denied or push unsupported — fail silently
       }

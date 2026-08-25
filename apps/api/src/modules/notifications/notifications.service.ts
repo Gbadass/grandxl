@@ -79,7 +79,7 @@ export class NotificationsService {
         this.logger.log(`→ web push user=${userId} subs=${webSubs.length} title="${title}"`)
         pushJobs.push(
           this.webPushProvider
-            .sendToMany(webSubs, { title, body, icon: '/icons/icon-192.png', data: data as Record<string, unknown> })
+            .sendToMany(webSubs, { title, body, icon: '/icons/icon-192.png', badge: '/icons/icon-96.png', data: data as Record<string, unknown> })
             .then(({ expired }) => {
               if (expired.length > 0) {
                 void this.usersService

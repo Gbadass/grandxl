@@ -23,10 +23,15 @@ export class WebPushProvider implements OnModuleInit {
     const subject    = this.config.get<string>('VAPID_SUBJECT') ?? 'mailto:admin@grandxl.com'
 
     if (!publicKey || !privateKey) {
-      this.logger.warn(
-        'VAPID keys not configured — web push disabled. ' +
-        'Run: npx web-push generate-vapid-keys and add to .env',
-      )
+      const msg =
+        'VAPID keys not configured — web push DISABLED. ' +
+        'Riders will NOT receive job notifications in background. ' +
+        'Run: npx web-push generate-vapid-keys and add VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY to .env'
+      if (this.config.get('NODE_ENV') === 'production') {
+        this.logger.error(msg)
+      } else {
+        this.logger.warn(msg)
+      }
       return
     }
 
@@ -35,19 +40,20 @@ export class WebPushProvider implements OnModuleInit {
     this.logger.log('Web Push (VAPID) ready')
   }
 
-  async send(subscription: PushSubscription, payload: WebPushPayload): Promise<boolean> {
-    if (!this.enabled) return false
+  async send(subscription: PushSubscription, payload: WebPushPayload): Promise<'ok' | 'expired' | 'transient'> {
+    if (!this.enabled) return 'transient'
     try {
       await webPush.sendNotification(subscription, JSON.stringify(payload))
-      return true
+      return 'ok'
     } catch (err: unknown) {
       const status = (err as { statusCode?: number }).statusCode
       if (status === 410 || status === 404) {
-        // Subscription expired or unregistered — caller should remove it
-        return false
+        // Subscription expired or unregistered — safe to remove from DB
+        return 'expired'
       }
-      this.logger.warn(`Web push send failed: ${String(err)}`)
-      return false
+      this.logger.warn(`Web push send failed (transient): ${String(err)}`)
+      // Any other error (5xx, network timeout) is transient — keep subscription
+      return 'transient'
     }
   }
 
@@ -60,9 +66,10 @@ export class WebPushProvider implements OnModuleInit {
 
     await Promise.allSettled(
       subscriptions.map(async (sub) => {
-        const ok = await this.send(sub, payload)
-        if (ok) valid.push(sub)
-        else expired.push(sub)
+        const result = await this.send(sub, payload)
+        if (result === 'ok')      valid.push(sub)
+        else if (result === 'expired') expired.push(sub)
+        // 'transient' — keep the subscription, skip both lists
       }),
     )
 

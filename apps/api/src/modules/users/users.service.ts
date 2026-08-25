@@ -233,9 +233,10 @@ export class UsersService implements OnModuleInit {
       { _id: userId },
       { $pull: { webPushSubscriptions: { endpoint: sub.endpoint } } },
     )
+    // Add new subscription and keep at most 10 (oldest dropped first)
     await this.userModel.updateOne(
       { _id: userId },
-      { $push: { webPushSubscriptions: sub } },
+      { $push: { webPushSubscriptions: { $each: [sub], $slice: -10 } } },
     )
   }
 

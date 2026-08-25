@@ -173,6 +173,33 @@ export default function CheckoutPage() {
     }
     if (!restaurantId) return
 
+    // Resolve delivery coordinates — GeoJSON stores [lng, lat]
+    const addrLng = selectedAddress.coordinates?.coordinates?.[0] ?? 0
+    const addrLat = selectedAddress.coordinates?.coordinates?.[1] ?? 0
+    // GPS fallback: only use location store coords if they are within real-world bounds
+    const gpsLat = coordinates?.lat
+    const gpsLng = coordinates?.lng
+    const isValidGps =
+      gpsLat !== undefined && gpsLng !== undefined &&
+      gpsLat >= -90 && gpsLat <= 90 && gpsLng >= -180 && gpsLng <= 180
+    const resolvedLat = addrLat !== 0 ? addrLat : (isValidGps ? gpsLat! : 0)
+    const resolvedLng = addrLng !== 0 ? addrLng : (isValidGps ? gpsLng! : 0)
+
+    // Guard: both 0,0 means no coordinates at all — prompt user to re-enter address with GPS
+    if (resolvedLat === 0 && resolvedLng === 0) {
+      toast.error(t('checkout:addressNeedsLocation'))
+      setAddressSheetOpen(true)
+      setIsSubmitting(false)
+      return
+    }
+    // Guard: out-of-range values (stale bad data) — clear and ask user to re-enter
+    if (resolvedLat < -90 || resolvedLat > 90 || resolvedLng < -180 || resolvedLng > 180) {
+      toast.error(t('checkout:addressNeedsLocation'))
+      setAddressSheetOpen(true)
+      setIsSubmitting(false)
+      return
+    }
+
     const dto = {
       restaurantId,
       items: items.map((item) => ({
@@ -182,21 +209,12 @@ export default function CheckoutPage() {
         selectedAddOns: item.selectedAddOns,
         note: item.note ?? undefined,
       })),
-      deliveryAddress: (() => {
-        // Coordinates from the saved address (GeoJSON [lng, lat])
-        const addrLng = selectedAddress.coordinates?.coordinates?.[0] ?? 0
-        const addrLat = selectedAddress.coordinates?.coordinates?.[1] ?? 0
-        // Fall back to live GPS when address has no geocoded coords (e.g. saved
-        // without a Maps API key on the server).
-        const resolvedLat = addrLat !== 0 ? addrLat : (coordinates?.lat ?? addrLat)
-        const resolvedLng = addrLng !== 0 ? addrLng : (coordinates?.lng ?? addrLng)
-        return {
-          street: selectedAddress.street,
-          city: selectedAddress.city,
-          state: selectedAddress.state,
-          coordinates: { lat: resolvedLat, lng: resolvedLng },
-        }
-      })(),
+      deliveryAddress: {
+        street: selectedAddress.street,
+        city: selectedAddress.city,
+        state: selectedAddress.state,
+        coordinates: { lat: resolvedLat, lng: resolvedLng },
+      },
       paymentMethod,
       customerNote: customerNote.trim() || undefined,
       deliveryInstructions: deliveryInstructions.trim() || undefined,

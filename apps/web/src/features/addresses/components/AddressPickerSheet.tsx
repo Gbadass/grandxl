@@ -93,9 +93,8 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
   const { t } = useTranslation('addresses')
   const { city: detectedCity, state: detectedState, displayAddress, coordinates: detectedCoords } = useLocationStore()
   const [form, setForm] = useState<AddFormState>({ label: 'home', street: '', city: '', state: '' })
-  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(
-    detectedCoords ? { lat: detectedCoords.lat, lng: detectedCoords.lng } : null,
-  )
+  // Never pre-populate from stale location store — only use coords the user actively requests
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [gpsLoading, setGpsLoading] = useState(false)
   const [gpsDetected, setGpsDetected] = useState(false)
   const [error, setError] = useState<string | null>(null)

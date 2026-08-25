@@ -32,5 +32,7 @@
   "couponNoRestaurant": "Cannot apply coupon: no restaurant selected",
   "couponApplied": "Coupon applied!",
   "invalidCoupon": "Invalid or expired coupon",
-  "addAddressFirst": "Please add a delivery address first"
+  "addAddressFirst": "Please add a delivery address first",
+  "addressNeedsLocation": "Your address has no location pin. Open 'Change address', tap 'Use my current location', then save again.",
+  "paymentCancelled": "Payment cancelled — your cart is ready."
 }

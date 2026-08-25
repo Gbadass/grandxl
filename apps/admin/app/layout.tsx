@@ -1,7 +1,7 @@
 'use client'
 
 import * as Sentry from '@sentry/nextjs'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { queryClient } from '../src/lib/queryClient'
@@ -16,9 +16,11 @@ Sentry.init({
 })
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-    void navigator.serviceWorker.register('/sw.js').catch(() => undefined)
-  }
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      void navigator.serviceWorker.register('/sw.js').catch(() => undefined)
+    }
+  }, [])
 
   return (
     <html lang="en" suppressHydrationWarning>
