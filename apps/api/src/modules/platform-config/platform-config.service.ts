@@ -9,6 +9,7 @@ import { Model, Types } from 'mongoose'
 import { PlatformConfigDocument } from './schemas/platform-config.schema'
 import { CouponDocument } from './schemas/coupon.schema'
 import { CouponUsageDocument } from './schemas/coupon-usage.schema'
+import { CouponUserSlotDocument } from './schemas/coupon-user-slot.schema'
 import type { UpdatePlatformConfigDto } from './dto/update-platform-config.dto'
 import type { CreateCouponDto } from './dto/create-coupon.dto'
 
@@ -21,6 +22,8 @@ export class PlatformConfigService implements OnModuleInit {
     private readonly couponModel: Model<CouponDocument>,
     @InjectModel(CouponUsageDocument.name)
     private readonly couponUsageModel: Model<CouponUsageDocument>,
+    @InjectModel(CouponUserSlotDocument.name)
+    private readonly couponUserSlotModel: Model<CouponUserSlotDocument>,
   ) {}
 
   // Ensure the singleton document exists at startup
@@ -181,37 +184,8 @@ export class PlatformConfigService implements OnModuleInit {
 
     if (!coupon) throw new BadRequestException('Invalid or expired coupon code')
 
-    if (coupon.usageLimit > 0) {
-      if (customerId) {
-        // Real order path: atomically claim the slot so two concurrent requests
-        // cannot both pass the usageCount check and over-use the coupon.
-        // findOneAndUpdate returns null if usageCount is already at the limit.
-        const reserved = await this.couponModel.findOneAndUpdate(
-          { _id: coupon._id, usageCount: { $lt: coupon.usageLimit } },
-          { $inc: { usageCount: 1 } },
-        )
-        if (!reserved) throw new BadRequestException('Coupon usage limit has been reached')
-      } else if (coupon.usageCount >= coupon.usageLimit) {
-        // Preview/estimate path — read-only check, no slot reservation
-        throw new BadRequestException('Coupon usage limit has been reached')
-      }
-    }
-
-    // Per-user limit check — only enforced when called from order creation (customerId provided)
-    if (coupon.perUserLimit > 0 && customerId) {
-      const userUsageCount = await this.couponUsageModel.countDocuments({
-        couponId: coupon._id,
-        userId:   new Types.ObjectId(customerId),
-      })
-      if (userUsageCount >= coupon.perUserLimit) {
-        throw new BadRequestException(
-          coupon.perUserLimit === 1
-            ? 'You have already used this coupon'
-            : `You can only use this coupon ${coupon.perUserLimit} time${coupon.perUserLimit === 1 ? '' : 's'}`,
-        )
-      }
-    }
-
+    // Read-only eligibility checks first — throwing here has no side effects,
+    // so we can't leak reserved slots on min-order / restaurant-scope failures.
     if (subtotalKobo < coupon.minOrderAmount) {
       throw new BadRequestException(
         `Minimum order amount for this coupon is ₦${(coupon.minOrderAmount / 100).toFixed(0)}`,
@@ -223,6 +197,61 @@ export class PlatformConfigService implements OnModuleInit {
       !coupon.applicableRestaurants.some((id) => id.toString() === restaurantId)
     ) {
       throw new BadRequestException('Coupon is not valid for this restaurant')
+    }
+
+    // Preview path (no customerId): read-only limit checks, no reservations.
+    if (!customerId) {
+      if (coupon.usageLimit > 0 && coupon.usageCount >= coupon.usageLimit) {
+        throw new BadRequestException('Coupon usage limit has been reached')
+      }
+    } else {
+      // Order path: atomic reservations. Global first, then per-user; if per-user
+      // fails we roll back the global increment so no slot leaks.
+      let globalReserved = false
+
+      if (coupon.usageLimit > 0) {
+        const reserved = await this.couponModel.findOneAndUpdate(
+          { _id: coupon._id, usageCount: { $lt: coupon.usageLimit } },
+          { $inc: { usageCount: 1 } },
+        )
+        if (!reserved) throw new BadRequestException('Coupon usage limit has been reached')
+        globalReserved = true
+      }
+
+      if (coupon.perUserLimit > 0) {
+        // Upsert-and-increment the per-user counter, then check the post-increment
+        // value. If it exceeds the limit, roll back (both this increment and the
+        // global one above). The compound unique index on (couponId, userId)
+        // serialises concurrent upserts, closing the TOCTOU gap the old
+        // countDocuments-then-create pattern left open.
+        const userObjectId = new Types.ObjectId(customerId)
+        const slot = await this.couponUserSlotModel.findOneAndUpdate(
+          { couponId: coupon._id, userId: userObjectId },
+          {
+            $inc: { usedCount: 1 },
+            $setOnInsert: { couponId: coupon._id, userId: userObjectId },
+          },
+          { upsert: true, new: true },
+        )
+
+        if (slot.usedCount > coupon.perUserLimit) {
+          await this.couponUserSlotModel.updateOne(
+            { couponId: coupon._id, userId: userObjectId },
+            { $inc: { usedCount: -1 } },
+          )
+          if (globalReserved) {
+            await this.couponModel.updateOne(
+              { _id: coupon._id },
+              { $inc: { usageCount: -1 } },
+            )
+          }
+          throw new BadRequestException(
+            coupon.perUserLimit === 1
+              ? 'You have already used this coupon'
+              : `You can only use this coupon ${coupon.perUserLimit} time${coupon.perUserLimit === 1 ? '' : 's'}`,
+          )
+        }
+      }
     }
 
     let discountKobo = 0
@@ -266,12 +295,23 @@ export class PlatformConfigService implements OnModuleInit {
     const usage = await this.couponUsageModel.findOneAndDelete({ orderId: new Types.ObjectId(orderId) })
     if (usage) {
       await this.couponModel.findByIdAndUpdate(usage.couponId, { $inc: { usageCount: -1 } })
+      await this.couponUserSlotModel.updateOne(
+        { couponId: usage.couponId, userId: usage.userId },
+        { $inc: { usedCount: -1 } },
+      )
     }
   }
 
   // Decrements the coupon slot without requiring a usage record — used when the order
   // failed before recordCouponUsage could create one (save failure, stock exhaustion).
-  async releaseCouponSlot(couponId: string): Promise<void> {
+  // Pass customerId so the per-user reservation from validateCoupon is also released.
+  async releaseCouponSlot(couponId: string, customerId?: string): Promise<void> {
     await this.couponModel.findByIdAndUpdate(couponId, { $inc: { usageCount: -1 } })
+    if (customerId) {
+      await this.couponUserSlotModel.updateOne(
+        { couponId: new Types.ObjectId(couponId), userId: new Types.ObjectId(customerId) },
+        { $inc: { usedCount: -1 } },
+      )
+    }
   }
 }
