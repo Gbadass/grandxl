@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Order } from '@grandxl/types'
@@ -13,6 +13,12 @@ export interface RiderPin {
   lng: number
   bearing: number
   updatedAt: number
+}
+
+export interface HeatPoint {
+  lat: number
+  lng: number
+  count: number
 }
 
 // Fix Leaflet's default icon paths broken by bundlers
@@ -106,12 +112,14 @@ interface Props {
   riderPins: RiderPin[]
   selectedOrderId: string | null
   onOrderSelect: (id: string | null) => void
+  heatPoints?: HeatPoint[]
 }
 
 // Default centre on Lagos, Nigeria
 const LAGOS: [number, number] = [6.5244, 3.3792]
 
-export default function DispatchMap({ orders, riderPins, selectedOrderId, onOrderSelect }: Props) {
+export default function DispatchMap({ orders, riderPins, selectedOrderId, onOrderSelect, heatPoints = [] }: Props) {
+  const maxCount = Math.max(...heatPoints.map((p) => p.count), 1)
   return (
     <MapContainer
       center={LAGOS}
@@ -129,6 +137,27 @@ export default function DispatchMap({ orders, riderPins, selectedOrderId, onOrde
         selectedOrderId={selectedOrderId}
         riderPins={riderPins}
       />
+
+      {/* Heatmap circles */}
+      {heatPoints.map((pt, i) => {
+        const intensity = pt.count / maxCount
+        return (
+          <CircleMarker
+            key={i}
+            center={[pt.lat, pt.lng]}
+            radius={Math.max(6, intensity * 28)}
+            pathOptions={{
+              color: 'transparent',
+              fillColor: '#EA580C',
+              fillOpacity: 0.15 + intensity * 0.55,
+            }}
+          >
+            <Popup>
+              <span className="text-xs font-semibold">{pt.count} orders</span>
+            </Popup>
+          </CircleMarker>
+        )
+      })}
 
       {/* Restaurant pickup pins */}
       {orders.map((order) => {

@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { adminOrdersApi } from '@grandxl/api-client'
+import { adminOrdersApi, analyticsApi } from '@grandxl/api-client'
 import { OrderStatus, UserRole } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
@@ -13,7 +13,7 @@ import { socket } from '../../../src/lib/socket'
 import '../../../src/lib/axios'
 
 // ── Leaflet dynamic import (no SSR — Leaflet reads window at import time) ────────
-import type { RiderPin } from '../../../src/components/dispatch/DispatchMap'
+import type { RiderPin, HeatPoint } from '../../../src/components/dispatch/DispatchMap'
 const DispatchMap = dynamic(() => import('../../../src/components/dispatch/DispatchMap'), {
   ssr: false,
   loading: () => (
@@ -70,6 +70,7 @@ export default function DispatchPage() {
   const router = useRouter()
   const { isAuthenticated, isInitializing, user } = useAuthStore()
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+  const [showHeatmap, setShowHeatmap] = useState(false)
 
   // Rider positions keyed by riderId
   const riderPins = useRef<Map<string, RiderPin>>(new Map())
@@ -89,6 +90,15 @@ export default function DispatchPage() {
     refetchInterval: 30_000,
     enabled: isAuthenticated,
   })
+
+  // Heatmap — only fetched when the toggle is on
+  const { data: heatmapRes, isLoading: heatLoading } = useQuery({
+    queryKey: ['analytics', 'heatmap', 30],
+    queryFn: () => analyticsApi.getHeatmap(30).then((r) => r.data),
+    staleTime: 10 * 60_000,
+    enabled: isAuthenticated && showHeatmap,
+  })
+  const heatPoints: HeatPoint[] = heatmapRes?.data?.points ?? []
 
   const allOrders: Order[] = ordersData?.data?.data?.data ?? []
   const activeOrders = allOrders.filter((o) => DISPATCH_STATUSES.has(o.status))
@@ -148,10 +158,23 @@ export default function DispatchPage() {
               {isLoading ? 'Loading…' : `${activeOrders.length} active order${activeOrders.length !== 1 ? 's' : ''}`}
             </p>
           </div>
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowHeatmap((v) => !v)}
+              title="Toggle order heatmap (last 30 days)"
+              className={`rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
+                showHeatmap
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {heatLoading ? '…' : 'Heatmap'}
+            </button>
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+            </span>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -201,6 +224,7 @@ export default function DispatchPage() {
           riderPins={pins}
           selectedOrderId={selectedOrderId}
           onOrderSelect={setSelectedOrderId}
+          heatPoints={showHeatmap ? heatPoints : []}
         />
       </div>
     </div>

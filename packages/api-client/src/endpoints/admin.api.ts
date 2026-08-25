@@ -417,6 +417,34 @@ export interface RestaurantAnalyticsData {
   topItems: Array<{ name: string; count: number; revenue: number }>
 }
 
+export interface DispatchMetricsData {
+  periodDays: number
+  assignedOrders: number
+  avgWaitSeconds: number
+  minWaitSeconds: number
+  maxWaitSeconds: number
+  avgDispatchRounds: number
+  avgBroadcastCount: number
+  totalDispatchedOrders: number
+  forceAssignCount: number
+  noRiderCount: number
+}
+
+export interface QueueDepthData {
+  queues: Record<string, { waiting: number; active: number; delayed: number; failed: number }>
+}
+
+export interface HeatmapPoint {
+  lat: number
+  lng: number
+  count: number
+}
+
+export interface HeatmapData {
+  periodDays: number
+  points: HeatmapPoint[]
+}
+
 export const analyticsApi = {
   getPlatform: () =>
     getClient().get<ApiResponse<PlatformAnalyticsData>>('/admin/analytics'),
@@ -424,5 +452,18 @@ export const analyticsApi = {
   getRestaurant: (restaurantId: string) =>
     getClient().get<ApiResponse<RestaurantAnalyticsData>>('/restaurant/analytics', {
       params: { restaurantId },
+    }),
+
+  getDispatchMetrics: (days = 7) =>
+    getClient().get<ApiResponse<DispatchMetricsData>>('/admin/analytics/dispatch', {
+      params: { days },
+    }),
+
+  getQueueDepth: () =>
+    getClient().get<ApiResponse<QueueDepthData>>('/admin/analytics/queue-depth'),
+
+  getHeatmap: (days = 30) =>
+    getClient().get<ApiResponse<HeatmapData>>('/admin/analytics/heatmap', {
+      params: { days },
     }),
 }

@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { UserRole } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
-import { analyticsApi } from '@grandxl/api-client'
+import { analyticsApi, type DispatchMetricsData, type QueueDepthData } from '@grandxl/api-client'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { StatsCard } from '../../../src/components/ui/StatsCard'
 import '../../../src/lib/axios'
@@ -117,6 +117,21 @@ export default function AnalyticsPage() {
     enabled:  isAuthenticated,
   })
 
+  const { data: dispatchRes, isLoading: dispatchLoading } = useQuery({
+    queryKey: ['analytics', 'dispatch'],
+    queryFn:  () => analyticsApi.getDispatchMetrics(7).then((r) => r.data),
+    staleTime: 2 * 60_000,
+    enabled:  isAuthenticated,
+  })
+
+  const { data: queueRes, isLoading: queueLoading } = useQuery({
+    queryKey: ['analytics', 'queue-depth'],
+    queryFn:  () => analyticsApi.getQueueDepth().then((r) => r.data),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    enabled:  isAuthenticated,
+  })
+
   const analytics = analyticsRes?.data
 
   // ── Derived display values ─────────────────────────────────────────────────
@@ -164,6 +179,15 @@ export default function AnalyticsPage() {
 
   // Top restaurants
   const topRestaurants = analytics?.topRestaurants ?? []
+
+  const dispatch: DispatchMetricsData | undefined = dispatchRes?.data
+  const queueData: QueueDepthData | undefined = queueRes?.data
+  const QUEUE_LABELS: Record<string, string> = {
+    'order-timeout':         'Order Timeout',
+    'rider-dispatch':        'Rider Dispatch',
+    'scheduled-order-release': 'Scheduled Orders',
+    'settlement':            'Settlement',
+  }
 
   if (isInitializing) return null
 
@@ -312,6 +336,79 @@ export default function AnalyticsPage() {
           }
         </Card>
       </div>
+
+      {/* ── Dispatch observability ── */}
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Dispatch Health — last 7 days</h2>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-4">
+          <StatsCard
+            title="Avg Wait Time"
+            value={dispatch ? `${Math.round(dispatch.avgWaitSeconds / 60)}m ${dispatch.avgWaitSeconds % 60}s` : '—'}
+            sub="First broadcast → rider accepted"
+            icon="riders"
+            loading={dispatchLoading}
+          />
+          <StatsCard
+            title="Avg Broadcast Rounds"
+            value={dispatch ? String(dispatch.avgDispatchRounds) : '—'}
+            sub={`Avg ${dispatch?.avgBroadcastCount ?? '—'} riders per round`}
+            icon="orders"
+            loading={dispatchLoading}
+          />
+          <StatsCard
+            title="Force-Assigned"
+            value={dispatch ? String(dispatch.forceAssignCount) : '—'}
+            sub="Assigned after all 5 rounds"
+            icon="analytics"
+            loading={dispatchLoading}
+          />
+          <StatsCard
+            title="No Rider Found"
+            value={dispatch ? String(dispatch.noRiderCount) : '—'}
+            sub="Orders with no rider assigned"
+            icon="revenue"
+            loading={dispatchLoading}
+          />
+        </div>
+      </div>
+
+      {/* ── Queue depth ── */}
+      <Card title="BullMQ Queue Depth (live · refreshes every 30s)">
+        {queueLoading ? (
+          <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+        ) : !queueData ? (
+          <p className="py-6 text-center text-sm text-gray-400">No queue data</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-gray-100">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-left">
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500">Queue</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-blue-500 text-right">Waiting</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-orange-500 text-right">Active</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-indigo-500 text-right">Delayed</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-red-500 text-right">Failed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {Object.entries(queueData.queues).map(([name, counts]) => (
+                  <tr key={name} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{QUEUE_LABELS[name] ?? name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-blue-700">{counts.waiting}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-orange-600 font-semibold">{counts.active}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-indigo-600">{counts.delayed}</td>
+                    <td className={`px-4 py-3 text-right tabular-nums font-semibold ${counts.failed > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                      {counts.failed}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="mb-6" />
 
       {/* ── Top restaurants table ── */}
       <Card title="Top Restaurants by Orders">
