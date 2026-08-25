@@ -1026,7 +1026,7 @@ export class OrdersService {
     if (!Types.ObjectId.isValid(orderId)) throw new NotFoundException('Order not found')
 
     const order = await this.orderModel
-      .findById(orderId, { customerId: 1, riderId: 1 })
+      .findById(orderId, { customerId: 1, riderId: 1, status: 1 })
       .populate<{ customerId: { _id: Types.ObjectId; firstName: string; lastName: string; phone: string | null } }>(
         'customerId',
         'firstName lastName phone',
@@ -1041,11 +1041,16 @@ export class OrdersService {
     }
 
     const customer = order.customerId as { _id: Types.ObjectId; firstName: string; lastName: string; phone: string | null }
+
+    // Withhold phone number until the rider has physically picked up the order —
+    // before that they are still at the restaurant and don't need to call the customer.
+    const phoneRevealed = order.status === OrderStatus.PICKED_UP || order.status === OrderStatus.DELIVERED
+
     return {
       customerId: customer._id.toString(),
       firstName: customer.firstName,
       lastName: customer.lastName,
-      phone: customer.phone ?? null,
+      phone: phoneRevealed ? (customer.phone ?? null) : null,
     }
   }
 
@@ -1090,11 +1095,16 @@ export class OrdersService {
     }
     if (!userInfo) throw new NotFoundException('Rider account not found')
 
+    // Withhold phone number until the rider has picked up the order — admins always see it.
+    const phoneRevealed = isAdmin
+      || order.status === OrderStatus.PICKED_UP
+      || order.status === OrderStatus.DELIVERED
+
     return {
       riderId: order.riderId.toString(),
       firstName: userInfo.firstName,
       lastName: userInfo.lastName,
-      phone: userInfo.phone ?? null,
+      phone: phoneRevealed ? (userInfo.phone ?? null) : null,
       vehicleType: (profile['vehicleType'] as string) ?? null,
       vehiclePlate: (profile['vehiclePlate'] as string | null) ?? null,
     }
