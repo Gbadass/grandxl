@@ -44,22 +44,19 @@ export class RiderDispatchProcessor extends WorkerHost {
 
     const customerId = order.customerId.toString()
 
-    // Always broadcast so riders explicitly accept — no stealth auto-assignment.
-    // Phase 1 intentionally removed: every job requires a deliberate rider tap.
-    // Cap at 10 to avoid a thundering-herd notification storm; the closest riders
-    // are most likely to accept and arrive fastest anyway.
-    // Exclude riders who already declined (explicitly or by timer expiry) so they
-    // don't keep receiving the same offer on every retry round.
-    const declinedUserIds = new Set(
-      (order.declinedBy ?? []).map((id) => String(id))
-    )
-    const nearby = await this.ridersService.findNearbyOnlineVerified(lng, lat)
-    const pool = nearby.length > 0
-      ? nearby
-      : await this.ridersService.findAllOnlineVerified()
-    const broadcastTargets = pool
-      .filter((r) => !declinedUserIds.has(String(r.userId)))
-      .slice(0, 10)
+    // A11: Reset declinedBy at the start of each round so riders from the previous
+    // round get a fresh shot. Without this, declinedBy accumulates across all 5 rounds
+    // and can exhaust the entire rider pool before max attempts are reached.
+    await this.ordersService.clearDeclinedBy(orderId)
+
+    // A12/B1: Geographic cap on dispatch pool — never send a Lagos order to an Abuja
+    // rider. Primary search: 50km. Fallback: 100km. No unlimited global fallback.
+    let pool = await this.ridersService.findNearbyOnlineVerified(lng, lat, 50_000)
+    if (pool.length === 0) {
+      pool = await this.ridersService.findNearbyOnlineVerified(lng, lat, 100_000)
+    }
+
+    const broadcastTargets = pool.slice(0, 10)
     if (broadcastTargets.length > 0) {
       const userIds = broadcastTargets.map((r) => String(r.userId))
       await this.trackingService.broadcastOrderToRiders(userIds, order)

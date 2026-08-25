@@ -1240,6 +1240,16 @@ export class OrdersService {
     }
   }
 
+  // Called by the dispatch processor at the start of each retry round so riders
+  // from the previous round get a fresh shot. Without this, declinedBy accumulates
+  // across all rounds and eventually empties the pool before max attempts are reached.
+  async clearDeclinedBy(orderId: string): Promise<void> {
+    await this.orderModel.updateOne(
+      { _id: new Types.ObjectId(orderId) },
+      { $set: { declinedBy: [] } },
+    )
+  }
+
   // Admin manually re-queues dispatch for a stuck order.
   // Clears declinedBy so all riders get a fresh shot.
   async adminRedispatch(orderId: string): Promise<void> {
