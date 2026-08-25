@@ -19,6 +19,7 @@
   "locationDetected": "{{city}}, {{state}} detected",
   "tapToRefresh": "Tap to refresh",
   "useCurrentLocation": "Use my current location",
+  "enterStreetNow": "GPS pinned — now enter your street address below",
   "streetPlaceholder": "Street address *",
   "nearLabel": "Near:",
   "cityPlaceholder": "City",

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import type { Address } from '@grandxl/types'
 import { useAddresses, useAddAddress, useDeleteAddress } from '../hooks/useAddresses'
 import { useLocationStore } from '../../../store/location.store'
+import { reverseGeocode } from '../../../hooks/useDetectLocation'
 
 interface Props {
   isOpen: boolean
@@ -91,10 +92,10 @@ interface AddFormState {
 function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => void; onCancel: () => void }) {
   const { mutate: addAddress, isPending } = useAddAddress()
   const { t } = useTranslation('addresses')
-  const { city: detectedCity, state: detectedState, displayAddress, coordinates: detectedCoords } = useLocationStore()
   const [form, setForm] = useState<AddFormState>({ label: 'home', street: '', city: '', state: '' })
   // Never pre-populate from stale location store — only use coords the user actively requests
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [gpsGeo, setGpsGeo] = useState<{ city: string; state: string; display: string } | null>(null)
   const [gpsLoading, setGpsLoading] = useState(false)
   const [gpsDetected, setGpsDetected] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -111,18 +112,23 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
     }
     setGpsLoading(true)
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
         setGpsCoords(coords)
+        try {
+          const geo = await reverseGeocode(coords.lat, coords.lng)
+          const resolved = geo ?? { city: 'Your location', state: '', display: 'Location detected' }
+          setGpsGeo(resolved)
+          setForm((f) => ({
+            ...f,
+            city: f.city || resolved.city,
+            state: f.state || resolved.state,
+          }))
+        } catch {
+          setGpsGeo({ city: 'Your location', state: '', display: 'Location detected' })
+        }
         setGpsDetected(true)
         setGpsLoading(false)
-        // Auto-fill city and state — they're accurate from reverse geocoding
-        // Street is left blank; GPS text is just shown as a reference hint
-        setForm((f) => ({
-          ...f,
-          city: f.city || detectedCity || '',
-          state: f.state || detectedState || '',
-        }))
       },
       () => {
         setGpsLoading(false)
@@ -205,7 +211,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           {gpsLoading
             ? t('detecting')
             : gpsDetected
-            ? t('locationDetected', { city: detectedCity ?? 'Location', state: detectedState ?? '' })
+            ? (gpsGeo?.display ?? gpsGeo?.city ?? t('locationDetected', { city: '', state: '' }))
             : t('useCurrentLocation')
           }
         </span>
@@ -213,6 +219,14 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           <span className="text-xs text-green-600 font-normal shrink-0">{t('tapToRefresh')}</span>
         )}
       </button>
+
+      {/* After GPS detect: prompt user to enter street manually */}
+      {gpsDetected && (
+        <p className="flex items-center gap-1.5 text-xs text-primary font-medium -mt-1">
+          <Navigation size={10} className="shrink-0" />
+          {t('enterStreetNow')}
+        </p>
+      )}
 
       {/* Fields */}
       <div>
@@ -223,12 +237,6 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           placeholder={t('streetPlaceholder')}
           className={`w-full px-4 py-3 rounded-2xl border text-sm text-gray-900 placeholder-gray-400 outline-none transition-all focus:ring-2 focus:ring-primary/20 focus:border-primary ${error ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}
         />
-        {gpsDetected && displayAddress && !error && (
-          <p className="flex items-center gap-1 mt-1.5 text-xs text-gray-400">
-            <Navigation size={10} className="shrink-0" />
-            {t('nearLabel')} {displayAddress}
-          </p>
-        )}
         {error && (
           <p className="flex items-center gap-1.5 mt-1.5 text-xs text-red-500">
             <AlertCircle size={12} /> {error}
