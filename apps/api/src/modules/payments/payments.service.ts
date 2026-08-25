@@ -205,7 +205,10 @@ export class PaymentsService {
       .update(rawBody)
       .digest('hex')
 
-    if (expectedSig !== signature) {
+    if (
+      expectedSig.length !== signature.length ||
+      !crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(signature))
+    ) {
       throw new UnauthorizedException('Invalid webhook signature')
     }
 

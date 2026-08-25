@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common'
 import { InjectConnection, InjectModel } from '@nestjs/mongoose'
 import { ConfigService } from '@nestjs/config'
-import { createHmac } from 'crypto'
+import { createHmac, timingSafeEqual } from 'crypto'
 import { Connection, Model, Types } from 'mongoose'
 import { RiderDocument } from '../riders/schemas/rider.schema'
 import {
@@ -386,7 +386,8 @@ export class PayoutsService {
     const expected = createHmac('sha512', this.paystackSecret)
       .update(rawBody)
       .digest('hex')
-    return expected === signature
+    if (expected.length !== signature.length) return false
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
   }
 
   async handleWebhookEvent(payload: PaystackWebhookPayload): Promise<void> {
