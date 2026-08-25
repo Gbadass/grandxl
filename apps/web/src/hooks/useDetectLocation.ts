@@ -40,25 +40,35 @@ export function useDetectLocation() {
     if (coordinates) return
     if (!navigator.geolocation) return
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords
-        try {
-          const geo = await reverseGeocode(latitude, longitude)
-          if (geo) {
-            setLocation({ lat: latitude, lng: longitude }, geo.city, geo.display, 'gps', geo.state)
-          } else {
+    // Check if permission was already granted before silently requesting it.
+    // This avoids triggering a permission prompt (and browser Violation warnings)
+    // on page load. If permission is 'prompt' or 'denied', we wait for the user
+    // to explicitly tap "Use my current location" in the address picker.
+    void navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+      if (result.state !== 'granted') return
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const { latitude, longitude } = pos.coords
+          try {
+            const geo = await reverseGeocode(latitude, longitude)
+            if (geo) {
+              setLocation({ lat: latitude, lng: longitude }, geo.city, geo.display, 'gps', geo.state)
+            } else {
+              setLocation({ lat: latitude, lng: longitude }, 'Your location', 'Location detected', 'gps', 'Benue')
+            }
+          } catch {
             setLocation({ lat: latitude, lng: longitude }, 'Your location', 'Location detected', 'gps', 'Benue')
           }
-        } catch {
-          setLocation({ lat: latitude, lng: longitude }, 'Your location', 'Location detected', 'gps', 'Benue')
-        }
-      },
-      () => {
-        // Permission denied or unavailable — silently do nothing, user can pick manually
-      },
-      { timeout: 8000, maximumAge: 5 * 60 * 1000 },
-    )
+        },
+        () => {
+          // Unavailable — silently do nothing, user can pick manually
+        },
+        { timeout: 8000, maximumAge: 5 * 60 * 1000 },
+      )
+    }).catch(() => {
+      // permissions.query not supported — skip silent auto-detect entirely
+    })
   }, [])
 }
 
