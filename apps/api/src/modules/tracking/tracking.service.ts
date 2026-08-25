@@ -23,9 +23,13 @@ export class TrackingService {
     this.gateway.sendToUser(restaurantId, 'order:status_update', payload)
     // Notify anyone watching the order room (e.g. admin dashboard)
     this.gateway.sendToOrderRoom(orderId, 'order:status_update', payload)
-    // When order is picked up, clear the proximity alert so a future re-use
-    // of this orderId (unlikely but possible with re-dispatch) fires correctly.
-    if (status === OS.PICKED_UP) {
+    // Clear proximity alert Sets on PICKED_UP (restaurant leg done) and on terminal
+    // statuses (DELIVERED, CANCELLED) so completed order IDs don't accumulate in memory.
+    if (
+      status === OS.PICKED_UP ||
+      status === OS.DELIVERED ||
+      status === OS.CANCELLED
+    ) {
       this.gateway.clearProximityAlert(orderId)
     }
   }
