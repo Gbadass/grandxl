@@ -406,8 +406,13 @@ export default function ActiveDeliveryPage() {
   // Watch rider's GPS position — update local map dot, broadcast to order room, persist to DB
   useEffect(() => {
     if (!navigator.geolocation) return
+    // `cancelled` guards against a GPS callback that is already queued in the browser
+    // firing after clearWatch + unmount. clearWatch stops future callbacks, but one
+    // already in the queue can still fire and trigger state updates on an unmounted component.
+    let cancelled = false
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        if (cancelled) return
         const lat = pos.coords.latitude
         const lng = pos.coords.longitude
         const bearing = pos.coords.heading ?? 0
@@ -419,6 +424,7 @@ export default function ActiveDeliveryPage() {
       { enableHighAccuracy: true, maximumAge: 5000 },
     )
     return () => {
+      cancelled = true
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
     }
   }, [orderId])
