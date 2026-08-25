@@ -140,10 +140,26 @@ export class RefundsService {
         refund.status              = RefundStatus.COMPLETED
         await refund.save()
       } else {
+        // For split-tender orders, Paystack can only refund the card portion.
+        // Any amount above the card portion is returned to the customer's wallet.
+        const order = await this.orderModel.findById(refund.orderId).exec()
+        const cardPortion = order ? order.pricing.total - (order.pricing.walletApplied ?? 0) : refund.amountKobo
+        const walletPortion = Math.max(0, refund.amountKobo - cardPortion)
+
+        if (walletPortion > 0) {
+          await this.walletService.credit({
+            userId:        refund.customerId.toString(),
+            amount:        walletPortion,
+            reason:        WalletTxnReason.REFUND,
+            description:   'Wallet portion refunded — split-tender order',
+            referenceType: 'order',
+            referenceId:   refund.orderId.toString(),
+          })
+        }
+
         const reference = await this.issuePaystackRefund(refund.orderId.toString(), refund.amountKobo)
         refund.paystackRefundReference = reference
         // Paystack refunds are async — webhook will move to COMPLETED on confirmation.
-        // For now we leave status as APPROVED and surface a "processing" state.
         await refund.save()
       }
     } catch (err) {
@@ -182,6 +198,18 @@ export class RefundsService {
       throw new BadRequestException('Order has no payment reference — cannot refund to source')
     }
 
+    // Cap the refund at the card portion only. walletApplied was debited from the
+    // wallet ledger at order creation — refunding it via Paystack would double-credit
+    // the customer (once to card, once already in their wallet balance).
+    const cardPortion = order.pricing.total - (order.pricing.walletApplied ?? 0)
+    const refundAmount = Math.min(amountKobo, cardPortion)
+
+    if (refundAmount <= 0) {
+      throw new BadRequestException(
+        'This order was fully paid from wallet — use wallet refund method instead',
+      )
+    }
+
     const response = await paystackFetch(`${PAYSTACK_BASE}/refund`, {
       method: 'POST',
       headers: {
@@ -190,7 +218,7 @@ export class RefundsService {
       },
       body: JSON.stringify({
         transaction: order.payment.reference,
-        amount:      amountKobo,
+        amount:      refundAmount,
       }),
     })
     const json = (await response.json()) as {
