@@ -619,6 +619,17 @@ export class AuthService {
 
     const user = await this.usersService.findByIdOrThrow(payload.sub)
 
+    // Revoke the session for deleted or suspended accounts so the refresh
+    // loop cannot keep issuing new cookies indefinitely.
+    if (user.deletedAt) {
+      await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${payload.sub}`)
+      throw new UnauthorizedException('ACCOUNT_DELETED')
+    }
+    if (!user.isActive) {
+      await this.redis.del(`${REDIS_REFRESH_TOKEN_PREFIX}${payload.sub}`)
+      throw new UnauthorizedException('Account suspended')
+    }
+
     const tokens = await this.issueTokens(user)
     await this.storeRefreshToken(user._id.toString(), tokens.refreshToken)
 

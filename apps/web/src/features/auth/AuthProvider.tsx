@@ -24,9 +24,18 @@ export function AuthProvider({ children }: Props) {
           { withCredentials: true },
         )
         setAuth(res.data.data.user, res.data.data.accessToken)
-      } catch {
-        // No valid cookie or expired — user is not logged in
+      } catch (err: unknown) {
         clearAuth()
+        // Show a single, non-looping message for permanently removed accounts
+        const message = (err as { response?: { data?: { message?: string } } })
+          ?.response?.data?.message
+        if (message === 'ACCOUNT_DELETED') {
+          const { default: toast } = await import('react-hot-toast')
+          toast.error(
+            'This account has been removed. Contact support if you believe this is a mistake.',
+            { id: 'account-deleted', duration: 8000 },
+          )
+        }
       } finally {
         setInitializing(false)
       }
