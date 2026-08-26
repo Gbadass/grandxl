@@ -98,35 +98,35 @@ export class RidersService {
   // ── Availability & location ──────────────────────────────────────
 
   async updateAvailability(userId: string, dto: UpdateAvailabilityDto): Promise<RiderDocument> {
-    // Read current state so we only open/close a session on ACTUAL state change —
-    // a rider tapping "Online" while already online must not spawn a duplicate session.
-    const previous = await this.riderModel.findOne(
-      { userId: new Types.ObjectId(userId) },
-      { isOnline: 1, _id: 1 },
-    ).lean()
-    if (!previous) throw new NotFoundException('Rider profile not found')
-
-    const rider = await this.riderModel.findOneAndUpdate(
-      { userId: new Types.ObjectId(userId) },
+    // Atomic state-change: single findOneAndUpdate with a prev-state filter tells us
+    // definitively whether THIS call was the one that flipped the flag. Two concurrent
+    // requests can no longer create a duplicate session (only one matches the filter).
+    const oppositeState = !dto.isOnline
+    const flipped = await this.riderModel.findOneAndUpdate(
+      { userId: new Types.ObjectId(userId), isOnline: oppositeState },
       { $set: { isOnline: dto.isOnline, isAvailable: dto.isOnline } },
       { new: true },
     )
-    if (!rider) throw new NotFoundException('Rider profile not found')
 
-    // Track online sessions for utilization metrics. Only write when the state
-    // actually flipped, and never fail the API call on a session-write hiccup —
-    // best-effort observability, not source of truth.
-    if (previous.isOnline !== dto.isOnline) {
-      if (dto.isOnline) {
-        void this.sessionModel.create({
-          riderId: rider._id,
-          userId:  new Types.ObjectId(userId),
-          startAt: new Date(),
-          endAt:   null,
-        }).catch(() => undefined)
-      } else {
-        void this.closeOpenSession(rider._id as Types.ObjectId)
-      }
+    // If the flip didn't match, either (a) the rider is already in the requested state
+    // (no-op — return the current doc), or (b) the profile doesn't exist.
+    if (!flipped) {
+      const existing = await this.riderModel.findOne({ userId: new Types.ObjectId(userId) })
+      if (!existing) throw new NotFoundException('Rider profile not found')
+      return existing
+    }
+
+    // We were the flipper — safe to write exactly one session-lifecycle event.
+    // Best-effort: a session-write failure must not fail the API call.
+    if (dto.isOnline) {
+      void this.sessionModel.create({
+        riderId: flipped._id,
+        userId:  new Types.ObjectId(userId),
+        startAt: new Date(),
+        endAt:   null,
+      }).catch(() => undefined)
+    } else {
+      void this.closeOpenSession(flipped._id as Types.ObjectId)
     }
 
     // When a rider comes online, re-dispatch any orders stuck without a rider.
@@ -135,7 +135,7 @@ export class RidersService {
       void this.ordersService.redispatchUnassigned().catch(() => undefined)
     }
 
-    return rider
+    return flipped
   }
 
   async updateLocation(userId: string, dto: UpdateLocationDto): Promise<void> {

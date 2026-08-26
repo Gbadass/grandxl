@@ -4,6 +4,7 @@ import type { Job } from 'bullmq'
 import { RIDER_DISPATCH_QUEUE, RIDER_DISPATCH_MAX_ATTEMPTS } from '../constants/queue.constants'
 import { OrdersService } from '../../orders/orders.service'
 import { RidersService } from '../../riders/riders.service'
+import { RestaurantsService } from '../../restaurants/restaurants.service'
 import { TrackingService } from '../../tracking/tracking.service'
 import { NotificationsService } from '../../notifications/notifications.service'
 import { OrderStatus, NotificationType } from '@grandxl/types'
@@ -21,6 +22,7 @@ export class RiderDispatchProcessor extends WorkerHost {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly ridersService: RidersService,
+    private readonly restaurantsService: RestaurantsService,
     private readonly trackingService: TrackingService,
     private readonly notificationsService: NotificationsService,
   ) {
@@ -39,6 +41,16 @@ export class RiderDispatchProcessor extends WorkerHost {
     ].includes(order.status as OrderStatus)
     if (!stillNeedsRider || order.riderId) {
       this.logger.debug(`Order ${orderId} no longer needs dispatch (status=${order.status}, riderId=${String(order.riderId)})`)
+      return
+    }
+
+    // Serviceability guard — if the restaurant was terminated or deactivated after
+    // the order was placed (rare but possible), don't broadcast the job. Riders
+    // showing up to a closed/terminated restaurant is worse than never dispatching.
+    // Order stays in its current status; admin can manually cancel + refund.
+    const restaurantOk = await this.restaurantsService.isServiceable(order.restaurantId.toString())
+    if (!restaurantOk) {
+      this.logger.error(`Order ${orderId} restaurant ${String(order.restaurantId)} is not serviceable — skipping dispatch. Admin should cancel + refund.`)
       return
     }
 

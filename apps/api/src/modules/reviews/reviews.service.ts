@@ -149,73 +149,64 @@ export class ReviewsService {
   // ── Rating aggregation helpers ────────────────────────────────────
 
   private async updateRestaurantRating(restaurantId: string): Promise<void> {
-    const result = await this.reviewModel.aggregate<{ avgRating: number; count: number }>([
-      {
-        $match: {
-          restaurantId: new Types.ObjectId(restaurantId),
-          isVisible: true,
-        },
-      },
-      {
-        $group: {
+    // Atomic: aggregation pipeline with $merge writes the aggregated result
+    // straight to the target document in one MongoDB operation. Removes the
+    // read → wait → write TOCTOU window where concurrent reviews were being
+    // under-counted (both aggregations would compute against a stale set).
+    // Under true concurrency, MongoDB serializes the $merge writes; the query
+    // that sees the most-recent inserts wins, which is what we want.
+    const restId = new Types.ObjectId(restaurantId)
+    await this.reviewModel.aggregate([
+      { $match: { restaurantId: restId, isVisible: true } },
+      { $group: {
           _id: null,
           avgRating: { $avg: '$restaurantRating' },
           count: { $sum: 1 },
-        },
-      },
+      } },
+      { $project: {
+          _id: restId,
+          rating: { $round: [{ $ifNull: ['$avgRating', 0] }, 1] },
+          ratingCount: { $ifNull: ['$count', 0] },
+      } },
+      { $merge: {
+          into: 'restaurants',
+          on: '_id',
+          whenMatched: 'merge',
+          whenNotMatched: 'discard',
+      } },
     ])
-
-    if (result.length === 0) return
-
-    const { avgRating, count } = result[0]
-
-    // Update restaurant document directly — avoids circular module dependency
-    // RestaurantsService is not injected; we use the model indirectly via a raw update
-    // The RestaurantDocument model is registered in RestaurantsModule, not here.
-    // This update is done via a separate MongooseModel injected in the module.
-    await this.reviewModel.db
-      .collection('restaurants')
-      .updateOne(
-        { _id: new Types.ObjectId(restaurantId) },
-        { $set: { rating: Math.round(avgRating * 10) / 10, ratingCount: count } },
-      )
   }
 
   private async updateRiderRating(riderId: string): Promise<void> {
-    const result = await this.reviewModel.aggregate<{ avgRating: number; count: number }>([
-      {
-        $match: {
-          'riderRating': { $ne: null },
-        },
-      },
-      {
-        $lookup: {
-          from: 'orders',
-          localField: 'orderId',
-          foreignField: '_id',
-          as: 'order',
-        },
-      },
+    // Atomic — same $merge pattern as updateRestaurantRating.
+    // NOTE: `riderId` param here is actually the rider's userId (see call site in
+    // createReview: `order.riderId.toString()` where `order.riderId` is a Rider _id).
+    // The rider doc is keyed on _id. We need to look up the rider _id equivalent for
+    // riderId — but here `riderId` IS the rider._id (from Order.riderId FK). So we
+    // $merge on _id directly.
+    const rid = new Types.ObjectId(riderId)
+    // The `on` field on $merge needs a unique index. rider._id is unique by default.
+    await this.reviewModel.aggregate([
+      { $match: { riderRating: { $ne: null } } },
+      { $lookup: { from: 'orders', localField: 'orderId', foreignField: '_id', as: 'order' } },
       { $unwind: '$order' },
-      { $match: { 'order.riderId': new Types.ObjectId(riderId) } },
-      {
-        $group: {
+      { $match: { 'order.riderId': rid } },
+      { $group: {
           _id: null,
           avgRating: { $avg: '$riderRating' },
           count: { $sum: 1 },
-        },
-      },
+      } },
+      { $project: {
+          _id: rid,
+          rating: { $round: [{ $ifNull: ['$avgRating', 0] }, 1] },
+          ratingCount: { $ifNull: ['$count', 0] },
+      } },
+      { $merge: {
+          into: 'riders',
+          on: '_id',
+          whenMatched: 'merge',
+          whenNotMatched: 'discard',
+      } },
     ])
-
-    if (result.length === 0) return
-
-    const { avgRating, count } = result[0]
-
-    await this.reviewModel.db
-      .collection('riders')
-      .updateOne(
-        { userId: new Types.ObjectId(riderId) },
-        { $set: { rating: Math.round(avgRating * 10) / 10, ratingCount: count } },
-      )
   }
 }

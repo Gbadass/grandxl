@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
@@ -98,8 +99,12 @@ export class DisputesService {
       throw new NotFoundException('Dispute not found')
     }
 
-    const dispute = await this.disputeModel.findByIdAndUpdate(
-      disputeId,
+    // Guard against double-resolve: only the first admin to click Resolve wins.
+    // findOneAndUpdate with { status: OPEN } filter means concurrent second-clicker
+    // matches zero docs → we distinguish "not found" from "already resolved" and
+    // return the correct error, not silently overwrite the first admin's resolution.
+    const dispute = await this.disputeModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(disputeId), status: DisputeStatus.OPEN },
       {
         $set: {
           status:     DisputeStatus.RESOLVED,
@@ -111,7 +116,13 @@ export class DisputesService {
       { new: true },
     )
 
-    if (!dispute) throw new NotFoundException('Dispute not found')
+    if (!dispute) {
+      // Distinguish missing dispute from already-resolved so the admin UI can
+      // show a helpful "this was already resolved by someone else" message.
+      const exists = await this.disputeModel.exists({ _id: new Types.ObjectId(disputeId) })
+      if (!exists) throw new NotFoundException('Dispute not found')
+      throw new ConflictException('This dispute has already been resolved by another admin')
+    }
 
     return dispute
   }

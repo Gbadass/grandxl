@@ -18,6 +18,15 @@ function generateReferralCode(): string {
   return Math.random().toString(36).substring(2, 10).toUpperCase()
 }
 
+// Duplicate-key error code from MongoDB — thrown when the unique referralCode index rejects a collision.
+const MONGO_DUP_KEY = 11000
+
+// Detect a referralCode duplicate-key error specifically (vs. any other write failure).
+function isReferralCodeDupError(err: unknown): boolean {
+  const e = err as { code?: number; keyPattern?: Record<string, unknown> } | null
+  return !!e && e.code === MONGO_DUP_KEY && !!e.keyPattern?.['referralCode']
+}
+
 export interface CreateUserDto {
   firstName: string
   lastName: string
@@ -76,15 +85,35 @@ export class UsersService implements OnModuleInit {
     // Omit null/undefined email and phone — the sparse unique indexes skip
     // missing fields, but explicitly stored `null` is treated as a value and
     // would conflict once a second user without email/phone is created.
-    const data: Record<string, unknown> = {
+    const baseData: Record<string, unknown> = {
       ...dto,
       roles: dto.roles ?? [UserRole.CUSTOMER],
-      referralCode: generateReferralCode(),
     }
-    if (!data['email']) delete data['email']
-    if (!data['phone']) delete data['phone']
-    const user = new this.userModel(data)
-    return user.save()
+    if (!baseData['email']) delete baseData['email']
+    if (!baseData['phone']) delete baseData['phone']
+
+    // Referral code retry loop — the 8-char Math.random code has ~1% collision
+    // odds at ~2M users. The unique index would otherwise throw a raw dup-key
+    // error on registration; retry with a fresh code so users don't fail silently.
+    // 5 attempts covers >99.99% of realistic collision fanout.
+    const MAX_ATTEMPTS = 5
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const user = new this.userModel({
+          ...baseData,
+          referralCode: generateReferralCode(),
+        })
+        return await user.save()
+      } catch (err) {
+        if (isReferralCodeDupError(err) && attempt < MAX_ATTEMPTS) {
+          this.logger.warn(`Referral code collision on attempt ${attempt}, retrying`)
+          continue
+        }
+        throw err
+      }
+    }
+    // Unreachable — either return or throw inside the loop
+    throw new Error('Failed to generate unique referral code after retries')
   }
 
   // ── Read ────────────────────────────────────────────────────────

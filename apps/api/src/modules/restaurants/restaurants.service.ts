@@ -183,6 +183,17 @@ export class RestaurantsService {
     return doc
   }
 
+  // Serviceability check — can this restaurant currently receive/fulfill an order?
+  // Terminated or deactivated restaurants must not be dispatched to. Callers use
+  // this to short-circuit dispatch, redispatch, and other in-flight write paths.
+  async isServiceable(id: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(id)) return false
+    const doc = await this.restaurantModel.findById(id, {
+      terminatedAt: 1, isActive: 1,
+    }).lean()
+    return !!doc && doc.terminatedAt === null && doc.isActive !== false
+  }
+
   // Atomically incorporate a new rating into the restaurant's running average.
   // Uses $inc so two simultaneous ratings don't clobber each other.
   async updateRating(restaurantId: string, newRating: number): Promise<void> {

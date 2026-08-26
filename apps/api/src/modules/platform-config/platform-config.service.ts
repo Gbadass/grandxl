@@ -291,14 +291,33 @@ export class PlatformConfigService implements OnModuleInit {
 
   // Called when an order using a coupon is cancelled — restores the user's usage slot.
   // Expects the usage record to exist (i.e. recordCouponUsage already ran successfully).
+  //
+  // Wrapped in a MongoDB transaction so the three sequential writes (delete usage,
+  // decrement global count, decrement per-user count) commit together or not at all.
+  // Without this, a mid-sequence failure (network blip, replica election) would leave
+  // counts drifting — global stays high while per-user was decremented, or vice versa.
   async revokeCouponUsage(orderId: string): Promise<void> {
-    const usage = await this.couponUsageModel.findOneAndDelete({ orderId: new Types.ObjectId(orderId) })
-    if (usage) {
-      await this.couponModel.findByIdAndUpdate(usage.couponId, { $inc: { usageCount: -1 } })
-      await this.couponUserSlotModel.updateOne(
-        { couponId: usage.couponId, userId: usage.userId },
-        { $inc: { usedCount: -1 } },
-      )
+    const session = await this.couponUsageModel.db.startSession()
+    try {
+      await session.withTransaction(async () => {
+        const usage = await this.couponUsageModel.findOneAndDelete(
+          { orderId: new Types.ObjectId(orderId) },
+          { session },
+        )
+        if (!usage) return
+        await this.couponModel.findByIdAndUpdate(
+          usage.couponId,
+          { $inc: { usageCount: -1 } },
+          { session },
+        )
+        await this.couponUserSlotModel.updateOne(
+          { couponId: usage.couponId, userId: usage.userId },
+          { $inc: { usedCount: -1 } },
+          { session },
+        )
+      })
+    } finally {
+      await session.endSession()
     }
   }
 
@@ -307,16 +326,33 @@ export class PlatformConfigService implements OnModuleInit {
   // Also deletes any orphaned CouponUsage doc that the fire-and-forget recordCouponUsage
   // may have created before the failure was detected, preventing a future revokeCouponUsage
   // call from finding it and double-decrementing the counts.
+  //
+  // Transactional for the same reason as revokeCouponUsage — partial rollback = drift.
   async releaseCouponSlot(couponId: string, customerId?: string, orderId?: string): Promise<void> {
-    await this.couponModel.findByIdAndUpdate(couponId, { $inc: { usageCount: -1 } })
-    if (customerId) {
-      await this.couponUserSlotModel.updateOne(
-        { couponId: new Types.ObjectId(couponId), userId: new Types.ObjectId(customerId) },
-        { $inc: { usedCount: -1 } },
-      )
-    }
-    if (orderId) {
-      await this.couponUsageModel.deleteOne({ orderId: new Types.ObjectId(orderId) })
+    const session = await this.couponModel.db.startSession()
+    try {
+      await session.withTransaction(async () => {
+        await this.couponModel.findByIdAndUpdate(
+          couponId,
+          { $inc: { usageCount: -1 } },
+          { session },
+        )
+        if (customerId) {
+          await this.couponUserSlotModel.updateOne(
+            { couponId: new Types.ObjectId(couponId), userId: new Types.ObjectId(customerId) },
+            { $inc: { usedCount: -1 } },
+            { session },
+          )
+        }
+        if (orderId) {
+          await this.couponUsageModel.deleteOne(
+            { orderId: new Types.ObjectId(orderId) },
+            { session },
+          )
+        }
+      })
+    } finally {
+      await session.endSession()
     }
   }
 }

@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose'
 import { RiderDocument, RiderSchema } from './schemas/rider.schema'
 import { RiderOnlineSessionDocument, RiderOnlineSessionSchema } from './schemas/rider-online-session.schema'
 import { RidersService } from './riders.service'
+import { StaleSessionSweeperService } from './stale-session-sweeper.service'
 import { RidersController } from './riders.controller'
 import { AdminRidersController } from './admin-riders.controller'
 import { OrdersModule } from '../orders/orders.module'
@@ -24,7 +25,7 @@ import { NotificationsModule } from '../notifications/notifications.module'
     NotificationsModule,
   ],
   controllers: [RidersController, AdminRidersController],
-  providers: [RidersService],
+  providers: [RidersService, StaleSessionSweeperService],
   exports: [RidersService],
 })
 export class RidersModule {}

@@ -1084,6 +1084,27 @@ export class OrdersService {
     // this webhook, we must not dispatch to them — they can't fulfill the order.
     const pending = await this.orderModel.findOne({ _id: orderId, status: OrderStatus.PENDING })
     if (!pending) {
+      // Not PENDING → either already CONFIRMED (duplicate webhook), or cancelled.
+      // But: if it's CONFIRMED with no rider AND no dispatch rounds recorded, the
+      // original dispatch was lost (e.g., Redis crashed after enqueue). Recover by
+      // re-enqueuing via SideEffects — customer money is already taken, we owe them
+      // a delivery attempt.
+      const existing = await this.orderModel.findById(orderId)
+      if (existing
+          && existing.status === OrderStatus.CONFIRMED
+          && !existing.riderId
+          && (existing.dispatchRounds ?? 0) === 0) {
+        this.logger.warn(`markPaymentComplete: order ${orderId} is CONFIRMED with no rider and no dispatch rounds — recovering lost dispatch`)
+        const lng = existing.deliveryAddress.coordinates.coordinates[0]
+        const lat = existing.deliveryAddress.coordinates.coordinates[1]
+        await this.sideEffects.tryOrEnqueue(
+          SideEffectType.DISPATCH_ORDER,
+          `dispatch:${orderId}`,
+          { orderId, lat, lng },
+          () => this.riderDispatchQueue.add('dispatch', { orderId, lat, lng }, { jobId: `dispatch-${orderId}` }),
+        )
+        return existing
+      }
       this.logger.warn(`markPaymentComplete: order ${orderId} is not PENDING — ignoring late webhook (ref=${reference})`)
       return null
     }
@@ -1452,6 +1473,13 @@ export class OrdersService {
     )
     if (!canDispatch) throw new BadRequestException(`Order is ${order.status} — only CONFIRMED/PREPARING/READY orders can be redispatched`)
     if (order.riderId) throw new BadRequestException('Order already has a rider assigned')
+
+    // Refuse to redispatch if the restaurant is no longer serviceable.
+    // Admin should cancel + refund the order instead.
+    const restaurantOk = await this.restaurantsService.isServiceable(order.restaurantId.toString())
+    if (!restaurantOk) {
+      throw new BadRequestException('Restaurant is terminated or deactivated — cancel and refund the order instead of redispatching.')
+    }
 
     await this.orderModel.updateOne(
       { _id: new Types.ObjectId(orderId) },

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { BullModule } from '@nestjs/bullmq'
 import { OrdersModule } from '../orders/orders.module'
 import { RidersModule } from '../riders/riders.module'
+import { RestaurantsModule } from '../restaurants/restaurants.module'
 import { TrackingModule } from '../tracking/tracking.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { OrderTimeoutProcessor } from './processors/order-timeout.processor'
@@ -54,6 +55,7 @@ import {
     ),
     OrdersModule,
     RidersModule,
+    RestaurantsModule,
     TrackingModule,
     NotificationsModule,
   ],
