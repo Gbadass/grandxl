@@ -26,6 +26,8 @@ export default function EditMenuItemPage() {
     categoryId: '',
     allergens: '',
     isAvailable: true,
+    prepTimeMinutes: '',
+    calories: '',
   })
   const [variants, setVariants] = useState<CreateMenuItemVariant[]>([])
   const [addOns, setAddOns] = useState<CreateMenuItemAddOn[]>([])
@@ -71,6 +73,8 @@ export default function EditMenuItemPage() {
         categoryId: item.categoryId,
         allergens: item.allergens?.join(', ') ?? '',
         isAvailable: item.isAvailable,
+        prepTimeMinutes: item.prepTimeMinutes != null ? String(item.prepTimeMinutes) : '',
+        calories:        item.calories        != null ? String(item.calories)        : '',
       })
       // Pre-populate variants — map from MenuItem shape to CreateMenuItemVariant
       setVariants(
@@ -219,6 +223,8 @@ export default function EditMenuItemPage() {
         allergens: form.allergens
           ? form.allergens.split(',').map((a) => a.trim()).filter(Boolean)
           : [],
+        prepTimeMinutes: form.prepTimeMinutes ? parseInt(form.prepTimeMinutes, 10) : undefined,
+        calories:        form.calories        ? parseInt(form.calories,        10) : undefined,
         image: imageUrl ?? undefined,
         ...(variants.length > 0 ? { variants } : { variants: [] }),
         ...(addOns.length > 0 ? { addOns } : { addOns: [] }),
@@ -307,6 +313,31 @@ export default function EditMenuItemPage() {
               className={inputCls}
             />
           </Field>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Prep time (min)">
+              <input
+                type="number"
+                min="1"
+                max="120"
+                value={form.prepTimeMinutes}
+                onChange={(e) => setForm((f) => ({ ...f, prepTimeMinutes: e.target.value }))}
+                placeholder="e.g. 15"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Calories (kcal)">
+              <input
+                type="number"
+                min="0"
+                max="10000"
+                value={form.calories}
+                onChange={(e) => setForm((f) => ({ ...f, calories: e.target.value }))}
+                placeholder="e.g. 450"
+                className={inputCls}
+              />
+            </Field>
+          </div>
 
           <div className="flex items-center gap-3">
             <label className="relative inline-flex cursor-pointer items-center">

@@ -92,10 +92,10 @@ function ItemCard({
               {categoryName}
             </span>
           )}
-          {(item as MenuItem & { prepTimeMinutes?: number }).prepTimeMinutes && (
+          {item.prepTimeMinutes != null && (
             <span className="flex items-center gap-0.5 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
               <Clock size={9} />
-              {(item as MenuItem & { prepTimeMinutes?: number }).prepTimeMinutes}m
+              {item.prepTimeMinutes}m
             </span>
           )}
         </div>

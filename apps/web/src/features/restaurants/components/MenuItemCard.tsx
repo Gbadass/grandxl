@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
-import { Plus, Check } from 'lucide-react'
+import { Plus, Check, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { MenuItem } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
@@ -80,9 +80,20 @@ export function MenuItemCard({ item, restaurantId, currency }: Props) {
         )}
 
         <div className="mt-2.5 flex items-center justify-between">
-          <span className="text-sm font-bold text-gray-900">
-            {formatMoney(item.basePrice, currency)}
-          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-bold text-gray-900">
+              {formatMoney(item.basePrice, currency)}
+            </span>
+            {item.prepTimeMinutes != null && (
+              <span
+                className="inline-flex items-center gap-0.5 text-[10px] font-medium text-gray-400"
+                title={t('prepTime', 'Prep time')}
+              >
+                <Clock size={10} strokeWidth={2.2} />
+                {item.prepTimeMinutes}m
+              </span>
+            )}
+          </div>
 
           <motion.button
             whileTap={{ scale: 0.85 }}

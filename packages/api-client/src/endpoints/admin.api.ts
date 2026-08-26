@@ -356,6 +356,7 @@ export interface CreateMenuItemDto {
   sortOrder?: number
   allergens?: string[]
   prepTimeMinutes?: number
+  calories?: number
   stockCount?: number
   lowStockThreshold?: number
   image?: string
