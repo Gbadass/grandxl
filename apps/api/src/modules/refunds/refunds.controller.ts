@@ -95,7 +95,7 @@ export class AdminRefundsController {
     if (dto.decision === 'approve') {
       if (!dto.method) throw new BadRequestException('method is required when approving')
       const method = dto.method === 'wallet' ? RefundMethod.WALLET : RefundMethod.ORIGINAL
-      const result = await this.refunds.approve(user.sub, id, method, dto.decisionNote)
+      const result = await this.refunds.approve(user, id, method, dto.decisionNote)
       void this.audit.log({
         ...meta,
         action:     'refund.approve',
@@ -106,7 +106,7 @@ export class AdminRefundsController {
       return result
     }
 
-    const result = await this.refunds.reject(user.sub, id, dto.decisionNote)
+    const result = await this.refunds.reject(user, id, dto.decisionNote)
     void this.audit.log({
       ...meta,
       action:     'refund.reject',

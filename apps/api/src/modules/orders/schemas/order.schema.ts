@@ -185,6 +185,23 @@ export class OrderDocument extends Document {
   @Prop({ type: Date, default: null })
   systemClearedAt!: Date | null
 
+  // ── Sprint 4.5: engagement + wait time observability ──────────────
+  // Stamped ONLY when a restaurant owner explicitly hits Accept in the modal.
+  // Not set when the payment webhook auto-confirms — that's the whole point;
+  // the two paths need to be distinguishable to compute engagement rate.
+  @Prop({ type: Date, default: null })
+  restaurantConfirmedAt!: Date | null
+
+  // Stamped when restaurant marks READY. Some engaged restaurants skip the Accept
+  // step (rider grabbed the order first) but still mark READY — both count as engaged.
+  @Prop({ type: Date, default: null })
+  restaurantReadyAt!: Date | null
+
+  // Stamped when status transitions to PICKED_UP. Used with riderAssignedAt to
+  // compute rider dwell time at the restaurant.
+  @Prop({ type: Date, default: null })
+  pickedUpAt!: Date | null
+
   createdAt!: Date
   updatedAt!: Date
 }

@@ -445,6 +445,64 @@ export interface HeatmapData {
   points: HeatmapPoint[]
 }
 
+export interface OrderTimeoutData {
+  periodDays: number
+  totalOrders: number
+  totalTimeouts: number
+  timeoutRate: number
+  byReason: Record<string, number>
+}
+
+export interface RestaurantEngagementRow {
+  restaurantId: string
+  name?: string
+  total: number
+  engaged: number
+  engagementRate: number
+}
+
+export interface RestaurantEngagementData {
+  periodDays: number
+  totalOrders: number
+  engagedOrders: number
+  engagementRate: number
+  acceptedCount: number
+  readyCount: number
+  rejectedCount: number
+  worstRestaurants: RestaurantEngagementRow[]
+}
+
+export interface RestaurantWaitTimeRow {
+  restaurantId: string
+  name?: string
+  avgWaitSeconds: number
+  maxWaitSeconds: number
+  orderCount: number
+}
+
+export interface RestaurantWaitTimeData {
+  periodDays: number
+  restaurants: RestaurantWaitTimeRow[]
+}
+
+export interface RiderUtilizationRow {
+  riderId: string
+  busySeconds: number
+  onlineSeconds: number
+  utilization: number
+  deliveries: number
+}
+
+export interface RiderUtilizationData {
+  periodDays: number
+  riderCount: number
+  avgUtilization: number
+  totalBusyHours: number
+  totalOnlineHours: number
+  topRiders: RiderUtilizationRow[]
+  bottomRiders: RiderUtilizationRow[]
+}
+
 export const analyticsApi = {
   getPlatform: () =>
     getClient().get<ApiResponse<PlatformAnalyticsData>>('/admin/analytics'),
@@ -464,6 +522,26 @@ export const analyticsApi = {
 
   getHeatmap: (days = 30) =>
     getClient().get<ApiResponse<HeatmapData>>('/admin/analytics/heatmap', {
+      params: { days },
+    }),
+
+  getOrderTimeouts: (days = 7) =>
+    getClient().get<ApiResponse<OrderTimeoutData>>('/admin/analytics/order-timeouts', {
+      params: { days },
+    }),
+
+  getRestaurantEngagement: (days = 30) =>
+    getClient().get<ApiResponse<RestaurantEngagementData>>('/admin/analytics/restaurant-engagement', {
+      params: { days },
+    }),
+
+  getRestaurantWaitTimes: (days = 30) =>
+    getClient().get<ApiResponse<RestaurantWaitTimeData>>('/admin/analytics/restaurant-wait-times', {
+      params: { days },
+    }),
+
+  getRiderUtilization: (days = 7) =>
+    getClient().get<ApiResponse<RiderUtilizationData>>('/admin/analytics/rider-utilization', {
       params: { days },
     }),
 }

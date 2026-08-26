@@ -58,4 +58,44 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getOrderHeatmap(days)
   }
+
+  @Get('admin/analytics/order-timeouts')
+  @Roles(UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Order timeout rate (super admin only)' })
+  @ApiQuery({ name: 'days', required: false })
+  getOrderTimeouts(
+    @Query('days', new DefaultValuePipe(7), ParseIntPipe) days: number,
+  ) {
+    return this.analyticsService.getOrderTimeoutMetrics(days)
+  }
+
+  @Get('admin/analytics/restaurant-engagement')
+  @Roles(UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Restaurant engagement rate (super admin only)' })
+  @ApiQuery({ name: 'days', required: false })
+  getRestaurantEngagement(
+    @Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number,
+  ) {
+    return this.analyticsService.getRestaurantEngagementMetrics(days)
+  }
+
+  @Get('admin/analytics/restaurant-wait-times')
+  @Roles(UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Avg rider dwell time per restaurant (super admin only)' })
+  @ApiQuery({ name: 'days', required: false })
+  getRestaurantWaitTimes(
+    @Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number,
+  ) {
+    return this.analyticsService.getRestaurantWaitTimes(days)
+  }
+
+  @Get('admin/analytics/rider-utilization')
+  @Roles(UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Rider busy/online ratio (super admin only)' })
+  @ApiQuery({ name: 'days', required: false })
+  getRiderUtilization(
+    @Query('days', new DefaultValuePipe(7), ParseIntPipe) days: number,
+  ) {
+    return this.analyticsService.getRiderUtilization(days)
+  }
 }

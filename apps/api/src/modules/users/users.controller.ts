@@ -8,6 +8,8 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  Inject,
+  forwardRef,
 } from '@nestjs/common'
 import {
   ApiTags,
@@ -18,6 +20,7 @@ import {
   ApiNoContentResponse,
 } from '@nestjs/swagger'
 import { UsersService } from './users.service'
+import { AuthService } from '../auth/auth.service'
 import { UpdateProfileDto } from './dto/update-profile.dto'
 import { AddAddressDto } from './dto/add-address.dto'
 import { UpdateAddressDto } from './dto/update-address.dto'
@@ -34,6 +37,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly dataExport:   DataExportService,
+    @Inject(forwardRef(() => AuthService)) private readonly authService: AuthService,
   ) {}
 
   // ── Profile ─────────────────────────────────────────────────────
@@ -204,6 +208,9 @@ export class UsersController {
   @ApiOperation({ summary: 'Delete my account — anonymises personal data (NDPR right to erasure)' })
   @ApiNoContentResponse({ description: 'Account anonymised' })
   async deleteAccount(@CurrentUser() user: JwtPayload) {
+    // Kill every active session before anonymising the account so no lingering
+    // refresh token can be rotated back into a valid access token.
+    await this.authService.logout(user.sub)
     await this.usersService.softDeleteAccount(user.sub)
   }
 }

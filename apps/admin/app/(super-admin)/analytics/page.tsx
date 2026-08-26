@@ -6,7 +6,15 @@ import { useQuery } from '@tanstack/react-query'
 import { UserRole } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
-import { analyticsApi, type DispatchMetricsData, type QueueDepthData } from '@grandxl/api-client'
+import {
+  analyticsApi,
+  type DispatchMetricsData,
+  type QueueDepthData,
+  type OrderTimeoutData,
+  type RestaurantEngagementData,
+  type RestaurantWaitTimeData,
+  type RiderUtilizationData,
+} from '@grandxl/api-client'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { StatsCard } from '../../../src/components/ui/StatsCard'
 import '../../../src/lib/axios'
@@ -132,6 +140,27 @@ export default function AnalyticsPage() {
     enabled:  isAuthenticated,
   })
 
+  const { data: timeoutRes,     isLoading: timeoutLoading    } = useQuery({
+    queryKey: ['analytics', 'order-timeouts', 7],
+    queryFn:  () => analyticsApi.getOrderTimeouts(7).then((r) => r.data),
+    staleTime: 2 * 60_000, enabled: isAuthenticated,
+  })
+  const { data: engagementRes,  isLoading: engagementLoading } = useQuery({
+    queryKey: ['analytics', 'restaurant-engagement', 30],
+    queryFn:  () => analyticsApi.getRestaurantEngagement(30).then((r) => r.data),
+    staleTime: 5 * 60_000, enabled: isAuthenticated,
+  })
+  const { data: waitTimesRes,   isLoading: waitTimesLoading  } = useQuery({
+    queryKey: ['analytics', 'wait-times', 30],
+    queryFn:  () => analyticsApi.getRestaurantWaitTimes(30).then((r) => r.data),
+    staleTime: 5 * 60_000, enabled: isAuthenticated,
+  })
+  const { data: utilRes,        isLoading: utilLoading       } = useQuery({
+    queryKey: ['analytics', 'rider-utilization', 7],
+    queryFn:  () => analyticsApi.getRiderUtilization(7).then((r) => r.data),
+    staleTime: 2 * 60_000, enabled: isAuthenticated,
+  })
+
   const analytics = analyticsRes?.data
 
   // ── Derived display values ─────────────────────────────────────────────────
@@ -182,11 +211,22 @@ export default function AnalyticsPage() {
 
   const dispatch: DispatchMetricsData | undefined = dispatchRes?.data
   const queueData: QueueDepthData | undefined = queueRes?.data
+  const timeout:    OrderTimeoutData         | undefined = timeoutRes?.data
+  const engagement: RestaurantEngagementData | undefined = engagementRes?.data
+  const waitTimes:  RestaurantWaitTimeData   | undefined = waitTimesRes?.data
+  const util:       RiderUtilizationData     | undefined = utilRes?.data
   const QUEUE_LABELS: Record<string, string> = {
     'order-timeout':         'Order Timeout',
     'rider-dispatch':        'Rider Dispatch',
     'scheduled-order-release': 'Scheduled Orders',
     'settlement':            'Settlement',
+  }
+
+  function formatSeconds(s: number): string {
+    if (s < 60) return `${s}s`
+    const m = Math.floor(s / 60)
+    const rs = s % 60
+    return `${m}m ${rs}s`
   }
 
   if (isInitializing) return null
@@ -409,6 +449,176 @@ export default function AnalyticsPage() {
       </Card>
 
       <div className="mb-6" />
+
+      {/* ── Timeouts + engagement + utilization stat row ── */}
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          Operational Health
+        </h2>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-4">
+          <StatsCard
+            title="Order Timeout Rate (7d)"
+            value={timeout ? `${timeout.timeoutRate}%` : '—'}
+            sub={timeout ? `${timeout.totalTimeouts} of ${timeout.totalOrders} orders` : ''}
+            icon="orders"
+            loading={timeoutLoading}
+          />
+          <StatsCard
+            title="Restaurant Engagement (30d)"
+            value={engagement ? `${engagement.engagementRate}%` : '—'}
+            sub={engagement ? `${engagement.engagedOrders} of ${engagement.totalOrders} actively handled` : ''}
+            icon="restaurants"
+            loading={engagementLoading}
+          />
+          <StatsCard
+            title="Avg Rider Utilization (7d)"
+            value={util ? `${util.avgUtilization}%` : '—'}
+            sub={util ? `${util.totalBusyHours}h busy / ${util.totalOnlineHours}h online` : ''}
+            icon="riders"
+            loading={utilLoading}
+          />
+          <StatsCard
+            title="Active Riders (7d)"
+            value={util ? String(util.riderCount) : '—'}
+            sub="Riders with at least one session"
+            icon="users"
+            loading={utilLoading}
+          />
+        </div>
+      </div>
+
+      {/* ── Restaurants that need coaching (low engagement) ── */}
+      <Card title="Least Engaged Restaurants — last 30 days (bottom 25)">
+        {engagementLoading ? (
+          <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+        ) : !engagement || engagement.worstRestaurants.length === 0 ? (
+          <p className="py-6 text-center text-sm text-gray-400">Not enough data yet</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-gray-100">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-left">
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500">Restaurant</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Orders</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Engaged</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Engagement %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {engagement.worstRestaurants.map((r) => (
+                  <tr key={r.restaurantId} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{r.name ?? r.restaurantId}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{r.total}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{r.engaged}</td>
+                    <td className={`px-4 py-3 text-right tabular-nums font-semibold ${r.engagementRate < 30 ? 'text-red-600' : r.engagementRate < 60 ? 'text-amber-600' : 'text-gray-600'}`}>
+                      {r.engagementRate}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="mb-6" />
+
+      {/* ── Restaurants that keep riders waiting ── */}
+      <Card title="Slowest Restaurants — avg rider wait time (last 30 days)">
+        {waitTimesLoading ? (
+          <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+        ) : !waitTimes || waitTimes.restaurants.length === 0 ? (
+          <p className="py-6 text-center text-sm text-gray-400">Not enough data yet</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-gray-100">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-left">
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500">Restaurant</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Orders</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Avg Wait</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Max Wait</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {waitTimes.restaurants.map((r) => (
+                  <tr key={r.restaurantId} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{r.name ?? r.restaurantId}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{r.orderCount}</td>
+                    <td className={`px-4 py-3 text-right tabular-nums font-semibold ${r.avgWaitSeconds > 900 ? 'text-red-600' : r.avgWaitSeconds > 600 ? 'text-amber-600' : 'text-gray-600'}`}>
+                      {formatSeconds(r.avgWaitSeconds)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-500">{formatSeconds(r.maxWaitSeconds)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="mb-6" />
+
+      {/* ── Rider utilization tables ── */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-6">
+        <Card title="Top Utilized Riders (7d)">
+          {utilLoading ? (
+            <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+          ) : !util || util.topRiders.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">Not enough data yet</p>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-gray-100">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50 text-left">
+                    <th className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Rider</th>
+                    <th className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Deliveries</th>
+                    <th className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Utilization</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {util.topRiders.map((r) => (
+                    <tr key={r.riderId}>
+                      <td className="px-4 py-2 font-mono text-xs text-gray-500">{r.riderId.slice(-8)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-600">{r.deliveries}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold text-green-600">{r.utilization}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Least Utilized Riders (7d) — idle capacity">
+          {utilLoading ? (
+            <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+          ) : !util || util.bottomRiders.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">Not enough data yet</p>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-gray-100">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50 text-left">
+                    <th className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Rider</th>
+                    <th className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Deliveries</th>
+                    <th className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Utilization</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {util.bottomRiders.map((r) => (
+                    <tr key={r.riderId}>
+                      <td className="px-4 py-2 font-mono text-xs text-gray-500">{r.riderId.slice(-8)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-600">{r.deliveries}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold text-amber-600">{r.utilization}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
 
       {/* ── Top restaurants table ── */}
       <Card title="Top Restaurants by Orders">

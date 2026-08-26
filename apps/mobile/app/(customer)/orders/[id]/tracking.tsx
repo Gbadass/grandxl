@@ -36,6 +36,9 @@ export default function OrderTrackingScreen() {
   const router = useRouter()
   const userLocation = useLocationStore()
   const mapRef = useRef<MapView>(null)
+  // Fit-to-coordinates only once — otherwise every rider GPS tick re-fits the map
+  // and the viewport thrashes; user can't pan/zoom without it snapping back.
+  const fittedRef = useRef(false)
 
   // Rider live lat/lng (updated via polling)
   const [riderCoords, setRiderCoords] = useState<{ lat: number; lng: number } | null>(null)
@@ -75,13 +78,16 @@ export default function OrderTrackingScreen() {
     if (!id) return
     socket.emit('order:join_room', { orderId: id })
 
-    socket.on('rider:location', (data: { riderId: string; lat: number; lng: number; bearing: number }) => {
+    // Named handler so socket.off can remove ONLY this listener; anonymous listeners
+    // can't be individually removed and pile up on remount.
+    function onRiderLocation(data: { riderId: string; lat: number; lng: number; bearing: number }) {
       setRiderCoords({ lat: data.lat, lng: data.lng })
-    })
+    }
+    socket.on('rider:location', onRiderLocation)
 
     return () => {
       socket.emit('order:leave_room', { orderId: id })
-      socket.off('rider:location')
+      socket.off('rider:location', onRiderLocation)
     }
   }, [id])
 
@@ -93,9 +99,10 @@ export default function OrderTrackingScreen() {
       }
     : null
 
-  // Center map when data loads
+  // Center map ONCE when we first have delivery coords. Re-fitting on every
+  // rider tick makes the map viewport thrash and steals the user's pan/zoom.
   useEffect(() => {
-    if (!mapRef.current || !deliveryCoords) return
+    if (fittedRef.current || !mapRef.current || !deliveryCoords) return
     const coords = [
       deliveryCoords,
       ...(riderCoords ? [riderCoords] : []),
@@ -105,6 +112,7 @@ export default function OrderTrackingScreen() {
       coords.map((c) => ({ latitude: c.lat, longitude: c.lng })),
       { edgePadding: { top: 80, right: 40, bottom: 200, left: 40 }, animated: true },
     )
+    fittedRef.current = true
   }, [deliveryCoords, riderCoords])
 
   if (isLoading || !order) {

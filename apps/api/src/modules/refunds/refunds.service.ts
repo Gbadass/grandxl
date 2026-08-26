@@ -18,6 +18,8 @@ import {
   RefundMethod,
 } from './schemas/refund-request.schema'
 import { CreateRefundRequestDto } from './dto/create-refund-request.dto'
+import { UserRole } from '@grandxl/types'
+import type { JwtPayload } from '@grandxl/types'
 
 const PAYSTACK_BASE = 'https://api.paystack.co'
 const PAYSTACK_TIMEOUT_MS = 10_000
@@ -107,11 +109,19 @@ export class RefundsService {
   }
 
   async approve(
-    adminId: string,
+    requester: JwtPayload,
     refundId: string,
     method: RefundMethod,
     note?: string,
   ): Promise<RefundRequestDocument> {
+    // Defense in depth — the controller has @Roles(SUPER_ADMIN), but this method
+    // credits wallets and issues Paystack refunds. If a future controller endpoint
+    // forgets the guard, this second check keeps the money bug from ever landing.
+    if (!requester.roles.includes(UserRole.SUPER_ADMIN)) {
+      throw new ForbiddenException('Only super admins can approve refunds')
+    }
+    const adminId = requester.sub
+
     const refund = await this.refundModel.findById(refundId).exec()
     if (!refund) throw new NotFoundException('Refund request not found')
     if (refund.status !== RefundStatus.PENDING) {
@@ -173,10 +183,16 @@ export class RefundsService {
   }
 
   async reject(
-    adminId: string,
+    requester: JwtPayload,
     refundId: string,
     note?: string,
   ): Promise<RefundRequestDocument> {
+    // Defense in depth — same reasoning as approve().
+    if (!requester.roles.includes(UserRole.SUPER_ADMIN)) {
+      throw new ForbiddenException('Only super admins can reject refunds')
+    }
+    const adminId = requester.sub
+
     const refund = await this.refundModel.findById(refundId).exec()
     if (!refund) throw new NotFoundException('Refund request not found')
     if (refund.status !== RefundStatus.PENDING) {

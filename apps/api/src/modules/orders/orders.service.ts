@@ -30,6 +30,8 @@ import { SurgePricingService } from '../surge-pricing/surge-pricing.service'
 import { RidersService } from '../riders/riders.service'
 import { PaymentsService } from '../payments/payments.service'
 import { ReferralsService } from '../referrals/referrals.service'
+import { SideEffectsService } from '../side-effects/side-effects.service'
+import { SideEffectType } from '../side-effects/schemas/pending-side-effect.schema'
 import {
   ORDER_TIMEOUT_QUEUE,
   RIDER_DISPATCH_QUEUE,
@@ -40,7 +42,7 @@ import {
 import { OrderStatus, PaymentMethod, PaymentStatus, UserRole } from '@grandxl/types'
 import type { JwtPayload } from '@grandxl/types'
 import { MAX_ORDER_VALUE_KOBO } from '../../common/constants/app.constants'
-import { isRestaurantOpen, formatMoney } from '@grandxl/utils'
+import { isRestaurantOpen, formatMoney, calculateDistance } from '@grandxl/utils'
 import type { RestaurantHours } from '@grandxl/utils'
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
@@ -83,6 +85,7 @@ export class OrdersService {
     @Inject(forwardRef(() => PaymentsService))
     private readonly paymentsService: PaymentsService,
     private readonly referralsService: ReferralsService,
+    private readonly sideEffects: SideEffectsService,
     @InjectQueue(ORDER_TIMEOUT_QUEUE) private readonly orderTimeoutQueue: Queue,
     @InjectQueue(RIDER_DISPATCH_QUEUE) private readonly riderDispatchQueue: Queue,
     @InjectQueue(SCHEDULED_ORDER_QUEUE) private readonly scheduledOrderQueue: Queue,
@@ -727,6 +730,7 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found')
 
     await this.assertTransitionPermission(order, dto, requester)
+    await this.assertRiderProximity(order, dto, requester)
 
     const updates: Record<string, unknown> = { status: dto.status }
     if (dto.status === OrderStatus.CANCELLED) {
@@ -734,6 +738,30 @@ export class OrdersService {
     }
     if (dto.status === OrderStatus.DELIVERED) {
       updates.actualDeliveryAt = new Date()
+    }
+    if (dto.status === OrderStatus.PICKED_UP) {
+      updates.pickedUpAt = new Date()
+    }
+    // Engagement signals — set ONLY when the transition was driven by the restaurant
+    // owner clicking Accept or Ready in their dashboard. Auto-confirm from the payment
+    // webhook does not touch these fields; that's how we tell "engaged" from "passive".
+    // The Accept button dispatches EITHER PENDING→CONFIRMED (webhook not landed yet)
+    // OR CONFIRMED→PREPARING (webhook landed first) depending on race — both mean
+    // "the restaurant physically clicked Accept", so both stamp restaurantConfirmedAt.
+    // Explicitly exclude SUPER_ADMIN: an admin acting on behalf of a restaurant must
+    // NOT inflate that restaurant's engagement rate — the human running the store
+    // isn't the one clicking, so this wasn't engagement.
+    const isRestaurantAction =
+      requester.roles.includes(UserRole.RESTAURANT_OWNER) &&
+      !requester.roles.includes(UserRole.SUPER_ADMIN)
+    const isAcceptTransition =
+      (order.status === OrderStatus.PENDING   && dto.status === OrderStatus.CONFIRMED) ||
+      (order.status === OrderStatus.CONFIRMED && dto.status === OrderStatus.PREPARING)
+    if (isRestaurantAction && isAcceptTransition && !order.restaurantConfirmedAt) {
+      updates.restaurantConfirmedAt = new Date()
+    }
+    if (isRestaurantAction && dto.status === OrderStatus.READY && !order.restaurantReadyAt) {
+      updates.restaurantReadyAt = new Date()
     }
 
     // Use the current status as a filter so two concurrent transitions cannot both
@@ -844,13 +872,17 @@ export class OrdersService {
             updated.pricing.deliveryFee + (updated.pricing.tip ?? 0),
           )
         : Promise.resolve(),
-      // On cancellation: release the assigned rider (no earnings, no delivery count increment).
-      // Auto-heal in acceptOrder means a missed release is self-correcting, but we log it
-      // so operators can spot patterns (e.g. a rider's socket failing repeatedly).
+      // On cancellation: release the assigned rider. Auto-heal in acceptOrder self-corrects
+      // a missed release eventually, but that leaves the rider locked out of new jobs in the
+      // meantime — real earnings loss. Route through SideEffects so a transient failure
+      // gets a durable retry instead of just a log line.
       dto.status === OrderStatus.CANCELLED && updated.riderId
-        ? this.ridersService.releaseRider(String(updated.riderId)).catch((err: unknown) => {
-            this.logger.error(`releaseRider failed for rider ${String(updated.riderId)} on order cancellation — auto-heal will correct on next accept`, err)
-          })
+        ? this.sideEffects.tryOrEnqueue(
+            SideEffectType.RELEASE_RIDER,
+            `release-rider:${orderIdStr}`,
+            { riderId: String(updated.riderId) },
+            () => this.ridersService.releaseRider(String(updated.riderId)),
+          )
         : Promise.resolve(),
       // On READY: push + socket to assigned rider so they know to go pick up the food
       dto.status === OrderStatus.READY && updated.riderId
@@ -930,6 +962,46 @@ export class OrdersService {
     throw new ForbiddenException('You are not permitted to make this transition.')
   }
 
+  // Rider must physically be near the target location to mark PICKED_UP or DELIVERED.
+  // Client-side check exists in the driver PWA (A19) but is bypassable — enforce here
+  // on the server too. Admin can override (no proximity check for admin transitions).
+  private async assertRiderProximity(
+    order: OrderDocument,
+    dto: UpdateOrderStatusDto,
+    requester: JwtPayload,
+  ): Promise<void> {
+    if (requester.roles.includes(UserRole.SUPER_ADMIN)) return
+    if (dto.status !== OrderStatus.PICKED_UP && dto.status !== OrderStatus.DELIVERED) return
+    if (!requester.roles.includes(UserRole.RIDER)) return
+
+    const target =
+      dto.status === OrderStatus.PICKED_UP
+        ? order.restaurantPickupAddress?.coordinates
+        : order.deliveryAddress?.coordinates
+    // Missing pickup coords on legacy orders — allow through (no way to verify).
+    if (!target?.coordinates || target.coordinates.length !== 2) return
+
+    const rider = await this.ridersService.getProfile(requester.sub)
+    const loc = rider.currentLocation
+    if (!loc?.coordinates || loc.coordinates.length !== 2 || !loc.updatedAt) {
+      throw new BadRequestException('Cannot verify your location. Turn on GPS and try again.')
+    }
+    // Stale positions can't confirm you're actually here — reject > 2 min old.
+    const ageMs = Date.now() - new Date(loc.updatedAt).getTime()
+    if (ageMs > 120_000) {
+      throw new BadRequestException('Your location is out of date. Move to refresh GPS and try again.')
+    }
+
+    const distanceKm = calculateDistance(
+      { lng: target.coordinates[0], lat: target.coordinates[1] },
+      { lng: loc.coordinates[0],    lat: loc.coordinates[1] },
+    )
+    if (distanceKm > 0.3) {
+      const where = dto.status === OrderStatus.PICKED_UP ? 'the restaurant' : 'the delivery address'
+      throw new BadRequestException(`You must be within 300m of ${where} to mark this. You are ${Math.round(distanceKm * 1000)}m away.`)
+    }
+  }
+
   // ── Admin ────────────────────────────────────────────────────────
 
   async getAdminOrders(
@@ -975,6 +1047,76 @@ export class OrdersService {
   // ── Used by PaymentsService ───────────────────────────────────────
 
   async markPaymentComplete(orderId: string, reference: string): Promise<OrderDocument | null> {
+    // First, peek at the pending order so we can validate the restaurant BEFORE flipping
+    // status. If the restaurant has been terminated or deactivated between checkout and
+    // this webhook, we must not dispatch to them — they can't fulfill the order.
+    const pending = await this.orderModel.findOne({ _id: orderId, status: OrderStatus.PENDING })
+    if (!pending) {
+      this.logger.warn(`markPaymentComplete: order ${orderId} is not PENDING — ignoring late webhook (ref=${reference})`)
+      return null
+    }
+
+    const restaurant = await this.restaurantsService.findByIdRaw(pending.restaurantId.toString())
+    const restaurantUnavailable =
+      !restaurant ||
+      restaurant.terminatedAt !== null ||
+      restaurant.isActive === false
+    if (restaurantUnavailable) {
+      // Record the payment landed, then cancel the order and refund the customer.
+      // We flag the order CANCELLED with a specific reason so the timeout metric doesn't
+      // miscount this, and the wallet portion (if any) is returned via the standard cancel
+      // path. The card portion is refunded via Paystack fire-and-forget with error surfacing.
+      const cancelled = await this.orderModel.findOneAndUpdate(
+        { _id: orderId, status: OrderStatus.PENDING },
+        {
+          $set: {
+            status: OrderStatus.CANCELLED,
+            cancelReason: 'Restaurant unavailable — refunded automatically',
+            'payment.status': PaymentStatus.COMPLETED,
+            'payment.reference': reference,
+            'payment.paidAt': new Date(),
+          },
+        },
+        { new: true },
+      )
+      if (!cancelled) return null
+
+      this.logger.error(
+        `markPaymentComplete: restaurant ${pending.restaurantId} unavailable ` +
+        `(terminated=${!!restaurant?.terminatedAt}, active=${restaurant?.isActive}). ` +
+        `Order ${orderId} cancelled, initiating refund.`,
+      )
+
+      // Wallet portion (if any) — return via wallet ledger
+      if ((cancelled.pricing.walletApplied ?? 0) > 0) {
+        this.walletService.credit({
+          userId:        cancelled.customerId.toString(),
+          amount:        cancelled.pricing.walletApplied,
+          reason:        WalletTxnReason.REFUND,
+          description:   'Wallet returned — restaurant unavailable',
+          referenceType: 'order',
+          referenceId:   orderId,
+        }).catch((err: unknown) => this.logger.error(
+          `CRITICAL: wallet refund failed for auto-cancelled order ${orderId}`, err,
+        ))
+      }
+      // Card portion — Paystack refund
+      this.paymentsService.initiateRefund(orderId, 'Restaurant unavailable')
+        .catch((err: unknown) => this.logger.error(
+          `Paystack refund initiation failed for auto-cancelled order ${orderId}`, err,
+        ))
+
+      // Notify customer their order was cancelled + refunded
+      void this.notificationsService.onOrderStatusChanged(
+        cancelled.customerId.toString(),
+        cancelled.orderNumber,
+        orderId,
+        OrderStatus.CANCELLED,
+      ).catch(() => undefined)
+
+      return cancelled
+    }
+
     const order = await this.orderModel.findOneAndUpdate(
       { _id: orderId, status: OrderStatus.PENDING },
       {
@@ -988,25 +1130,29 @@ export class OrdersService {
       { new: true },
     )
     if (!order) {
-      // Order is not in PENDING state — either already confirmed (duplicate webhook),
-      // or cancelled before payment landed. Both are safe to ignore.
-      this.logger.warn(`markPaymentComplete: order ${orderId} is not PENDING — ignoring late webhook (ref=${reference})`)
+      // Order status changed between our peek and this update (e.g., customer cancel raced).
+      this.logger.warn(`markPaymentComplete: order ${orderId} changed status during confirm — ignoring`)
       return null
     }
 
     // Payment confirmed — NOW notify the restaurant and dispatch a rider.
     // This is the correct trigger point: Paystack webhook → charge.success → here.
-    const restaurant = await this.restaurantsService.findByIdRaw(order.restaurantId.toString())
     const ownerId = restaurant.ownerId.toString()
 
-    Promise.all([
-      this.trackingService.notifyNewOrder(ownerId, order),
-      this.riderDispatchQueue.add('dispatch', {
-        orderId,
-        lat: order.deliveryAddress.coordinates.coordinates[1],
-        lng: order.deliveryAddress.coordinates.coordinates[0],
-      }, { jobId: `dispatch-${orderId}` }),
-    ]).catch(() => undefined)
+    // Notify restaurant (best-effort — socket delivery, has fallback in the app)
+    void Promise.resolve(this.trackingService.notifyNewOrder(ownerId, order)).catch(() => undefined)
+
+    // CRITICAL — dispatch must not silently drop. Try inline; on failure (Redis outage)
+    // the SideEffects sweeper picks it up from Mongo and retries with backoff.
+    // Customer's money is already taken; a dropped dispatch = stranded order.
+    const lng = order.deliveryAddress.coordinates.coordinates[0]
+    const lat = order.deliveryAddress.coordinates.coordinates[1]
+    await this.sideEffects.tryOrEnqueue(
+      SideEffectType.DISPATCH_ORDER,
+      `dispatch:${orderId}`,
+      { orderId, lat, lng },
+      () => this.riderDispatchQueue.add('dispatch', { orderId, lat, lng }, { jobId: `dispatch-${orderId}` }),
+    )
 
     return order
   }
@@ -1113,10 +1259,12 @@ export class OrdersService {
   // ── Used by RidersService ─────────────────────────────────────────
 
   async assignRider(orderId: string, riderId: string, riderUserId: string): Promise<OrderDocument> {
-    // Atomic: only assign if no rider yet — prevents two riders accepting the same broadcast job
+    // Atomic: only assign if no rider yet — prevents two riders accepting the same broadcast job.
+    // Also stamps riderAssignedAt in the same write so wait-time metrics can never see a row
+    // with riderId set but timestamp null (would silently drop it from the aggregation).
     const order = await this.orderModel.findOneAndUpdate(
       { _id: new Types.ObjectId(orderId), riderId: null },
-      { $set: { riderId: new Types.ObjectId(riderId) } },
+      { $set: { riderId: new Types.ObjectId(riderId), riderAssignedAt: new Date() } },
       { new: true },
     )
     if (!order) {
@@ -1142,7 +1290,7 @@ export class OrdersService {
     )
     const liveOrder = preparing ?? order
 
-    void this.recordRiderAssigned(orderId).catch(() => undefined)
+    // riderAssignedAt already stamped atomically in the findOneAndUpdate above.
 
     void Promise.all([
       this.notificationsService.onRiderAssigned(riderUserId, liveOrder.orderNumber, orderIdStr),
@@ -1251,14 +1399,6 @@ export class OrdersService {
       update['$set'] = { firstDispatchAt: new Date() }
     }
     await this.orderModel.updateOne({ _id: new Types.ObjectId(orderId) }, update)
-  }
-
-  // Called when a rider is assigned so we can measure time-to-assign.
-  async recordRiderAssigned(orderId: string): Promise<void> {
-    await this.orderModel.updateOne(
-      { _id: new Types.ObjectId(orderId) },
-      { $set: { riderAssignedAt: new Date() } },
-    )
   }
 
   // Called by the dispatch processor at the start of each retry round so riders
@@ -1429,19 +1569,28 @@ export class OrdersService {
     }
 
     // Wallet portion was already debited but card never arrived — refund it.
+    // Wallet credit is CRITICAL: silent failure = customer money vanishes with no linkage.
+    // The SideEffects sweeper picks up any failure and retries with backoff.
     if ((order.pricing.walletApplied ?? 0) > 0) {
-      this.walletService
-        .credit({
-          userId:        order.customerId.toString(),
-          amount:        order.pricing.walletApplied,
+      const refundPayload = {
+        userId:      order.customerId.toString(),
+        amount:      order.pricing.walletApplied,
+        description: 'Wallet refund — payment timed out',
+        referenceId: orderId,
+      }
+      void this.sideEffects.tryOrEnqueue(
+        SideEffectType.WALLET_REFUND,
+        `wallet-refund:timeout:${orderId}`,
+        refundPayload,
+        () => this.walletService.credit({
+          userId:        refundPayload.userId,
+          amount:        refundPayload.amount,
           reason:        WalletTxnReason.REFUND,
-          description:   'Wallet refund — payment timed out',
+          description:   refundPayload.description,
           referenceType: 'order',
-          referenceId:   orderId,
-        })
-        .catch((err: unknown) =>
-          this.logger.error(`CRITICAL: wallet timeout refund failed for order ${orderId}`, err)
-        )
+          referenceId:   refundPayload.referenceId,
+        }),
+      )
     }
 
     // Release coupon slot — usage record exists by the time the 30-min timeout fires.

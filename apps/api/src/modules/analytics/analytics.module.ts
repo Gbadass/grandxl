@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bullmq'
 import { OrderDocument, OrderSchema } from '../orders/schemas/order.schema'
 import { RestaurantDocument, RestaurantSchema } from '../restaurants/schemas/restaurant.schema'
 import { RiderDocument, RiderSchema } from '../riders/schemas/rider.schema'
+import { RiderOnlineSessionDocument, RiderOnlineSessionSchema } from '../riders/schemas/rider-online-session.schema'
 import { AnalyticsService } from './analytics.service'
 import { AnalyticsController } from './analytics.controller'
 import {
@@ -19,6 +20,7 @@ import {
       { name: OrderDocument.name, schema: OrderSchema },
       { name: RestaurantDocument.name, schema: RestaurantSchema },
       { name: RiderDocument.name, schema: RiderSchema },
+      { name: RiderOnlineSessionDocument.name, schema: RiderOnlineSessionSchema },
     ]),
     BullModule.registerQueue(
       { name: ORDER_TIMEOUT_QUEUE },

@@ -33,13 +33,35 @@ export function RestaurantOrderModal({ order, onClose }: Props) {
         if (s <= 1) {
           clearInterval(intervalRef.current!)
           stopLoopAlarm()
-          // Auto-cancel when restaurant doesn't respond in time — same as Glovo/UberEats
-          void ordersApi
-            .updateStatus(order._id, {
-              status: OrderStatus.CANCELLED,
-              cancelReason: 'Restaurant did not respond in time',
+          // Before auto-cancelling, verify no rider has already accepted. This handles
+          // the Nigerian flow where a disengaged restaurant lets the rider drive the
+          // order — we must NOT cancel an in-flight order out from under a rider who
+          // committed to it. Also survives a missed order:status_update socket event.
+          // If the refetch fails, we don't know the current state — attempting cancel is
+          // safer than doing nothing. The 30-min payment timeout would catch it eventually,
+          // but that leaves the customer waiting with no signal.
+          void ordersApi.getById(order._id)
+            .then((res) => {
+              const current = res.data.data
+              const alreadyMovedOn =
+                !!current?.riderId ||
+                (current?.status && current.status !== OrderStatus.PENDING && current.status !== OrderStatus.CONFIRMED)
+              if (alreadyMovedOn) return  // Rider took it — just close silently
+              return ordersApi.updateStatus(order._id, {
+                status: OrderStatus.CANCELLED,
+                cancelReason: 'Restaurant did not respond in time',
+              })
             })
-            .catch(() => undefined)
+            .catch(() => {
+              // Refetch failed — try to cancel anyway. Server-side transition guard
+              // will reject the cancel if the order has moved to PREPARING (rider took it),
+              // so this is safe: worst case we get a 409, best case we clean up a stuck order.
+              toast('Could not verify order state — attempting cancel')
+              return ordersApi.updateStatus(order._id, {
+                status: OrderStatus.CANCELLED,
+                cancelReason: 'Restaurant did not respond in time',
+              }).catch(() => undefined)
+            })
           onClose()
           return 0
         }

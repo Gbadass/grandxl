@@ -38,12 +38,13 @@ export class PushProvider {
     return { dead: deadTokens.includes(expoPushToken) }
   }
 
+  // Returns dead tokens (DeviceNotRegistered) so caller can prune them.
   async sendBulkPushNotifications(
     tokens: string[],
     payload: PushPayload,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const validTokens = tokens.filter((t) => Expo.isExpoPushToken(t))
-    if (validTokens.length === 0) return
+    if (validTokens.length === 0) return []
 
     const messages: ExpoPushMessage[] = validTokens.map((token) => ({
       to: token,
@@ -54,7 +55,7 @@ export class PushProvider {
       badge: payload.badge,
     }))
 
-    await this.sendBatch(messages)
+    return this.sendBatch(messages)
   }
 
   // Returns the list of tokens that Expo flagged as DeviceNotRegistered so callers

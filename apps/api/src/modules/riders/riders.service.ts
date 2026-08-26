@@ -12,6 +12,7 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types, type MongooseError } from 'mongoose'
 import * as bcrypt from 'bcryptjs'
 import { RiderDocument } from './schemas/rider.schema'
+import { RiderOnlineSessionDocument } from './schemas/rider-online-session.schema'
 import { OrdersService } from '../orders/orders.service'
 import { UsersService } from '../users/users.service'
 import { TermiiProvider } from '../auth/providers/termii.provider'
@@ -31,6 +32,8 @@ export class RidersService {
   constructor(
     @InjectModel(RiderDocument.name)
     private readonly riderModel: Model<RiderDocument>,
+    @InjectModel(RiderOnlineSessionDocument.name)
+    private readonly sessionModel: Model<RiderOnlineSessionDocument>,
     @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
     private readonly usersService: UsersService,
@@ -95,12 +98,36 @@ export class RidersService {
   // ── Availability & location ──────────────────────────────────────
 
   async updateAvailability(userId: string, dto: UpdateAvailabilityDto): Promise<RiderDocument> {
+    // Read current state so we only open/close a session on ACTUAL state change —
+    // a rider tapping "Online" while already online must not spawn a duplicate session.
+    const previous = await this.riderModel.findOne(
+      { userId: new Types.ObjectId(userId) },
+      { isOnline: 1, _id: 1 },
+    ).lean()
+    if (!previous) throw new NotFoundException('Rider profile not found')
+
     const rider = await this.riderModel.findOneAndUpdate(
       { userId: new Types.ObjectId(userId) },
       { $set: { isOnline: dto.isOnline, isAvailable: dto.isOnline } },
       { new: true },
     )
     if (!rider) throw new NotFoundException('Rider profile not found')
+
+    // Track online sessions for utilization metrics. Only write when the state
+    // actually flipped, and never fail the API call on a session-write hiccup —
+    // best-effort observability, not source of truth.
+    if (previous.isOnline !== dto.isOnline) {
+      if (dto.isOnline) {
+        void this.sessionModel.create({
+          riderId: rider._id,
+          userId:  new Types.ObjectId(userId),
+          startAt: new Date(),
+          endAt:   null,
+        }).catch(() => undefined)
+      } else {
+        void this.closeOpenSession(rider._id as Types.ObjectId)
+      }
+    }
 
     // When a rider comes online, re-dispatch any orders stuck without a rider.
     // Fire-and-forget — don't delay the response waiting for queue operations.
@@ -402,6 +429,17 @@ export class RidersService {
     return rider
   }
 
+  // Best-effort: close any currently open online session for this rider.
+  // Called whenever the rider is force-taken-offline by an admin action so their
+  // session doesn't sit open indefinitely, inflating utilization metrics.
+  private async closeOpenSession(riderObjectId: Types.ObjectId): Promise<void> {
+    await this.sessionModel.findOneAndUpdate(
+      { riderId: riderObjectId, endAt: null },
+      { $set: { endAt: new Date() } },
+      { sort: { startAt: -1 } },
+    ).catch(() => undefined)
+  }
+
   async suspendRider(riderId: string, dto: SuspendRiderDto): Promise<RiderDocument> {
     const rider = await this.riderModel.findById(riderId)
     if (!rider) throw new NotFoundException('Rider not found')
@@ -411,6 +449,7 @@ export class RidersService {
       { $set: { isSuspended: true, suspensionReason: dto.reason, isOnline: false, isAvailable: false } },
       { new: true },
     ) as RiderDocument
+    void this.closeOpenSession(suspended._id as Types.ObjectId)
     void this.notifications.onAdminActionOnRider(suspended.userId.toString(), 'suspended', dto.reason).catch(() => undefined)
     return suspended
   }
@@ -447,6 +486,7 @@ export class RidersService {
       },
       { new: true },
     ) as RiderDocument
+    void this.closeOpenSession(terminated._id as Types.ObjectId)
     void this.notifications.onAdminActionOnRider(terminated.userId.toString(), 'terminated').catch(() => undefined)
     return terminated
   }

@@ -24,7 +24,8 @@ export class TrackingService {
     // Notify anyone watching the order room (e.g. admin dashboard)
     this.gateway.sendToOrderRoom(orderId, 'order:status_update', payload)
     // Clear proximity alert Sets on PICKED_UP (restaurant leg done) and on terminal
-    // statuses (DELIVERED, CANCELLED) so completed order IDs don't accumulate in memory.
+    // statuses (DELIVERED, CANCELLED) so completed order IDs don't accumulate.
+    // Refunded orders go through CANCELLED first, so no separate REFUNDED case.
     if (
       status === OS.PICKED_UP ||
       status === OS.DELIVERED ||
@@ -40,26 +41,23 @@ export class TrackingService {
     this.gateway.server.to('role_super_admin').emit('order:new', { order })
   }
 
-  notifyRiderNewJob(riderId: string, order: unknown): void {
-    this.gateway.sendToUser(riderId, 'rider:new_job', { order })
-  }
-
-  async broadcastOrderToRiders(riderUserIds: string[], order: unknown): Promise<void> {
-    // Strip customer PII before broadcasting to unassigned candidate riders.
-    // They only need enough to decide whether to accept — not the customer's
-    // identity, exact address, or payment details.
+  // Strip customer PII (phone, exact delivery address, coordinates, payment) before
+  // sending an order preview to riders. Applies to both broadcast (unassigned candidates)
+  // and direct rider offers — in both cases the rider has not yet picked up, so they
+  // shouldn't see anything beyond what they need to decide/navigate to pickup.
+  // Full delivery details are fetched from the server after PICKED_UP via gated endpoints.
+  private sanitizeOrderForRider(order: unknown): Record<string, unknown> {
     const o = order as Record<string, unknown>
     const addr = (o['deliveryAddress'] ?? {}) as Record<string, unknown>
     const pricing = (o['pricing'] ?? {}) as Record<string, unknown>
     const items = (o['items'] as unknown[]) ?? []
 
-    const sanitized = {
+    return {
       _id:                  o['_id'],
       orderNumber:          o['orderNumber'],
       restaurantId:         o['restaurantId'],
       restaurantName:       o['restaurantName'],
       restaurantPickupAddress: o['restaurantPickupAddress'],
-      // Delivery neighbourhood only — no street, no GPS coordinates
       deliveryNeighbourhood: { city: addr['city'], state: addr['state'] },
       itemCount:            items.length,
       pricing: {
@@ -68,11 +66,19 @@ export class TrackingService {
       },
       status: o['status'],
     }
+  }
+
+  notifyRiderNewJob(riderId: string, order: unknown): void {
+    // Sanitize — rider gets a job-offer preview only. Full details fetched after accept.
+    this.gateway.sendToUser(riderId, 'rider:new_job', { order: this.sanitizeOrderForRider(order) })
+  }
+
+  async broadcastOrderToRiders(riderUserIds: string[], order: unknown): Promise<void> {
+    const sanitized = this.sanitizeOrderForRider(order)
 
     for (const userId of riderUserIds) {
       const roomSize = await this.gateway.getRoomSize(`user_${userId}`)
       this.gateway.sendToUser(userId, 'order:broadcast', { order: sanitized })
-      // roomSize=0 means the event was emitted to an empty room — rider not connected.
       this.logger.warn(`[dispatch] emitted order:broadcast to user_${userId} — ${roomSize} socket(s) in room`)
     }
   }
