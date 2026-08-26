@@ -10,8 +10,16 @@ import { useCartStore } from '../features/cart/store/cart.store'
 
 type VerifyState = 'verifying' | 'success' | 'pending' | 'failed'
 
-const POLL_INTERVAL_MS  = 4_000
-const MAX_POLL_ATTEMPTS = 10 // 40 seconds total — Paystack webhooks arrive within 30s
+// Polling budget — extended from 40s to 90s (20 attempts). Paystack webhooks
+// typically arrive within 30s but tail latencies of 60s+ happen under load or on
+// weekends. If we exhaust and mark pending, the sessionStorage entry persists so
+// the AppShell recovery hook will re-check on next visit / tab focus / reconnect.
+const MAX_POLL_ATTEMPTS = 20
+// Backoff: 2s, 3s, 4s, ... capped at 6s. Starts fast (webhook usually already there)
+// then slows to reduce server load if the webhook is delayed.
+function pollDelayMs(attempt: number): number {
+  return Math.min(2000 + attempt * 500, 6000)
+}
 
 export default function PaymentCallbackPage() {
   const [searchParams] = useSearchParams()
@@ -24,6 +32,7 @@ export default function PaymentCallbackPage() {
   const [amount, setAmount] = useState<number | null>(null)
   const attemptsRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [manualRefreshing, setManualRefreshing] = useState(false)
 
   function cancelPendingOrder() {
     const pendingOrderId = sessionStorage.getItem('pendingPaystackOrderId')
@@ -31,6 +40,39 @@ export default function PaymentCallbackPage() {
     sessionStorage.removeItem('pendingPaystackReference')
     if (pendingOrderId) {
       void ordersApi.cancel(pendingOrderId, 'Payment cancelled or failed').catch(() => undefined)
+    }
+  }
+
+  // Manual re-check triggered by the "Refresh status" button on the pending state.
+  // Runs an out-of-band verify without touching the polling attempt counter.
+  async function checkNow() {
+    if (!reference || manualRefreshing) return
+    setManualRefreshing(true)
+    try {
+      const res = await paymentsApi.verify(reference)
+      const data = res.data.data
+      if (data.verified) {
+        clearCart()
+        sessionStorage.removeItem('pendingPaystackOrderId')
+        sessionStorage.removeItem('pendingPaystackReference')
+        setOrderId(data.orderId)
+        setAmount(data.amount)
+        setState('success')
+        toast.success(t('confirmed'))
+        if (data.orderId) {
+          timerRef.current = setTimeout(() => {
+            void navigate(`/orders/${data.orderId}/tracking`, { replace: true })
+          }, 2200)
+        }
+      } else if (data.status !== 'pending') {
+        cancelPendingOrder()
+        setState('failed')
+      }
+      // still pending — leave state as-is, user can retry
+    } catch {
+      // silent — user can retry
+    } finally {
+      setManualRefreshing(false)
     }
   }
 
@@ -73,17 +115,26 @@ export default function PaymentCallbackPage() {
         // Payment not yet confirmed — may still be pending (webhook not yet arrived)
         if (data.status === 'pending' && attemptsRef.current < MAX_POLL_ATTEMPTS) {
           if (attemptsRef.current === 1) setState('pending')
-          timerRef.current = setTimeout(() => { void verify() }, POLL_INTERVAL_MS)
+          timerRef.current = setTimeout(() => { void verify() }, pollDelayMs(attemptsRef.current))
           return
         }
 
-        // Exhausted retries or payment genuinely failed/cancelled
+        // Exhausted retries, status still pending — DO NOT cancel the order. The
+        // 30-min server-side timeout will catch a truly abandoned payment, and the
+        // AppShell recovery hook will re-verify on next app visit. Cancelling here
+        // would destroy an order that's about to succeed via slow webhook.
+        if (data.status === 'pending') {
+          setState('pending')
+          return
+        }
+
+        // Payment genuinely failed or was cancelled — safe to reap
         cancelPendingOrder()
-        setState(data.status === 'pending' ? 'pending' : 'failed')
+        setState('failed')
       } catch {
         if (cancelled) return
         if (attemptsRef.current < MAX_POLL_ATTEMPTS) {
-          timerRef.current = setTimeout(() => { void verify() }, POLL_INTERVAL_MS)
+          timerRef.current = setTimeout(() => { void verify() }, pollDelayMs(attemptsRef.current))
         } else {
           // Network error after retries — don't destroy the order, let timeout handle it
           setState('pending')
@@ -134,15 +185,22 @@ export default function PaymentCallbackPage() {
           </div>
           <div className="flex flex-col gap-2 w-full max-w-xs mt-2">
             <button
-              onClick={() => void navigate('/orders', { replace: true })}
-              className="w-full py-3.5 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors"
+              onClick={() => void checkNow()}
+              disabled={manualRefreshing}
+              className="w-full py-3.5 rounded-2xl bg-primary text-white font-semibold cursor-pointer hover:bg-primary/90 transition-colors disabled:opacity-60"
               style={{ minHeight: '48px', touchAction: 'manipulation' }}
+            >
+              {manualRefreshing ? t('checking', 'Checking…') : t('refreshStatus', 'Check now')}
+            </button>
+            <button
+              onClick={() => void navigate('/orders', { replace: true })}
+              className="w-full py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium cursor-pointer hover:border-gray-300 transition-colors"
             >
               {t('checkOrders')}
             </button>
             <button
               onClick={() => void navigate('/', { replace: true })}
-              className="w-full py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-medium cursor-pointer hover:border-gray-300 transition-colors"
+              className="w-full py-2.5 text-gray-500 text-xs cursor-pointer hover:text-gray-700 transition-colors"
             >
               {t('backToHome')}
             </button>

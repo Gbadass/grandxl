@@ -27,9 +27,29 @@ let failedQueue: Array<{
   reject: (err: unknown) => void
 }> = []
 
+// Refresh loop guard — if a fresh token keeps getting rejected (server race, clock skew,
+// bad JWT sig), unlimited refresh attempts on unrelated in-flight requests would spin
+// the CPU and hammer the server. Cap refresh attempts within a rolling window.
+// Once tripped, force a hard logout — refreshing further won't help.
+const REFRESH_COOLDOWN_MS = 500       // minimum gap between refresh calls
+const MAX_REFRESHES_PER_WINDOW = 5    // max refresh attempts within window
+const REFRESH_WINDOW_MS = 30_000
+let lastRefreshStartedAt = 0
+let refreshWindowStart = Date.now()
+let refreshCountInWindow = 0
+
 function processQueue(error: unknown, token: string | null = null): void {
   failedQueue.forEach((p) => (error ? p.reject(error) : p.resolve(token!)))
   failedQueue = []
+}
+
+function forceLogoutFor(reason: string): void {
+  useAuthStore.getState().clearAuth()
+  useCartStore.getState().clearCart()
+  import('react-hot-toast').then(({ default: toast }) => {
+    toast.error(reason, { id: 'session-loop', duration: 5000 })
+    setTimeout(() => { window.location.href = '/login' }, 1200)
+  }).catch(() => { window.location.href = '/login' })
 }
 
 // RESPONSE INTERCEPTOR — handle 401 with silent token refresh
@@ -73,6 +93,28 @@ instance.interceptors.response.use(
       }
 
       original._retry = true
+
+      // Circuit breaker — reset window if it's been long enough since first attempt
+      const now = Date.now()
+      if (now - refreshWindowStart > REFRESH_WINDOW_MS) {
+        refreshWindowStart = now
+        refreshCountInWindow = 0
+      }
+      // Cooldown — even if not looping, don't refresh faster than every 500ms
+      if (now - lastRefreshStartedAt < REFRESH_COOLDOWN_MS) {
+        // Somebody else just refreshed. If they succeeded, this request wouldn't be here
+        // (it'd have used the fresh token). Getting here means the fresh token was already
+        // rejected — treat as a session-dead signal.
+        forceLogoutFor('Your session could not be renewed. Please log in again.')
+        return Promise.reject(error)
+      }
+      if (refreshCountInWindow >= MAX_REFRESHES_PER_WINDOW) {
+        forceLogoutFor('Session refresh failed too many times. Please log in again.')
+        return Promise.reject(error)
+      }
+
+      lastRefreshStartedAt = now
+      refreshCountInWindow += 1
       isRefreshing = true
 
       try {
@@ -89,13 +131,7 @@ instance.interceptors.response.use(
         return instance(original)
       } catch (err) {
         processQueue(err)
-        useAuthStore.getState().clearAuth()
-        useCartStore.getState().clearCart()
-        // Inform the user before the redirect — silent redirects feel like bugs
-        import('react-hot-toast').then(({ default: toast }) => {
-          toast.error('Your session expired. Please log in again.', { id: 'session-expired', duration: 4000 })
-          setTimeout(() => { window.location.href = '/login' }, 800)
-        }).catch(() => { window.location.href = '/login' })
+        forceLogoutFor('Your session expired. Please log in again.')
         return Promise.reject(err)
       } finally {
         isRefreshing = false

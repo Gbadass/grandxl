@@ -844,12 +844,20 @@ export default function OrderTrackingPage() {
   useEffect(() => {
     if (!id) return
 
+    // Track whether we ever successfully asked the server to join. Only emit leave
+    // if we did — otherwise unmount-before-connect races could send an orphan leave
+    // and, on reconnect, we could re-join and leave a stale room membership behind.
+    let hasEmittedJoin = false
+
     function joinRoom() {
+      if (!socket.connected) return
       socket.emit('order:join_room', { orderId: id! })
+      hasEmittedJoin = true
     }
 
     joinRoom()
-    // Re-join on reconnect — socket loses room membership on disconnect
+    // Re-join on reconnect. Server drops all room membership on socket disconnect,
+    // so a fresh connection is a fresh slate — safe to re-emit.
     socket.on('connect', joinRoom)
 
     function onStatusUpdate(data: { orderId: string; status: string; eta?: number }) {
@@ -891,7 +899,12 @@ export default function OrderTrackingPage() {
       socket.off('rider:location', onRiderLocation)
       socket.off('rider:approaching_customer', onRiderApproachingCustomer)
       socket.off('order:dispatch_update', onDispatchUpdate)
-      socket.emit('order:leave_room', { orderId: id })
+      // Only emit leave if we actually joined AND socket is still live. If the socket
+      // disconnected between join and unmount, the server already dropped us from
+      // the room — a leave emit here would be silently discarded anyway.
+      if (hasEmittedJoin && socket.connected) {
+        socket.emit('order:leave_room', { orderId: id })
+      }
     }
   }, [id, queryClient])
 

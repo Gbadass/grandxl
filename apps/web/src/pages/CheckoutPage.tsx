@@ -262,8 +262,10 @@ export default function CheckoutPage() {
         sessionStorage.setItem('pendingPaystackOrderId', order._id)
         sessionStorage.setItem('pendingPaystackReference', paystackRef)
 
-        isSubmittingRef.current = false
-        setIsSubmitting(false) // re-enable the button while popup is open
+        // Keep the Place Order button LOCKED while the Paystack popup is open. A
+        // previous version unlocked it here for "retry if cancel", but that opened
+        // a race — user could tap Place Order again during the popup and create a
+        // second ghost order. The onCancel callback below re-enables it correctly.
 
         // Open Paystack inline popup — stays on this page, no full-page redirect.
         // v2 API: when the backend pre-initializes the transaction (which we do),
@@ -280,7 +282,8 @@ export default function CheckoutPage() {
         type PaystackPopCtor = new () => PaystackPopInstance
         const PaystackPop = (window as unknown as { PaystackPop?: PaystackPopCtor }).PaystackPop
         if (!PaystackPop) {
-          // Script not yet loaded (very slow network) — fall back to redirect
+          // Script not yet loaded (very slow network) — fall back to redirect.
+          // Leave the button locked; the user is about to leave the page anyway.
           window.location.href = authorizationUrl
           return
         }
@@ -292,10 +295,14 @@ export default function CheckoutPage() {
             sessionStorage.removeItem('pendingPaystackReference')
             void ordersApi.cancel(order._id, 'Payment cancelled by user').catch(() => undefined)
             toast(t('checkout:paymentCancelled', 'Payment cancelled — your cart is ready.'))
+            // Re-enable Place Order so user can retry from the same cart
+            isSubmittingRef.current = false
+            setIsSubmitting(false)
           },
 
           onSuccess(_response) {
-            // Payment completed — clear cart and navigate to tracking
+            // Payment completed — clear cart and navigate to tracking.
+            // No need to unlock the button; we're navigating away.
             clearCart()
             sessionStorage.removeItem('pendingPaystackOrderId')
             sessionStorage.removeItem('pendingPaystackReference')
@@ -311,10 +318,13 @@ export default function CheckoutPage() {
       setPlacedOrderId(order._id)
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, t('common:error')))
-    } finally {
+      // On any error, unlock so user can try again
       isSubmittingRef.current = false
       setIsSubmitting(false)
     }
+    // NOTE: no finally block. Success paths (Paystack popup + navigation OR non-Paystack
+    // placement) intentionally leave the button locked — user is either mid-payment or
+    // about to be navigated to /orders. Only onCancel and catch re-enable it.
   }
 
   return (
