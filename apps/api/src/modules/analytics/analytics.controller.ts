@@ -1,4 +1,4 @@
-import { Controller, Get, Query, ParseIntPipe, DefaultValuePipe } from '@nestjs/common'
+import { BadRequestException, Controller, Get, Query, ParseIntPipe, DefaultValuePipe } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse, ApiQuery } from '@nestjs/swagger'
 import { AnalyticsService } from './analytics.service'
@@ -33,6 +33,33 @@ export class AnalyticsController {
     @Query('restaurantId', ParseObjectIdPipe) restaurantId: string,
   ) {
     return this.analyticsService.getRestaurantAnalytics(restaurantId)
+  }
+
+  @Get('restaurant/financial-report')
+  @Roles(UserRole.RESTAURANT_OWNER)
+  @ApiOperation({ summary: 'Get financial report for a restaurant (owner only)' })
+  @ApiOkResponse({ description: 'Gross/net/fees breakdown + payment-method + cancellations for a date range' })
+  @ApiQuery({ name: 'restaurantId', required: true })
+  @ApiQuery({ name: 'from', required: false, description: 'ISO date (yyyy-mm-dd). Defaults to 30 days before `to`.' })
+  @ApiQuery({ name: 'to',   required: false, description: 'ISO date (yyyy-mm-dd). Defaults to today.' })
+  async getRestaurantFinancialReport(
+    @Query('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Query('from') from?: string,
+    @Query('to')   to?:   string,
+  ) {
+    try {
+      return await this.analyticsService.getRestaurantFinancialReport(restaurantId, from, to)
+    } catch (err) {
+      // Service throws plain Errors for invalid ranges — convert to a 400 rather
+      // than letting them become 500s and paging the on-call.
+      if (err instanceof Error && (
+        err.message.startsWith('Invalid date range') ||
+        err.message.startsWith('Date range too wide')
+      )) {
+        throw new BadRequestException(err.message)
+      }
+      throw err
+    }
   }
 
   @Get('admin/analytics/dispatch')

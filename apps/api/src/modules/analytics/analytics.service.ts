@@ -7,6 +7,7 @@ import { OrderDocument } from '../orders/schemas/order.schema'
 import { RestaurantDocument } from '../restaurants/schemas/restaurant.schema'
 import { RiderDocument } from '../riders/schemas/rider.schema'
 import { RiderOnlineSessionDocument } from '../riders/schemas/rider-online-session.schema'
+import { CANCEL_REASON_TEXT } from '../orders/dto/update-order-status.dto'
 import {
   ORDER_TIMEOUT_QUEUE,
   RIDER_DISPATCH_QUEUE,
@@ -19,6 +20,23 @@ import {
 // clamp to this instead of "now" so their utilization doesn't get inflated by
 // phantom hours. 12h is generous — real shifts don't run that long.
 const STALE_SESSION_MS = 12 * 60 * 60 * 1000
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+function endOfDay(d: Date): Date {
+  const x = new Date(d)
+  x.setHours(23, 59, 59, 999)
+  return x
+}
+
+function labelForCancelReason(code: string | null): string {
+  if (!code) return 'Legacy / no code'
+  return (CANCEL_REASON_TEXT as Record<string, string>)[code] ?? code
+}
 
 @Injectable()
 export class AnalyticsService {
@@ -187,6 +205,236 @@ export class AnalyticsService {
       },
       dailyOrders,
       topItems,
+    }
+  }
+
+  // ── Sprint 12 (S12-5): Financial report ───────────────────────────
+  //
+  // Money-first view for a single restaurant over a date range. Distinct from
+  // getRestaurantAnalytics (which is operational — orders, top items, completion
+  // rate). This one answers "what came in, where did it go, what am I owed" so
+  // the owner can reconcile against Paystack settlements and their bank.
+  //
+  // Only DELIVERED orders count toward gross/net — pending orders are unrealized
+  // revenue and would double-count during dispute windows. Refunds are reported
+  // separately as a reversal signal, not netted from gross (accounting prefers
+  // gross totals + a refund line to a mysterious "net" that hides reversals).
+  async getRestaurantFinancialReport(
+    restaurantId: string,
+    fromInput?: string,
+    toInput?: string,
+  ) {
+    const rid = new Types.ObjectId(restaurantId)
+
+    // Default window is the trailing 30 days ending today (inclusive).
+    const now = new Date()
+    const to = toInput ? endOfDay(new Date(toInput)) : endOfDay(now)
+    const from = fromInput
+      ? startOfDay(new Date(fromInput))
+      : startOfDay(new Date(to.getTime() - 29 * 24 * 60 * 60 * 1000))
+
+    // Clamp to sane bounds so nobody accidentally aggregates the entire history.
+    // 366 lets someone pull "last year"; anything wider should be paged/exported
+    // out-of-band, not served synchronously.
+    const spanMs = to.getTime() - from.getTime()
+    if (spanMs < 0) {
+      throw new Error('Invalid date range: `to` must be on or after `from`')
+    }
+    const maxMs = 366 * 24 * 60 * 60 * 1000
+    if (spanMs > maxMs) {
+      throw new Error('Date range too wide: max 366 days per report')
+    }
+
+    // Immediately preceding equal-length window, used for delta chips.
+    const prevTo = new Date(from.getTime() - 1)
+    const prevFrom = new Date(prevTo.getTime() - spanMs)
+
+    const deliveredMatch = {
+      restaurantId: rid,
+      status: 'delivered',
+      createdAt: { $gte: from, $lte: to },
+    }
+    const cancelledMatch = {
+      restaurantId: rid,
+      status: 'cancelled',
+      createdAt: { $gte: from, $lte: to },
+    }
+    const refundedMatch = {
+      restaurantId: rid,
+      'payment.status': 'refunded',
+      createdAt: { $gte: from, $lte: to },
+    }
+    const prevDeliveredMatch = {
+      restaurantId: rid,
+      status: 'delivered',
+      createdAt: { $gte: prevFrom, $lte: prevTo },
+    }
+
+    const [
+      totalsAgg,
+      refundAgg,
+      cancelledCount,
+      byPaymentAgg,
+      byCancelAgg,
+      dailyAgg,
+      prevTotalsAgg,
+    ] = await Promise.all([
+      // Delivered-orders roll-up. Net-to-restaurant = subtotal - discount (matches
+      // the model used on the Payments page). Delivery fee → rider, service fee →
+      // platform, both surfaced so the owner can see where the customer's money went.
+      this.orderModel.aggregate([
+        { $match: deliveredMatch },
+        {
+          $group: {
+            _id: null,
+            orders: { $sum: 1 },
+            grossKobo:       { $sum: '$pricing.total' },
+            subtotalKobo:    { $sum: '$pricing.subtotal' },
+            deliveryFeeKobo: { $sum: '$pricing.deliveryFee' },
+            serviceFeeKobo:  { $sum: '$pricing.serviceFee' },
+            discountKobo:    { $sum: '$pricing.discount' },
+            vatKobo:         { $sum: '$pricing.vat' },
+            tipKobo:         { $sum: '$pricing.tip' },
+          },
+        },
+      ]),
+      // Refunds — a separate line, not netted from gross.
+      this.orderModel.aggregate([
+        { $match: refundedMatch },
+        {
+          $group: {
+            _id: null,
+            orders: { $sum: 1 },
+            refundedKobo: { $sum: '$pricing.total' },
+          },
+        },
+      ]),
+      this.orderModel.countDocuments(cancelledMatch),
+      // Per-method breakdown so the owner can tick Paystack totals against their
+      // settlement statement, wallet against internal ledger, and cash against
+      // the physical drawer.
+      this.orderModel.aggregate([
+        { $match: deliveredMatch },
+        {
+          $group: {
+            _id: '$payment.method',
+            orders: { $sum: 1 },
+            grossKobo: { $sum: '$pricing.total' },
+            netKobo: {
+              $sum: {
+                $max: [{ $subtract: ['$pricing.subtotal', '$pricing.discount'] }, 0],
+              },
+            },
+          },
+        },
+      ]),
+      // Cancellations by reason code. `null` bucket = orders cancelled before
+      // S12-1 shipped (they only have the free-text `cancelReason`).
+      this.orderModel.aggregate([
+        { $match: cancelledMatch },
+        { $group: { _id: '$cancelReasonCode', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+      // Daily rows for the CSV export + trend chart. Grouped in UTC to match
+      // the existing dailyOrders shape ('YYYY-MM-DD' string).
+      this.orderModel.aggregate([
+        { $match: deliveredMatch },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            orders: { $sum: 1 },
+            grossKobo:       { $sum: '$pricing.total' },
+            subtotalKobo:    { $sum: '$pricing.subtotal' },
+            deliveryFeeKobo: { $sum: '$pricing.deliveryFee' },
+            serviceFeeKobo:  { $sum: '$pricing.serviceFee' },
+            discountKobo:    { $sum: '$pricing.discount' },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      // Previous period — only the two numbers used on delta chips.
+      this.orderModel.aggregate([
+        { $match: prevDeliveredMatch },
+        {
+          $group: {
+            _id: null,
+            orders: { $sum: 1 },
+            grossKobo: { $sum: '$pricing.total' },
+          },
+        },
+      ]),
+    ])
+
+    const t = totalsAgg[0] ?? {
+      orders: 0, grossKobo: 0, subtotalKobo: 0, deliveryFeeKobo: 0,
+      serviceFeeKobo: 0, discountKobo: 0, vatKobo: 0, tipKobo: 0,
+    }
+    const r = refundAgg[0] ?? { orders: 0, refundedKobo: 0 }
+    const p = prevTotalsAgg[0] ?? { orders: 0, grossKobo: 0 }
+
+    const netKobo = Math.max(0, (t.subtotalKobo as number) - (t.discountKobo as number))
+    const avgOrderKobo = (t.orders as number) > 0
+      ? Math.round((t.grossKobo as number) / (t.orders as number))
+      : 0
+
+    return {
+      period: {
+        from: from.toISOString(),
+        to:   to.toISOString(),
+        days: Math.ceil(spanMs / (24 * 60 * 60 * 1000)) + 1,
+      },
+      previousPeriod: {
+        from: prevFrom.toISOString(),
+        to:   prevTo.toISOString(),
+      },
+      totals: {
+        ordersDelivered: t.orders as number,
+        ordersCancelled: cancelledCount,
+        ordersRefunded:  r.orders as number,
+        grossKobo:       t.grossKobo as number,
+        netKobo,
+        subtotalKobo:    t.subtotalKobo as number,
+        deliveryFeeKobo: t.deliveryFeeKobo as number,
+        serviceFeeKobo:  t.serviceFeeKobo as number,
+        discountKobo:    t.discountKobo as number,
+        vatKobo:         t.vatKobo as number,
+        tipKobo:         t.tipKobo as number,
+        refundedKobo:    r.refundedKobo as number,
+        avgOrderKobo,
+      },
+      previousTotals: {
+        ordersDelivered: p.orders as number,
+        grossKobo:       p.grossKobo as number,
+      },
+      byPaymentMethod: (byPaymentAgg as Array<{ _id: string; orders: number; grossKobo: number; netKobo: number }>)
+        .map((row) => ({
+          method:    row._id,
+          orders:    row.orders,
+          grossKobo: row.grossKobo,
+          netKobo:   row.netKobo,
+        })),
+      byCancelReason: (byCancelAgg as Array<{ _id: string | null; count: number }>).map((row) => ({
+        code:  row._id,
+        label: labelForCancelReason(row._id),
+        count: row.count,
+      })),
+      daily: (dailyAgg as Array<{
+        _id: string
+        orders: number
+        grossKobo: number
+        subtotalKobo: number
+        deliveryFeeKobo: number
+        serviceFeeKobo: number
+        discountKobo: number
+      }>).map((row) => ({
+        date:            row._id,
+        orders:          row.orders,
+        grossKobo:       row.grossKobo,
+        netKobo:         Math.max(0, row.subtotalKobo - row.discountKobo),
+        deliveryFeeKobo: row.deliveryFeeKobo,
+        serviceFeeKobo:  row.serviceFeeKobo,
+        discountKobo:    row.discountKobo,
+      })),
     }
   }
 

@@ -7,6 +7,7 @@ const NAV: NavItem[] = [
   { href: '/restaurant/orders',     label: 'Orders',         icon: 'orders'     },
   { href: '/restaurant/kitchen',    label: 'Kitchen Display', icon: 'orders'     },
   { href: '/restaurant/payments',   label: 'Payments',       icon: 'payouts'    },
+  { href: '/restaurant/finance',    label: 'Finance',        icon: 'reports'    },
   { href: '/restaurant/menu',       label: 'Menu',       icon: 'menu'       },
   { href: '/restaurant/categories', label: 'Categories', icon: 'categories' },
   { href: '/restaurant/promotions', label: 'Promotions', icon: 'promotions' },

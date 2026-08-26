@@ -504,6 +504,57 @@ export interface RiderUtilizationData {
   bottomRiders: RiderUtilizationRow[]
 }
 
+// ── Sprint 12 (S12-5): Financial report ─────────────────────────────────────
+
+export interface FinancialReportTotals {
+  ordersDelivered: number
+  ordersCancelled: number
+  ordersRefunded:  number
+  grossKobo:       number
+  netKobo:         number
+  subtotalKobo:    number
+  deliveryFeeKobo: number
+  serviceFeeKobo:  number
+  discountKobo:    number
+  vatKobo:         number
+  tipKobo:         number
+  refundedKobo:    number
+  avgOrderKobo:    number
+}
+
+export interface FinancialReportPaymentRow {
+  method:    'paystack' | 'wallet' | 'cash'
+  orders:    number
+  grossKobo: number
+  netKobo:   number
+}
+
+export interface FinancialReportCancelRow {
+  code:  string | null
+  label: string
+  count: number
+}
+
+export interface FinancialReportDailyRow {
+  date:            string
+  orders:          number
+  grossKobo:       number
+  netKobo:         number
+  deliveryFeeKobo: number
+  serviceFeeKobo:  number
+  discountKobo:    number
+}
+
+export interface FinancialReportData {
+  period:         { from: string; to: string; days: number }
+  previousPeriod: { from: string; to: string }
+  totals:         FinancialReportTotals
+  previousTotals: { ordersDelivered: number; grossKobo: number }
+  byPaymentMethod: FinancialReportPaymentRow[]
+  byCancelReason:  FinancialReportCancelRow[]
+  daily:           FinancialReportDailyRow[]
+}
+
 export const analyticsApi = {
   getPlatform: () =>
     getClient().get<ApiResponse<PlatformAnalyticsData>>('/admin/analytics'),
@@ -511,6 +562,11 @@ export const analyticsApi = {
   getRestaurant: (restaurantId: string) =>
     getClient().get<ApiResponse<RestaurantAnalyticsData>>('/restaurant/analytics', {
       params: { restaurantId },
+    }),
+
+  getRestaurantFinancialReport: (restaurantId: string, from?: string, to?: string) =>
+    getClient().get<ApiResponse<FinancialReportData>>('/restaurant/financial-report', {
+      params: { restaurantId, from, to },
     }),
 
   getDispatchMetrics: (days = 7) =>
