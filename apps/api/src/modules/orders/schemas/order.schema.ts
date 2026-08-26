@@ -228,3 +228,5 @@ OrderSchema.index({ restaurantId: 1, status: 1, createdAt: -1 })
 OrderSchema.index({ riderId: 1, status: 1 })
 OrderSchema.index({ status: 1, createdAt: -1 }) // admin dashboard
 OrderSchema.index({ 'payment.status': 1, 'payment.reference': 1 }) // payment webhook lookup
+// Rider earnings / wait-time analytics — queried by (riderId, riderAssignedAt desc)
+OrderSchema.index({ riderId: 1, riderAssignedAt: -1 })

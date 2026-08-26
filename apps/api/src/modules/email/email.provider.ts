@@ -243,6 +243,28 @@ export class EmailProvider {
     })
   }
 
+  async sendEmailChangeVerification(newEmail: string, firstName: string, token: string): Promise<void> {
+    const clientUrl = this.config.get<string>('WEB_URL', 'http://localhost:5173')
+    const verifyUrl = `${clientUrl}/verify-email-change?token=${token}`
+    await this.send({
+      to: newEmail,
+      subject: 'Confirm your new GrandXL email',
+      html: `
+        <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;color:#111">
+          <h2 style="margin-bottom:8px">Hi ${firstName},</h2>
+          <p style="color:#555;line-height:1.55">You requested to change your GrandXL account email to this address.</p>
+          <p style="color:#555;line-height:1.55">Click the button below to confirm. Link expires in <strong>15 minutes</strong>.</p>
+          <a href="${verifyUrl}"
+             style="background:#f97316;color:#fff;padding:12px 24px;border-radius:9999px;text-decoration:none;display:inline-block;margin:16px 0;font-weight:600">
+            Confirm new email
+          </a>
+          <p style="color:#888;font-size:13px;margin-top:24px">If you didn't request this, ignore this email — your account email will not change.</p>
+          <p style="margin-top:24px;color:#aaa;font-size:12px">— The GrandXL Team</p>
+        </div>
+      `,
+    })
+  }
+
   async sendAdminSecurityAlert(email: string, lockedUntil: Date): Promise<void> {
     await this.send({
       to: email,

@@ -379,7 +379,8 @@ export class OrdersService {
       if (when.getTime() > now + maxAhead) {
         throw new BadRequestException('Scheduled orders can be no more than 7 days out')
       }
-      if (restaurant.openingHours && !isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours, 'Africa/Lagos', when)) {
+      const tz = (restaurant as unknown as { timezone?: string }).timezone ?? 'Africa/Lagos'
+      if (restaurant.openingHours && !isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours, tz, when)) {
         throw new BadRequestException('Restaurant will be closed at the scheduled time')
       }
       scheduledFor = when

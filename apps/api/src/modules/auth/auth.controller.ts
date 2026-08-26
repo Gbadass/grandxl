@@ -7,7 +7,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiCookieAuth } from '@nestjs/swagger'
+import { ApiTags, ApiOperation, ApiCookieAuth, ApiBearerAuth } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
 import type { Request, Response } from 'express'
 import { AuthService } from './auth.service'
@@ -18,6 +18,9 @@ import { VerifyOtpDto } from './dto/verify-otp.dto'
 import { RefreshMobileDto } from './dto/refresh-mobile.dto'
 import { ForgotPasswordDto } from './dto/forgot-password.dto'
 import { ResetPasswordDto } from './dto/reset-password.dto'
+import { ChangePasswordDto } from './dto/change-password.dto'
+import { RequestEmailChangeDto, VerifyEmailChangeDto } from './dto/change-email.dto'
+import { RequestPhoneChangeDto, VerifyPhoneChangeDto } from './dto/change-phone.dto'
 import { AdminLoginDto } from './dto/admin-login.dto'
 import { PortalLoginDto } from './dto/portal-login.dto'
 import { AddRoleDto } from './dto/add-role.dto'
@@ -165,6 +168,67 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto) {
     await this.authService.resetPassword(dto)
     return { message: 'Password reset successfully. Please log in.' }
+  }
+
+  // Authenticated password change — not @Public. Rate-limited to prevent brute-force
+  // guessing of the current password via this endpoint. Success revokes ALL sessions
+  // for this user across all devices.
+  @Throttle({ medium: { limit: 5, ttl: 60_000 } })
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change password (authenticated) — verifies current, revokes all sessions' })
+  async changePassword(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    await this.authService.changePassword(user.sub, dto)
+    return { message: 'Password changed. Please log in again.' }
+  }
+
+  // Change email — two step. Step 1: request. Sends verification link to NEW address.
+  @Throttle({ medium: { limit: 3, ttl: 60_000 } })
+  @Post('change-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Request email change — sends verification link to new email' })
+  async changeEmail(@CurrentUser() user: JwtPayload, @Body() dto: RequestEmailChangeDto) {
+    await this.authService.requestEmailChange(user.sub, dto)
+    return { message: 'Verification link sent to the new email.' }
+  }
+
+  // Change email — step 2: verify. Public because the user may click the link on a
+  // different device where they aren't logged in. The token is single-use, TTL 15min.
+  @Public()
+  @Throttle({ medium: { limit: 10, ttl: 60_000 } })
+  @Post('verify-email-change')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify email change using token from email link' })
+  async verifyEmailChange(@Body() dto: VerifyEmailChangeDto) {
+    await this.authService.verifyEmailChange(dto)
+    return { message: 'Email updated successfully.' }
+  }
+
+  // Change phone — two step. Step 1: request. Sends OTP to NEW phone via Termii.
+  @Throttle({ medium: { limit: 3, ttl: 60_000 } })
+  @Post('change-phone')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Request phone change — sends OTP to new phone' })
+  async changePhone(@CurrentUser() user: JwtPayload, @Body() dto: RequestPhoneChangeDto) {
+    await this.authService.requestPhoneChange(user.sub, dto)
+    return { message: 'OTP sent to the new phone.' }
+  }
+
+  // Change phone — step 2: verify. Authenticated because pending change is keyed by userId.
+  @Throttle({ medium: { limit: 10, ttl: 60_000 } })
+  @Post('verify-phone-change')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verify phone change using OTP sent to new phone' })
+  async verifyPhoneChange(@CurrentUser() user: JwtPayload, @Body() dto: VerifyPhoneChangeDto) {
+    await this.authService.verifyPhoneChange(user.sub, dto)
+    return { message: 'Phone updated successfully.' }
   }
 
   @Public()

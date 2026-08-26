@@ -1,12 +1,18 @@
 import { Controller, Get, Query, ParseIntPipe, DefaultValuePipe } from '@nestjs/common'
+import { Throttle } from '@nestjs/throttler'
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse, ApiQuery } from '@nestjs/swagger'
 import { AnalyticsService } from './analytics.service'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
 import { UserRole } from '@grandxl/types'
 
+// Tighter per-caller rate limit for analytics — these queries are expensive
+// (aggregation pipelines over the full orders collection) and would otherwise
+// be scrapeable at the global default of 120/min. 30/min per admin is plenty
+// for dashboard refreshes; abnormal patterns get 429.
 @ApiTags('Analytics')
 @ApiBearerAuth()
+@Throttle({ medium: { limit: 30, ttl: 60_000 } })
 @Controller()
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}

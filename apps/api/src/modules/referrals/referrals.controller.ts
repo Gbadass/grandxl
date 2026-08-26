@@ -1,8 +1,11 @@
 import {
   Controller,
+  DefaultValuePipe,
   Get,
+  ParseIntPipe,
   Post,
   Body,
+  Query,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common'
@@ -12,6 +15,7 @@ import {
   ApiOperation,
   ApiOkResponse,
   ApiCreatedResponse,
+  ApiQuery,
 } from '@nestjs/swagger'
 import { ReferralsService } from './referrals.service'
 import { ApplyReferralDto } from './dto/apply-referral.dto'
@@ -49,5 +53,21 @@ export class ReferralsController {
   ) {
     await this.referralsService.applyReferralCode(user.sub, dto.code)
     return { applied: true }
+  }
+}
+
+@ApiTags('Admin — Referrals')
+@ApiBearerAuth()
+@Controller('admin/referrals')
+export class AdminReferralsController {
+  constructor(private readonly referralsService: ReferralsService) {}
+
+  @Get('overview')
+  @Roles(UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Platform-wide referral analytics + top referrers' })
+  @ApiOkResponse({ description: 'Overview stats' })
+  @ApiQuery({ name: 'days', required: false, description: 'Lookback window (default 30)' })
+  getOverview(@Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number) {
+    return this.referralsService.getAdminOverview(days)
   }
 }

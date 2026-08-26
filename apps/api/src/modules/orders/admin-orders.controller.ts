@@ -1,17 +1,24 @@
-import { Controller, Get, Post, Delete, Param, Query, HttpCode, HttpStatus } from '@nestjs/common'
+import { Controller, Get, Post, Delete, Param, Query, Req, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse } from '@nestjs/swagger'
+import type { Request } from 'express'
 import { OrdersService } from './orders.service'
 import { QueryOrdersDto } from './dto/query-orders.dto'
 import { Roles } from '../../common/decorators/roles.decorator'
+import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
+import { AuditService } from '../audit/audit.service'
 import { UserRole } from '@grandxl/types'
+import type { JwtPayload } from '@grandxl/types'
 
 @ApiTags('Admin — Orders')
 @ApiBearerAuth()
 @Roles(UserRole.SUPER_ADMIN)
 @Controller('admin/orders')
 export class AdminOrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List all orders (admin)' })
@@ -24,8 +31,18 @@ export class AdminOrdersController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'System-wide order clear — hides all orders from every view (soft-delete)' })
   @ApiOkResponse({ description: 'Number of orders cleared' })
-  async clearAll() {
-    return this.ordersService.clearAllOrders()
+  async clearAll(@CurrentUser() user: JwtPayload, @Req() req: Request) {
+    const result = await this.ordersService.clearAllOrders()
+    void this.audit.log({
+      actorId:    user.sub,
+      ipAddress:  (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip,
+      userAgent:  req.headers['user-agent'],
+      action:     'orders.clear_all',
+      targetType: 'orders_collection',
+      targetId:   'all',
+      metadata:   { clearedCount: result.cleared },
+    })
+    return result
   }
 
   @Get(':id')
@@ -39,8 +56,21 @@ export class AdminOrdersController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Re-queue rider dispatch for a stuck order — clears declinedBy and fires a fresh dispatch job' })
   @ApiOkResponse({ description: 'Dispatch re-queued' })
-  async redispatch(@Param('id', ParseObjectIdPipe) id: string) {
+  async redispatch(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: Request,
+  ) {
     await this.ordersService.adminRedispatch(id)
+    void this.audit.log({
+      actorId:    user.sub,
+      ipAddress:  (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip,
+      userAgent:  req.headers['user-agent'],
+      action:     'orders.redispatch',
+      targetType: 'order',
+      targetId:   id,
+      metadata:   {},
+    })
     return { message: 'Dispatch re-queued' }
   }
 

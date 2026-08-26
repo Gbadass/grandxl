@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Copy, Check, Share2, Users, Gift, ChevronRight } from 'lucide-react'
+import { Copy, Check, Share2, Users, Gift, ChevronRight, Ticket } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
 import { referralsApi } from '@grandxl/api-client'
 import { formatMoney } from '@grandxl/utils'
+import { getApiErrorMessage } from '../lib/apiError'
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,9 @@ function HowItWorksStep({ number, title, description, delay }: StepProps) {
 
 export default function ReferralPage() {
   const { t } = useTranslation()
+  const qc = useQueryClient()
   const [copied, setCopied] = useState(false)
+  const [applyInput, setApplyInput] = useState('')
 
   const {
     data: res,
@@ -70,6 +73,18 @@ export default function ReferralPage() {
   })
 
   const info = res?.data?.data
+
+  const applyMutation = useMutation({
+    mutationFn: (code: string) => referralsApi.applyCode(code.trim().toUpperCase()),
+    onSuccess: () => {
+      toast.success(t('referral.applied', 'Referral code applied!'))
+      setApplyInput('')
+      void qc.invalidateQueries({ queryKey: ['referral-info'] })
+    },
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, t('referral.applyError', 'Could not apply code — check and try again')))
+    },
+  })
 
   // ── Copy to clipboard ─────────────────────────────────────────────────────
 
@@ -245,6 +260,46 @@ export default function ReferralPage() {
           </p>
         </motion.div>
       </div>
+
+      {/* ── Apply a code (only if they haven't already) ──────────────────────── */}
+      {!info.hasAppliedCode && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.18, duration: 0.25 }}
+          className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-4"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Ticket size={14} className="text-zinc-400" />
+            <p className="text-sm font-semibold text-zinc-200">
+              {t('referral.applyTitle', 'Have a referral code?')}
+            </p>
+          </div>
+          <p className="text-xs text-zinc-400 mb-3">
+            {t('referral.applyDesc', 'Apply a friend\'s code and they earn ₦500 after your first order.')}
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={applyInput}
+              onChange={(e) => setApplyInput(e.target.value.toUpperCase())}
+              placeholder={t('referral.applyPlaceholder', 'ENTER CODE')}
+              disabled={applyMutation.isPending}
+              maxLength={16}
+              className="flex-1 bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-2xl px-4 text-sm font-mono tracking-wider focus:outline-none focus:border-primary/60 disabled:opacity-50"
+              style={{ minHeight: 48 }}
+            />
+            <button
+              onClick={() => applyMutation.mutate(applyInput)}
+              disabled={applyMutation.isPending || applyInput.trim().length < 4}
+              className="bg-primary text-white rounded-2xl px-5 text-sm font-semibold hover:opacity-90 active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              style={{ minHeight: 48, touchAction: 'manipulation' }}
+            >
+              {applyMutation.isPending ? '…' : t('referral.apply', 'Apply')}
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {/* ── How it works ─────────────────────────────────────────────────────── */}
       <motion.div

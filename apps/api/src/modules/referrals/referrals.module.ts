@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { ReferralDocument, ReferralSchema } from './schemas/referral.schema'
 import { ReferralsService } from './referrals.service'
-import { ReferralsController } from './referrals.controller'
+import { ReferralsController, AdminReferralsController } from './referrals.controller'
 import { UsersModule } from '../users/users.module'
 
 @Module({
@@ -13,7 +13,7 @@ import { UsersModule } from '../users/users.module'
     UsersModule,
     // WalletModule is @Global() — no explicit import needed
   ],
-  controllers: [ReferralsController],
+  controllers: [ReferralsController, AdminReferralsController],
   providers: [ReferralsService],
   exports: [ReferralsService],
 })

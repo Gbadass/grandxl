@@ -45,6 +45,9 @@ import type { RegisterDto } from './dto/register.dto'
 import type { LoginDto } from './dto/login.dto'
 import type { VerifyOtpDto } from './dto/verify-otp.dto'
 import type { ResetPasswordDto } from './dto/reset-password.dto'
+import type { ChangePasswordDto } from './dto/change-password.dto'
+import type { RequestEmailChangeDto, VerifyEmailChangeDto } from './dto/change-email.dto'
+import type { RequestPhoneChangeDto, VerifyPhoneChangeDto } from './dto/change-phone.dto'
 import type { AdminLoginDto } from './dto/admin-login.dto'
 import type { PortalLoginDto } from './dto/portal-login.dto'
 import type { VerifyAndAddRoleDto } from './dto/verify-and-add-role.dto'
@@ -451,6 +454,151 @@ export class AuthService {
       ...familyKeys,
     ]
     await this.redis.del(...keysToDelete)
+  }
+
+  // ── Change Password (authenticated) ─────────────────────────────
+  //
+  // For logged-in users to change their password without going through the
+  // forgot-password email flow. Verifies the current password before applying
+  // the new one; then invalidates ALL sessions (including this one) so any
+  // devices where the account was signed in are forced to re-authenticate.
+  async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
+    const user = await this.usersService.findByIdOrThrow(userId)
+    if (!user.passwordHash) {
+      throw new BadRequestException('This account has no password set — use the forgot-password flow')
+    }
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash)
+    if (!valid) {
+      throw new UnauthorizedException('Current password is incorrect')
+    }
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException('New password must be different from current password')
+    }
+
+    const newHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS)
+    await this.usersService.updatePasswordHash(userId, newHash)
+
+    // Invalidate all refresh token families — user must re-login on every device.
+    // Uses the same pattern as resetPassword: scan then bulk delete.
+    const familyKeys = await this.redis.keys(`${REDIS_REFRESH_TOKEN_PREFIX}${userId}:*`)
+    const keysToDelete = [
+      `${REDIS_REFRESH_TOKEN_PREFIX}${userId}`, // legacy single-slot key (pre-A6)
+      ...familyKeys,
+    ]
+    if (keysToDelete.length > 0) await this.redis.del(...keysToDelete)
+  }
+
+  // ── Change Email (with re-verification via link to new address) ─
+  //
+  // Two-step: request → verify. Verifying that the caller CONTROLS the new
+  // email closes the account-hijack vector (attacker with a stolen session
+  // could otherwise silently redirect password-reset emails to themselves).
+
+  async requestEmailChange(userId: string, dto: RequestEmailChangeDto): Promise<void> {
+    const user = await this.usersService.findByIdOrThrow(userId)
+    if (!user.passwordHash) throw new BadRequestException('This account has no password')
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash)
+    if (!valid) throw new UnauthorizedException('Current password is incorrect')
+
+    const newEmail = dto.newEmail.toLowerCase().trim()
+    if (user.email === newEmail) throw new BadRequestException('New email is the same as current')
+
+    // Uniqueness check — if another account already owns this email, refuse now
+    // (the verify step would fail later on the DB unique index, but that error
+    // would leak that the email is taken)
+    const taken = await this.usersService.findByEmail(newEmail)
+    if (taken) throw new ConflictException('Email is already in use')
+
+    const token = crypto.randomBytes(32).toString('hex')
+    // 15 min TTL — plenty for a user to click the link, short enough to limit
+    // window of a leaked token.
+    await this.redis.setex(
+      `email-change:${token}`,
+      PWD_RESET_TOKEN_TTL_SECONDS,
+      JSON.stringify({ userId, newEmail }),
+    )
+    await this.email.sendEmailChangeVerification(newEmail, user.firstName, token)
+  }
+
+  async verifyEmailChange(dto: VerifyEmailChangeDto): Promise<void> {
+    const raw = await this.redis.get(`email-change:${dto.token}`)
+    if (!raw) throw new BadRequestException('Verification link expired or already used')
+    const { userId, newEmail } = JSON.parse(raw) as { userId: string; newEmail: string }
+
+    // Re-check uniqueness at commit time — someone else may have taken this email
+    // during the 15-min window.
+    const taken = await this.usersService.findByEmail(newEmail)
+    if (taken && taken._id.toString() !== userId) {
+      await this.redis.del(`email-change:${dto.token}`)
+      throw new ConflictException('Email is already in use by another account')
+    }
+
+    await this.usersService.updateEmail(userId, newEmail)
+    await this.redis.del(`email-change:${dto.token}`)
+  }
+
+  // ── Change Phone (with re-verification via OTP to new number) ────
+
+  async requestPhoneChange(userId: string, dto: RequestPhoneChangeDto): Promise<void> {
+    const user = await this.usersService.findByIdOrThrow(userId)
+    if (!user.passwordHash) throw new BadRequestException('This account has no password')
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash)
+    if (!valid) throw new UnauthorizedException('Current password is incorrect')
+
+    if (user.phone === dto.newPhone) throw new BadRequestException('New phone is the same as current')
+
+    const taken = await this.usersService.findByPhone(dto.newPhone)
+    if (taken) throw new ConflictException('Phone is already in use')
+
+    const skipOtp = this.config.get<string>('SKIP_OTP_IN_DEV') === 'true'
+    const otp = skipOtp ? '123456' : this.generateOtp()
+    const otpHash = await bcrypt.hash(otp, BCRYPT_ROUNDS)
+
+    // 5 min TTL; keyed by userId so a rider can only have one pending change at a time
+    await this.redis.setex(
+      `phone-change:${userId}`,
+      OTP_TTL_SECONDS,
+      JSON.stringify({ newPhone: dto.newPhone, otpHash, attempts: 0 }),
+    )
+
+    if (skipOtp) {
+      this.logger.log(`[DEV] Phone-change OTP for ${dto.newPhone}: ${otp}`)
+    } else {
+      await this.termii.sendOtp(dto.newPhone, otp)
+    }
+  }
+
+  async verifyPhoneChange(userId: string, dto: VerifyPhoneChangeDto): Promise<void> {
+    const raw = await this.redis.get(`phone-change:${userId}`)
+    if (!raw) throw new BadRequestException('OTP expired or no phone-change in progress')
+    const pending = JSON.parse(raw) as { newPhone: string; otpHash: string; attempts: number }
+
+    if (pending.attempts >= OTP_MAX_ATTEMPTS) {
+      await this.redis.del(`phone-change:${userId}`)
+      throw new HttpException('Too many incorrect attempts. Restart the change.', HttpStatus.TOO_MANY_REQUESTS)
+    }
+
+    const skipOtp = this.config.get<string>('SKIP_OTP_IN_DEV') === 'true'
+    const valid = skipOtp ? dto.otp === '123456' : await bcrypt.compare(dto.otp, pending.otpHash)
+    if (!valid) {
+      pending.attempts += 1
+      await this.redis.setex(
+        `phone-change:${userId}`,
+        OTP_TTL_SECONDS,
+        JSON.stringify(pending),
+      )
+      throw new UnauthorizedException('Invalid OTP')
+    }
+
+    // Re-check uniqueness at commit time
+    const taken = await this.usersService.findByPhone(pending.newPhone)
+    if (taken && taken._id.toString() !== userId) {
+      await this.redis.del(`phone-change:${userId}`)
+      throw new ConflictException('Phone is already in use by another account')
+    }
+
+    await this.usersService.updatePhone(userId, pending.newPhone)
+    await this.redis.del(`phone-change:${userId}`)
   }
 
   // ── Admin Login (email + password + brute force protection) ─────

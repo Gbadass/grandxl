@@ -148,17 +148,11 @@ export class UsersService implements OnModuleInit {
   // ── Profile update ───────────────────────────────────────────────
 
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<UserDocument> {
-    if (dto.email) {
-      const taken = await this.userModel
-        .findOne({ email: dto.email.toLowerCase(), _id: { $ne: userId } })
-        .lean()
-      if (taken) throw new ConflictException('Email already in use by another account')
-    }
-
+    // Email and phone deliberately excluded from this path — see UpdateProfileDto
+    // comment. Use AuthService.requestEmailChange / requestPhoneChange for those.
     const updates: Record<string, unknown> = {}
     if (dto.firstName !== undefined) updates.firstName = dto.firstName.trim()
     if (dto.lastName !== undefined) updates.lastName = dto.lastName.trim()
-    if (dto.email !== undefined) updates.email = dto.email.toLowerCase().trim()
     if (dto.avatar !== undefined) updates.avatar = dto.avatar
 
     const user = await this.userModel
@@ -343,6 +337,17 @@ export class UsersService implements OnModuleInit {
 
   async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
     await this.userModel.updateOne({ _id: userId }, { passwordHash })
+  }
+
+  // Callers must have already verified re-authorization (OTP for phone,
+  // verification link for email). Uniqueness re-checked at the DB level via
+  // the sparse unique indexes — dup keys bubble up as raw mongo errors.
+  async updateEmail(userId: string, newEmail: string): Promise<void> {
+    await this.userModel.updateOne({ _id: userId }, { $set: { email: newEmail.toLowerCase().trim() } })
+  }
+
+  async updatePhone(userId: string, newPhone: string): Promise<void> {
+    await this.userModel.updateOne({ _id: userId }, { $set: { phone: newPhone } })
   }
 
   async updateLastLogin(userId: string): Promise<void> {

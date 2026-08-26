@@ -8,12 +8,14 @@ import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
 import {
   analyticsApi,
+  referralsApi,
   type DispatchMetricsData,
   type QueueDepthData,
   type OrderTimeoutData,
   type RestaurantEngagementData,
   type RestaurantWaitTimeData,
   type RiderUtilizationData,
+  type ReferralOverview,
 } from '@grandxl/api-client'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { StatsCard } from '../../../src/components/ui/StatsCard'
@@ -160,6 +162,11 @@ export default function AnalyticsPage() {
     queryFn:  () => analyticsApi.getRiderUtilization(7).then((r) => r.data),
     staleTime: 2 * 60_000, enabled: isAuthenticated,
   })
+  const { data: referralRes,    isLoading: referralLoading   } = useQuery({
+    queryKey: ['analytics', 'referrals', 30],
+    queryFn:  () => referralsApi.getAdminOverview(30).then((r) => r.data),
+    staleTime: 5 * 60_000, enabled: isAuthenticated,
+  })
 
   const analytics = analyticsRes?.data
 
@@ -215,6 +222,7 @@ export default function AnalyticsPage() {
   const engagement: RestaurantEngagementData | undefined = engagementRes?.data
   const waitTimes:  RestaurantWaitTimeData   | undefined = waitTimesRes?.data
   const util:       RiderUtilizationData     | undefined = utilRes?.data
+  const referrals:  ReferralOverview         | undefined = referralRes?.data
   const QUEUE_LABELS: Record<string, string> = {
     'order-timeout':         'Order Timeout',
     'rider-dispatch':        'Rider Dispatch',
@@ -619,6 +627,83 @@ export default function AnalyticsPage() {
           )}
         </Card>
       </div>
+
+      {/* ── Referral growth (last 30 days) ── */}
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          Growth — Referrals (last 30 days)
+        </h2>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-4">
+          <StatsCard
+            title="Total Referrals"
+            value={referrals ? String(referrals.totalReferrals) : '—'}
+            sub="Codes applied in period"
+            icon="users"
+            loading={referralLoading}
+          />
+          <StatsCard
+            title="Rewarded"
+            value={referrals ? String(referrals.rewardedReferrals) : '—'}
+            sub="Referees completed first order"
+            icon="orders"
+            loading={referralLoading}
+          />
+          <StatsCard
+            title="Pending"
+            value={referrals ? String(referrals.pendingReferrals) : '—'}
+            sub="Awaiting referee's first order"
+            icon="analytics"
+            loading={referralLoading}
+          />
+          <StatsCard
+            title="Paid Out to Referrers"
+            value={referrals ? formatMoney(referrals.totalRewardedKobo, 'NGN') : '—'}
+            sub="Total wallet credits earned"
+            icon="revenue"
+            loading={referralLoading}
+          />
+        </div>
+      </div>
+
+      <Card title="Top Referrers (all time)">
+        {referralLoading ? (
+          <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+        ) : !referrals || referrals.topReferrers.length === 0 ? (
+          <p className="py-6 text-center text-sm text-gray-400">No referrals yet</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-gray-100">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-left">
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500">Referrer</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Rewarded</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Total Earned</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {referrals.topReferrers.map((r, i) => (
+                  <tr key={r.referrerId} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-100 text-[10px] font-bold text-orange-600">
+                          {i + 1}
+                        </span>
+                        {r.firstName ?? '?'} {r.lastName ?? ''}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-700">{r.rewardedCount}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-green-600">
+                      {formatMoney(r.totalEarnedKobo, 'NGN')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="mb-6" />
 
       {/* ── Top restaurants table ── */}
       <Card title="Top Restaurants by Orders">

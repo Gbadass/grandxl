@@ -152,6 +152,13 @@ export class RestaurantDocument extends Document {
   @Prop({ default: 'NGN' })
   currency!: string
 
+  // IANA timezone name (e.g. 'Africa/Lagos', 'Africa/Nairobi'). Used to interpret
+  // openingHours in the restaurant's LOCAL time — otherwise a restaurant in Kenya
+  // would appear open/closed on Lagos time. Defaults to Africa/Lagos for Nigerian
+  // launch; owner can override in settings for expansion.
+  @Prop({ default: 'Africa/Lagos' })
+  timezone!: string
+
   // Never returned in public API responses — admin and owner only
   @Prop({
     type: BankDetailsSchema,

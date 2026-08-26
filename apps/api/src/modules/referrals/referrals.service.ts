@@ -100,13 +100,24 @@ export class ReferralsService {
 
   async getMyReferralInfo(
     userId: string,
-  ): Promise<{ referralCode: string | null; referralCount: number; totalEarnedKobo: number }> {
+  ): Promise<{
+    referralCode: string | null
+    referralCount: number
+    totalEarnedKobo: number
+    hasAppliedCode: boolean
+  }> {
     const user = await this.usersService.findById(userId)
     if (!user) throw new NotFoundException('User not found')
 
-    const rewarded = await this.referralModel
-      .find({ referrerId: new Types.ObjectId(userId), status: 'rewarded' })
-      .lean()
+    const [rewarded, hasAppliedCode] = await Promise.all([
+      this.referralModel
+        .find({ referrerId: new Types.ObjectId(userId), status: 'rewarded' })
+        .lean(),
+      // Refuses to show the "Apply a code" section in the UI when a code
+      // has already been applied to this account (unique refereeId index enforces
+      // one-per-user server-side; this makes the UI honest about the state).
+      this.referralModel.exists({ refereeId: new Types.ObjectId(userId) }).then(Boolean),
+    ])
 
     const totalEarnedKobo = rewarded.reduce((sum, r) => sum + (r.rewardAmountKobo ?? 0), 0)
 
@@ -114,6 +125,77 @@ export class ReferralsService {
       referralCode:    user.referralCode,
       referralCount:   rewarded.length,
       totalEarnedKobo,
+      hasAppliedCode,
+    }
+  }
+
+  // ── GET /admin/referrals/overview ────────────────────────────────
+  // Platform-wide referral analytics for admin. Fed into admin analytics
+  // page as a new "Growth" section.
+  async getAdminOverview(days = 30): Promise<{
+    periodDays: number
+    totalReferrals: number
+    pendingReferrals: number
+    rewardedReferrals: number
+    totalRewardedKobo: number
+    topReferrers: Array<{
+      referrerId: string
+      firstName: string | null
+      lastName: string | null
+      rewardedCount: number
+      totalEarnedKobo: number
+    }>
+  }> {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+
+    const [statusCounts, topReferrers] = await Promise.all([
+      this.referralModel.aggregate<{ _id: string; count: number; totalKobo: number }>([
+        { $match: { createdAt: { $gte: since } } },
+        { $group: {
+            _id: '$status',
+            count: { $sum: 1 },
+            totalKobo: { $sum: '$rewardAmountKobo' },
+        } },
+      ]),
+      this.referralModel.aggregate([
+        { $match: { status: 'rewarded' } },
+        { $group: {
+            _id: '$referrerId',
+            rewardedCount: { $sum: 1 },
+            totalEarnedKobo: { $sum: '$rewardAmountKobo' },
+        } },
+        { $sort: { totalEarnedKobo: -1 } },
+        { $limit: 20 },
+        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+        { $project: {
+            _id: 0,
+            referrerId: { $toString: '$_id' },
+            firstName: '$user.firstName',
+            lastName:  '$user.lastName',
+            rewardedCount: 1,
+            totalEarnedKobo: 1,
+        } },
+      ]),
+    ])
+
+    const pending  = statusCounts.find((s) => s._id === 'pending')?.count ?? 0
+    const rewarded = statusCounts.find((s) => s._id === 'rewarded')
+    const total    = statusCounts.reduce((sum, s) => sum + s.count, 0)
+
+    return {
+      periodDays: days,
+      totalReferrals:    total,
+      pendingReferrals:  pending,
+      rewardedReferrals: rewarded?.count ?? 0,
+      totalRewardedKobo: rewarded?.totalKobo ?? 0,
+      topReferrers:      topReferrers as Array<{
+        referrerId: string
+        firstName: string | null
+        lastName: string | null
+        rewardedCount: number
+        totalEarnedKobo: number
+      }>,
     }
   }
 }

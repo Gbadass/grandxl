@@ -62,3 +62,7 @@ export const DisputeSchema = SchemaFactory.createForClass(DisputeDocument)
 
 DisputeSchema.index({ customerId: 1, createdAt: -1 })
 DisputeSchema.index({ status: 1, createdAt: -1 })
+// Fast "any disputes on this order?" lookup for admin order detail
+DisputeSchema.index({ orderId: 1 })
+// Customer "my disputes filtered by status" — most common tab view
+DisputeSchema.index({ customerId: 1, status: 1, createdAt: -1 })
