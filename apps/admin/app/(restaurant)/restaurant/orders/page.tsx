@@ -6,7 +6,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { myRestaurantApi, ordersApi } from '@grandxl/api-client'
 import { OrderStatus, UserRole } from '@grandxl/types'
-import type { Order } from '@grandxl/types'
+import type { CancelReasonCode, Order } from '@grandxl/types'
+import { CANCEL_REASON_OPTIONS, labelForCode } from '../../../../src/lib/cancelReasons'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { PageHeader } from '../../../../src/components/ui/PageHeader'
@@ -57,8 +58,9 @@ export default function RestaurantOrdersPage() {
   const [activeTab, setActiveTab] = useState<'live' | OrderStatus | undefined>('live')
   const [page, setPage] = useState(1)
   const [confirmClear, setConfirmClear] = useState(false)
-  // Per-order reject reason & open state
-  const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({})
+  // Per-order reject state: structured code + optional free-text note ("other")
+  const [rejectCode, setRejectCode] = useState<Record<string, CancelReasonCode>>({})
+  const [rejectNote, setRejectNote] = useState<Record<string, string>>({})
   const [rejectOpen, setRejectOpen] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
@@ -136,12 +138,22 @@ export default function RestaurantOrdersPage() {
   })
 
   const rejectMutation = useMutation({
-    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
-      ordersApi.updateStatus(orderId, { status: OrderStatus.CANCELLED, cancelReason: reason || 'Rejected by restaurant' }),
+    mutationFn: ({ orderId, code, note }: { orderId: string; code: CancelReasonCode; note: string }) => {
+      // For "other" the note is the whole message; for everything else we send
+      // the human-readable label so customers see the same thing the restaurant
+      // picked, and append the note when they typed one.
+      const label = labelForCode(code)
+      const text = code === 'other' ? note.trim() : note.trim() ? `${label} — ${note.trim()}` : label
+      return ordersApi.updateStatus(orderId, {
+        status: OrderStatus.CANCELLED,
+        cancelReasonCode: code,
+        cancelReason: text,
+      })
+    },
     onSuccess: (_, { orderId }) => {
       toast.success('Order rejected')
       setRejectOpen((prev) => ({ ...prev, [orderId]: false }))
-      setRejectReasons((prev) => ({ ...prev, [orderId]: '' }))
+      setRejectNote((prev) => ({ ...prev, [orderId]: '' }))
       void qc.invalidateQueries({ queryKey: ['my-orders-live', restaurantId] })
     },
     onError: () => toast.error('Failed to reject order'),
@@ -302,7 +314,10 @@ export default function RestaurantOrdersPage() {
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {liveData.pending.map((order) => {
                       const isRejectOpen = rejectOpen[order._id] ?? false
-                      const rejectReason = rejectReasons[order._id] ?? ''
+                      const code = rejectCode[order._id] ?? 'out_of_stock'
+                      const note = rejectNote[order._id] ?? ''
+                      const noteRequired = code === 'other'
+                      const canConfirm = !noteRequired || note.trim().length > 0
                       const itemSummary = order.items.map((i) => `${i.quantity}× ${i.name}`).join(', ')
 
                       return (
@@ -343,18 +358,45 @@ export default function RestaurantOrdersPage() {
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              <input
-                                type="text"
-                                value={rejectReason}
-                                onChange={(e) => setRejectReasons((prev) => ({ ...prev, [order._id]: e.target.value }))}
-                                placeholder="Out of stock"
-                                className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
-                              />
+                              <label className="block">
+                                <span className="sr-only">Reason for rejection</span>
+                                <select
+                                  value={code}
+                                  onChange={(e) =>
+                                    setRejectCode((prev) => ({
+                                      ...prev,
+                                      [order._id]: e.target.value as CancelReasonCode,
+                                    }))
+                                  }
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                                >
+                                  {CANCEL_REASON_OPTIONS.map((opt) => (
+                                    <option key={opt.code} value={opt.code}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              {noteRequired && (
+                                <input
+                                  type="text"
+                                  value={note}
+                                  onChange={(e) =>
+                                    setRejectNote((prev) => ({ ...prev, [order._id]: e.target.value }))
+                                  }
+                                  placeholder="Tell the customer what happened"
+                                  maxLength={200}
+                                  autoFocus
+                                  className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                                />
+                              )}
+
                               <div className="flex gap-2">
                                 <button
-                                  onClick={() => rejectMutation.mutate({ orderId: order._id, reason: rejectReason })}
-                                  disabled={rejectMutation.isPending}
-                                  className="flex-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                                  onClick={() => rejectMutation.mutate({ orderId: order._id, code, note })}
+                                  disabled={rejectMutation.isPending || !canConfirm}
+                                  className="flex-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   Confirm
                                 </button>

@@ -1,5 +1,5 @@
 import { getClient } from '../client'
-import type { ApiResponse, PaginatedResponse, Order } from '@grandxl/types'
+import type { ApiResponse, PaginatedResponse, Order, CancelReasonCode } from '@grandxl/types'
 import type { PaymentMethod } from '@grandxl/types'
 import { OrderStatus } from '@grandxl/types'
 
@@ -31,6 +31,7 @@ export interface CreateOrderDto {
 export interface UpdateOrderStatusDto {
   status: OrderStatus
   cancelReason?: string
+  cancelReasonCode?: CancelReasonCode
   // Required when transitioning a CASH order to DELIVERED — rider PWA confirms
   // via a modal that they collected cash. Otherwise the API rejects the update.
   cashCollected?: boolean

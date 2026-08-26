@@ -6,6 +6,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { myRestaurantApi, ordersApi, type RiderContact } from '@grandxl/api-client'
 import { OrderStatus, UserRole } from '@grandxl/types'
+import type { CancelReasonCode } from '@grandxl/types'
+import { CANCEL_REASON_OPTIONS, labelForCode } from '../../../../../src/lib/cancelReasons'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../../../src/store/auth.store'
 import { PageHeader } from '../../../../../src/components/ui/PageHeader'
@@ -36,7 +38,8 @@ export default function RestaurantOrderDetailPage() {
   const { isAuthenticated, isInitializing, user } = useAuthStore()
 
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
-  const [cancelReason, setCancelReason] = useState('')
+  const [cancelCode, setCancelCode] = useState<CancelReasonCode>('out_of_stock')
+  const [cancelNote, setCancelNote] = useState('')
   const [readyWarnOpen, setReadyWarnOpen] = useState(false)
 
   useEffect(() => {
@@ -74,12 +77,20 @@ export default function RestaurantOrderDetailPage() {
   })
 
   const cancelMutation = useMutation({
-    mutationFn: (reason: string) =>
-      ordersApi.updateStatus(id, { status: OrderStatus.CANCELLED, cancelReason: reason }),
+    mutationFn: ({ code, note }: { code: CancelReasonCode; note: string }) => {
+      const label = labelForCode(code)
+      const text = code === 'other' ? note.trim() : note.trim() ? `${label} — ${note.trim()}` : label
+      return ordersApi.updateStatus(id, {
+        status: OrderStatus.CANCELLED,
+        cancelReasonCode: code,
+        cancelReason: text,
+      })
+    },
     onSuccess: () => {
       toast.success('Order cancelled')
       setCancelModalOpen(false)
-      setCancelReason('')
+      setCancelCode('out_of_stock')
+      setCancelNote('')
       void qc.invalidateQueries({ queryKey: ['order', id] })
     },
     onError: () => toast.error('Failed to cancel order'),
@@ -299,31 +310,60 @@ export default function RestaurantOrderDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/40"
-            onClick={() => { setCancelModalOpen(false); setCancelReason('') }}
+            onClick={() => { setCancelModalOpen(false); setCancelNote('') }}
           />
           <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="mb-1 text-base font-bold text-gray-900">{modalTitle}</h3>
-            <p className="mb-4 text-sm text-gray-500">Provide a reason so the customer is informed.</p>
+            <p className="mb-4 text-sm text-gray-500">Choose a reason so the customer sees a clear message.</p>
 
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Reason *</label>
-            <textarea
-              rows={3}
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              placeholder="e.g. Out of stock, restaurant closing early…"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
-            />
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Reason</label>
+            <select
+              value={cancelCode}
+              onChange={(e) => setCancelCode(e.target.value as CancelReasonCode)}
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+            >
+              {CANCEL_REASON_OPTIONS.map((opt) => (
+                <option key={opt.code} value={opt.code}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
 
-            <div className="mt-4 flex gap-3">
+            {(cancelCode === 'other' || cancelNote.length > 0) && (
+              <div className="mt-3">
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  {cancelCode === 'other' ? 'Details *' : 'Extra note (optional)'}
+                </label>
+                <textarea
+                  rows={3}
+                  value={cancelNote}
+                  onChange={(e) => setCancelNote(e.target.value)}
+                  maxLength={200}
+                  placeholder={cancelCode === 'other' ? 'Tell the customer what happened' : 'Anything else the customer should know'}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                />
+              </div>
+            )}
+            {cancelCode !== 'other' && cancelNote.length === 0 && (
               <button
-                onClick={() => cancelMutation.mutate(cancelReason)}
-                disabled={cancelMutation.isPending || !cancelReason.trim()}
-                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                type="button"
+                onClick={() => setCancelNote(' ')}
+                className="mt-2 text-xs font-medium text-gray-500 hover:text-gray-700"
+              >
+                + Add a note for the customer
+              </button>
+            )}
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => cancelMutation.mutate({ code: cancelCode, note: cancelNote })}
+                disabled={cancelMutation.isPending || (cancelCode === 'other' && cancelNote.trim().length === 0)}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {cancelMutation.isPending ? 'Processing…' : modalTitle}
               </button>
               <button
-                onClick={() => { setCancelModalOpen(false); setCancelReason('') }}
+                onClick={() => { setCancelModalOpen(false); setCancelNote('') }}
                 className="flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50"
               >
                 Keep order

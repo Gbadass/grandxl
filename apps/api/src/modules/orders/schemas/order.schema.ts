@@ -152,6 +152,11 @@ export class OrderDocument extends Document {
   @Prop({ type: String, default: null })
   cancelReason!: string | null
 
+  // Canonical code for the cancellation. Enables analytics + i18n on the
+  // customer side. See `CancelReasonCode` in packages/types.
+  @Prop({ type: String, default: null, index: true })
+  cancelReasonCode!: string | null
+
   @Prop({ type: String, default: null })
   timeoutJobId!: string | null
 

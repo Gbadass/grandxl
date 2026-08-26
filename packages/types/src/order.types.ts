@@ -1,6 +1,21 @@
 import type { OrderStatus, PaymentMethod, PaymentStatus } from './enums'
 import type { GeoJSONPoint } from './user.types'
 
+// Canonical codes for structured order cancellations (Sprint 12 — S12-1).
+// The human-readable `cancelReason` text is still stored for backward compat
+// and free-text "other" notes, but analytics and customer messaging should
+// prefer the code.
+export type CancelReasonCode =
+  | 'out_of_stock'
+  | 'item_unavailable'
+  | 'too_busy'
+  | 'closing_soon'
+  | 'outside_delivery_area'
+  | 'duplicate_order'
+  | 'customer_request'
+  | 'payment_issue'
+  | 'other'
+
 export interface OrderItemVariant {
   variantName: string
   optionName: string
@@ -73,6 +88,7 @@ export interface Order {
   estimatedTime: number | null // minutes
   actualDeliveryAt: Date | null
   cancelReason: string | null
+  cancelReasonCode: CancelReasonCode | null
   timeoutJobId: string | null
   scheduledFor: Date | null
   country: string

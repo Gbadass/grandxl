@@ -16,7 +16,7 @@ import { OrderDocument } from './schemas/order.schema'
 import { CounterDocument } from './schemas/counter.schema'
 import type { CreateOrderDto } from './dto/create-order.dto'
 import type { QueryOrdersDto } from './dto/query-orders.dto'
-import type { UpdateOrderStatusDto } from './dto/update-order-status.dto'
+import { CANCEL_REASON_TEXT, type UpdateOrderStatusDto } from './dto/update-order-status.dto'
 import type { RateOrderDto } from './dto/rate-order.dto'
 import { MenuItemsService } from '../menu-items/menu-items.service'
 import { NotificationsService } from '../notifications/notifications.service'
@@ -736,7 +736,8 @@ export class OrdersService {
 
     const updates: Record<string, unknown> = { status: dto.status }
     if (dto.status === OrderStatus.CANCELLED) {
-      updates.cancelReason = dto.cancelReason ?? 'No reason given'
+      updates.cancelReason = dto.cancelReason ?? CANCEL_REASON_TEXT[dto.cancelReasonCode ?? 'other']
+      updates.cancelReasonCode = dto.cancelReasonCode ?? null
     }
     if (dto.status === OrderStatus.DELIVERED) {
       updates.actualDeliveryAt = new Date()
