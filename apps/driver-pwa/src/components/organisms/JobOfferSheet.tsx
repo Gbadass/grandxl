@@ -64,16 +64,39 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
       onDismiss()
       void navigate(`/delivery/${order._id}`, { replace: true })
     },
-    onError: (err: unknown) => {
+    onError: async (err: unknown) => {
       const message = err instanceof Error ? err.message : ''
-      if (message.includes('409') || message.includes('conflict')) {
-        // 409 = already assigned to this rider (admin direct assignment) — treat as accepted
-        stopJobAlertLoop()
-        setActiveOrder(order)
-        removePendingJob(order._id)
-        onDismiss()
-        void navigate(`/delivery/${order._id}`, { replace: true })
-      } else {
+      const is409 = message.includes('409') || message.includes('conflict') || message.includes('already been accepted')
+
+      if (!is409) {
+        toast.error(t('job_accept_error'))
+        dismiss()
+        return
+      }
+
+      // 409 has two flavours: (a) another rider grabbed the broadcast first, or
+      // (b) this rider was already assigned (admin push, or accept-happened-server-side
+      // but ack got lost). We can't tell from the error alone — ask the server who
+      // owns this order right now.
+      try {
+        const activeRes = await ridersApi.getActiveJob()
+        const active = activeRes.data.data
+        if (active && active._id === order._id) {
+          // We own it — proceed as if accept succeeded
+          if (intervalRef.current) clearInterval(intervalRef.current)
+          stopJobAlertLoop()
+          setActiveOrder(active)
+          removePendingJob(order._id)
+          onDismiss()
+          void navigate(`/delivery/${order._id}`, { replace: true })
+          return
+        }
+        // Someone else has this order (or we have a different active one). Show
+        // an informative toast so rider doesn't think their tap did nothing.
+        toast(t('job_taken_by_other', 'Another rider took this job.'), { icon: '🏁' })
+        dismiss()
+      } catch {
+        // Couldn't reach the server to disambiguate — assume lost, tell the rider.
         toast.error(t('job_accept_error'))
         dismiss()
       }

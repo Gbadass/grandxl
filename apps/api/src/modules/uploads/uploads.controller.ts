@@ -128,6 +128,23 @@ export class UploadsController {
     return this.uploadsService.uploadDocument(file.buffer, 'rider-documents', `doc_${user.sub}_${Date.now()}`)
   }
 
+  // ── Delivery proof photo (rider snaps at drop-off) ─────────────────
+
+  @Post('delivery-proof')
+  @Roles(UserRole.RIDER)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload a delivery proof photo (rider snaps at drop-off)' })
+  @ApiBody(fileUploadBody)
+  @UseInterceptors(FileInterceptor('file', imageMulter))
+  async uploadDeliveryProof(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<{ url: string; publicId: string }> {
+    if (!file) throw new BadRequestException('No file provided')
+    await this.uploadsService.validateAndScan(file, ALLOWED_IMAGE_TYPES)
+    return this.uploadsService.uploadImage(file.buffer, 'delivery-proofs', `proof_${user.sub}_${Date.now()}`)
+  }
+
   // ── Signed URL for private documents (admin / rider) ─────────────
 
   @Get('signed-url/:publicId')

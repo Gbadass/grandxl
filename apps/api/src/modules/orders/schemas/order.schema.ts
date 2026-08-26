@@ -124,6 +124,21 @@ export class OrderDocument extends Document {
   @Prop({ type: Date, default: null })
   actualDeliveryAt!: Date | null
 
+  // ── Cash-on-delivery ──────────────────────────────────────────────
+  // Stamped when the rider confirms they collected cash from the customer.
+  // Required for DELIVERED transition on CASH orders — without it, the rider
+  // could mark delivered without ever asking for money. If cash was not fully
+  // collected, rider opens a dispute instead (existing dispute flow).
+  @Prop({ type: Date, default: null })
+  cashCollectedAt!: Date | null
+
+  // ── Delivery proof ────────────────────────────────────────────────
+  // Cloudinary URL of the rider's proof-of-delivery photo. Required by the
+  // server for COD orders (fraud deterrent); optional but encouraged for card
+  // orders. Admin views this on the order detail to resolve disputes.
+  @Prop({ type: String, default: null })
+  deliveryProofUrl!: string | null
+
   // Customer rating submitted after delivery — 1–5 stars
   @Prop({ type: Number, default: null, min: 1, max: 5 })
   rating!: number | null

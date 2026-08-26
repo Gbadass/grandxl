@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { socket } from '../lib/socket'
 import axiosInstance from '../lib/axios'
+import { ridersApi } from '@grandxl/api-client'
 import { useAuthStore } from '../store/auth.store'
 import { useRiderStore } from '../store/rider.store'
 import { primeAudio } from '../lib/alertSound'
@@ -79,6 +80,29 @@ export function useRiderSocket() {
       toast.success('Food is ready — head in to pick up!', { id: `ready-${orderId}`, duration: 6000 })
     }
 
+    // Reconcile local activeOrder with server after any reconnect. Covers the case
+    // where an accept HTTP call succeeded on the server but the ack never reached us
+    // (network drop mid-accept), leaving local state stale. Also catches cases where
+    // an order was assigned via admin push while we were disconnected.
+    function reconcileActiveJob() {
+      ridersApi.getActiveJob()
+        .then((res) => {
+          const serverActive = res.data.data
+          const localActive = useRiderStore.getState().activeOrder
+          if (serverActive && (!localActive || localActive._id !== serverActive._id)) {
+            // Server sees an order we don't know about — adopt it
+            useRiderStore.getState().setActiveOrder(serverActive)
+            toast('Reconnected — restored your active delivery.', { id: 'active-restored' })
+          } else if (!serverActive && localActive) {
+            // We think we're on a delivery but server disagrees. Trust the server —
+            // the order was likely cancelled or reassigned while we were offline.
+            useRiderStore.getState().setActiveOrder(null)
+            toast('Your active job is no longer assigned to you.', { id: 'active-lost' })
+          }
+        })
+        .catch(() => undefined)
+    }
+
     function onServerDisconnect(reason: string) {
       // "io server disconnect" = the gateway rejected or kicked our socket.
       // Most common cause: access token expired while rider was idle (no HTTP
@@ -100,6 +124,9 @@ export function useRiderSocket() {
     socket.on('order:status_update', onStatusUpdate)
     socket.on('rider:order_ready', onOrderReady)
     socket.on('disconnect', onServerDisconnect)
+    // Reconcile on every successful (re)connect. Not just reconnects — the initial
+    // connect after a boot may find an order that was assigned while offline.
+    socket.on('connect', reconcileActiveJob)
 
     return () => {
       socket.off('rider:new_job', onDirectJob)
@@ -107,6 +134,7 @@ export function useRiderSocket() {
       socket.off('order:status_update', onStatusUpdate)
       socket.off('rider:order_ready', onOrderReady)
       socket.off('disconnect', onServerDisconnect)
+      socket.off('connect', reconcileActiveJob)
       socket.disconnect()
     }
   }, [isAuthenticated, accessToken, addPendingJob, setActiveOrder, navigate])

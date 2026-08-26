@@ -34,6 +34,11 @@ export const uploadsApi = {
       '/uploads/rider-document', toFormData(file), { headers: { 'Content-Type': 'multipart/form-data' } },
     ),
 
+  uploadDeliveryProof: (file: File | FormData) =>
+    getClient().post<ApiResponse<{ url: string; publicId: string }>>(
+      '/uploads/delivery-proof', toFormData(file), { headers: { 'Content-Type': 'multipart/form-data' } },
+    ),
+
   // Keep old name as alias so existing callers don't break
   uploadImage: (file: File | FormData) =>
     getClient().post<ApiResponse<{ url: string; publicId: string }>>(

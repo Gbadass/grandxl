@@ -8,9 +8,9 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useQuery } from '@tanstack/react-query'
-import { ordersApi, ridersApi, chatApi } from '@grandxl/api-client'
+import { ordersApi, ridersApi, chatApi, uploadsApi } from '@grandxl/api-client'
 import type { ChatMessage, CustomerContact } from '@grandxl/api-client'
-import { OrderStatus } from '@grandxl/types'
+import { OrderStatus, PaymentMethod } from '@grandxl/types'
 import { formatMoney, isWithinRadius } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
 import { useAuthStore } from '../store/auth.store'
@@ -338,9 +338,14 @@ export default function ActiveDeliveryPage() {
   const { user } = useAuthStore()
   const [acting, setActing] = useState(false)
   const [sosOpen, setSosOpen] = useState(false)
+  const [cashConfirmOpen, setCashConfirmOpen] = useState(false)
+  const [proofPreview, setProofPreview] = useState<string | null>(null)
+  const [proofUrl, setProofUrl] = useState<string | null>(null)
+  const [uploadingProof, setUploadingProof] = useState(false)
   const [riderPos, setRiderPos] = useState<[number, number] | null>(null)
   const [customerContact, setCustomerContact] = useState<CustomerContact | null>(null)
   const watchIdRef = useRef<number | null>(null)
+  const proofInputRef = useRef<HTMLInputElement | null>(null)
 
   const order = activeOrder?._id === orderId ? activeOrder : null
 
@@ -514,10 +519,64 @@ export default function ActiveDeliveryPage() {
       }
     }
 
+    // Cash-on-delivery: server requires an explicit cashCollected=true. Open the
+    // confirmation modal instead of firing the update immediately. Rider taps
+    // "Yes, I collected cash" → confirmCashAndDeliver() proceeds.
+    if (order?.payment?.method === PaymentMethod.CASH) {
+      setCashConfirmOpen(true)
+      return
+    }
+
     setActing(true)
     try {
       await ordersApi.updateStatus(order!._id, { status: OrderStatus.DELIVERED })
       setActiveOrder(null)
+      toast.success(t('delivered_success'))
+      void navigate(ROUTES.HOME, { replace: true })
+    } catch {
+      toast.error(t('update_error'))
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function handleProofSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    // Reset so re-selecting the same file re-fires onChange
+    event.target.value = ''
+    if (!file) return
+    // Show local preview immediately
+    const localUrl = URL.createObjectURL(file)
+    setProofPreview(localUrl)
+    setUploadingProof(true)
+    try {
+      const res = await uploadsApi.uploadDeliveryProof(file)
+      setProofUrl(res.data.data.url)
+    } catch {
+      toast.error('Proof upload failed. Try again.')
+      setProofPreview(null)
+    } finally {
+      setUploadingProof(false)
+    }
+  }
+
+  async function confirmCashAndDeliver() {
+    if (acting || !order) return
+    if (!proofUrl) {
+      toast.error('Take a proof photo first.')
+      return
+    }
+    setActing(true)
+    try {
+      await ordersApi.updateStatus(order._id, {
+        status: OrderStatus.DELIVERED,
+        cashCollected: true,
+        deliveryProofUrl: proofUrl,
+      })
+      setActiveOrder(null)
+      setCashConfirmOpen(false)
+      setProofPreview(null)
+      setProofUrl(null)
       toast.success(t('delivered_success'))
       void navigate(ROUTES.HOME, { replace: true })
     } catch {
@@ -933,6 +992,104 @@ export default function ActiveDeliveryPage() {
               }
               {acting ? t('marking_delivered') : t('confirm_delivery')}
             </motion.button>
+          )}
+        </AnimatePresence>
+
+        {/* Cash-on-Delivery confirmation modal — required by server for CASH orders */}
+        <AnimatePresence>
+          {cashConfirmOpen && order && (
+            <motion.div
+              key="cash-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm px-4 pb-8"
+              onClick={() => !acting && setCashConfirmOpen(false)}
+            >
+              <motion.div
+                initial={{ y: 60, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 60, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-sm rounded-3xl bg-zinc-900 border border-amber-500/30 overflow-hidden"
+              >
+                <div className="px-5 py-4 border-b border-amber-500/20 bg-amber-500/10">
+                  <p className="text-sm font-bold text-amber-400">Cash-on-Delivery</p>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">Confirm cash collected before marking delivered</p>
+                </div>
+                <div className="p-5">
+                  <p className="text-sm text-zinc-300 mb-2">Amount to collect:</p>
+                  <p className="text-3xl font-display font-bold text-amber-400 mb-4 tabular-nums">
+                    {formatMoney(order.pricing.total, order.currency)}
+                  </p>
+                  <p className="text-xs text-zinc-500 leading-relaxed mb-4">
+                    Did you collect this full amount in cash? If not, cancel and open a dispute instead.
+                  </p>
+
+                  {/* Proof photo — server-required for COD */}
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">
+                    Proof of delivery
+                  </p>
+                  {proofPreview ? (
+                    <div className="relative rounded-2xl overflow-hidden bg-zinc-800 mb-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={proofPreview} alt="Delivery proof" className="w-full h-40 object-cover" />
+                      {uploadingProof && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <span className="h-6 w-6 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => proofInputRef.current?.click()}
+                        disabled={uploadingProof || acting}
+                        className="absolute bottom-2 right-2 rounded-full bg-black/70 px-3 py-1 text-[11px] font-semibold text-white cursor-pointer disabled:opacity-50"
+                      >
+                        Retake
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => proofInputRef.current?.click()}
+                      disabled={uploadingProof || acting}
+                      className="w-full py-3 rounded-2xl border-2 border-dashed border-zinc-700 text-sm text-zinc-300 hover:border-zinc-500 disabled:opacity-50 cursor-pointer"
+                    >
+                      {uploadingProof ? 'Uploading…' : 'Take proof photo'}
+                    </button>
+                  )}
+                  <input
+                    ref={proofInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => void handleProofSelected(e)}
+                  />
+                </div>
+                <div className="flex gap-2.5 px-5 pb-5">
+                  <button
+                    onClick={() => {
+                      setCashConfirmOpen(false)
+                      setProofPreview(null)
+                      setProofUrl(null)
+                    }}
+                    disabled={acting}
+                    className="flex-1 rounded-2xl border border-zinc-700 py-3.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800 active:bg-zinc-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    Not yet
+                  </button>
+                  <button
+                    onClick={() => void confirmCashAndDeliver()}
+                    disabled={acting || !proofUrl || uploadingProof}
+                    className="flex-[2] rounded-2xl bg-amber-500 py-3.5 text-sm font-bold text-zinc-900 shadow-lg shadow-amber-500/30 hover:bg-amber-400 active:bg-amber-600 disabled:opacity-50 cursor-pointer"
+                  >
+                    {acting ? 'Confirming…' : 'Yes, cash collected'}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
           )}
         </AnimatePresence>
       </div>

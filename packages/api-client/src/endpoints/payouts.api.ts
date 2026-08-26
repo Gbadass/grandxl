@@ -69,8 +69,10 @@ export const riderPayoutsApi = {
       bankCode,
     }),
 
-  request: (amountKobo: number) =>
-    getClient().post<ApiResponse<PayoutRequest>>('/rider/payouts', { amountKobo }),
+  request: (amountKobo: number, idempotencyKey?: string) =>
+    getClient().post<ApiResponse<PayoutRequest>>('/rider/payouts', { amountKobo }, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }),
 
   list: (params?: { page?: number; limit?: number }) =>
     getClient().get<ApiResponse<{

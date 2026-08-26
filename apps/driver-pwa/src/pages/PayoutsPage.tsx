@@ -377,7 +377,11 @@ export default function PayoutsPage() {
     if (requesting) return
     setRequesting(true)
     try {
-      await riderPayoutsApi.request(pendingKobo)
+      // Idempotency key — if the request stalls and the rider double-taps or the network
+      // retries, the server dedupes and only creates one payout. Regenerated per submit
+      // so a rider legitimately requesting a second payout later isn't blocked.
+      const idemKey = crypto.randomUUID()
+      await riderPayoutsApi.request(pendingKobo, idemKey)
       // Invalidate profile so pendingKobo resets
       await queryClient.invalidateQueries({ queryKey: ['rider-profile'] })
       await queryClient.invalidateQueries({ queryKey: ['rider-payouts'] })

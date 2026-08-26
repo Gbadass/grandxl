@@ -31,6 +31,12 @@ export interface CreateOrderDto {
 export interface UpdateOrderStatusDto {
   status: OrderStatus
   cancelReason?: string
+  // Required when transitioning a CASH order to DELIVERED — rider PWA confirms
+  // via a modal that they collected cash. Otherwise the API rejects the update.
+  cashCollected?: boolean
+  // Cloudinary URL from POST /uploads/delivery-proof. Required for COD orders,
+  // optional for card. Rendered in admin order detail for dispute resolution.
+  deliveryProofUrl?: string
 }
 
 export interface RiderContact {

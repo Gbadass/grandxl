@@ -26,6 +26,7 @@ import { PayoutStatus } from './schemas/payout-request.schema'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { Public } from '../../common/decorators/public.decorator'
+import { Idempotent } from '../../common/decorators/idempotent.decorator'
 import { AuditService } from '../audit/audit.service'
 import { UserRole } from '@grandxl/types'
 import type { JwtPayload } from '@grandxl/types'
@@ -64,7 +65,8 @@ export class RiderPayoutsController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Request a payout from my earnings' })
+  @Idempotent()
+  @ApiOperation({ summary: 'Request a payout from my earnings (send Idempotency-Key header)' })
   create(@CurrentUser() user: JwtPayload, @Body() dto: CreatePayoutRequestDto) {
     return this.payouts.createRequest(user.sub, dto.amountKobo)
   }

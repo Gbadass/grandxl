@@ -731,6 +731,7 @@ export class OrdersService {
 
     await this.assertTransitionPermission(order, dto, requester)
     await this.assertRiderProximity(order, dto, requester)
+    this.assertCashConfirmationIfNeeded(order, dto, requester)
 
     const updates: Record<string, unknown> = { status: dto.status }
     if (dto.status === OrderStatus.CANCELLED) {
@@ -741,6 +742,12 @@ export class OrdersService {
     }
     if (dto.status === OrderStatus.PICKED_UP) {
       updates.pickedUpAt = new Date()
+    }
+    if (dto.status === OrderStatus.DELIVERED && order.payment.method === PaymentMethod.CASH && dto.cashCollected) {
+      updates.cashCollectedAt = new Date()
+    }
+    if (dto.status === OrderStatus.DELIVERED && dto.deliveryProofUrl) {
+      updates.deliveryProofUrl = dto.deliveryProofUrl
     }
     // Engagement signals — set ONLY when the transition was driven by the restaurant
     // owner clicking Accept or Ready in their dashboard. Auto-confirm from the payment
@@ -999,6 +1006,31 @@ export class OrdersService {
     if (distanceKm > 0.3) {
       const where = dto.status === OrderStatus.PICKED_UP ? 'the restaurant' : 'the delivery address'
       throw new BadRequestException(`You must be within 300m of ${where} to mark this. You are ${Math.round(distanceKm * 1000)}m away.`)
+    }
+  }
+
+  // Cash-on-delivery guard — a rider cannot mark a CASH order DELIVERED without
+  // explicitly confirming they collected the cash AND uploading a proof photo.
+  // Both together are the fraud deterrent — cash+photo means "I got the money and
+  // here's evidence I was at the door." Admin can override; if cash was NOT collected
+  // the rider must open a dispute via the existing dispute flow.
+  private assertCashConfirmationIfNeeded(
+    order: OrderDocument,
+    dto: UpdateOrderStatusDto,
+    requester: JwtPayload,
+  ): void {
+    if (requester.roles.includes(UserRole.SUPER_ADMIN)) return
+    if (dto.status !== OrderStatus.DELIVERED) return
+    if (order.payment.method !== PaymentMethod.CASH) return
+    if (dto.cashCollected !== true) {
+      throw new BadRequestException(
+        'Confirm cash was collected from the customer. If not, open a dispute instead.',
+      )
+    }
+    if (!dto.deliveryProofUrl) {
+      throw new BadRequestException(
+        'A delivery proof photo is required for cash-on-delivery orders.',
+      )
     }
   }
 
