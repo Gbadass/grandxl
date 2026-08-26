@@ -27,15 +27,26 @@ export interface Wallet {
   updatedAt: Date
 }
 
+export type WalletTxnReason =
+  | 'refund'
+  | 'promo'
+  | 'referral'
+  | 'admin_adjust'
+  | 'order_payment'
+  | 'top_up'
+  | 'payout'
+
 export interface WalletTransaction {
   _id: string
-  walletId: string
+  userId: string
   type: 'credit' | 'debit'
-  amount: number // kobo
-  description: string
-  reference: string
+  reason: WalletTxnReason
+  amount: number // kobo, always positive — direction is in `type`
   balanceBefore: number // kobo
   balanceAfter: number // kobo
+  description?: string
+  referenceType?: string
+  referenceId?: string
   createdAt: Date
 }
 

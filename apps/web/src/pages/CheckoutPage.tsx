@@ -3,15 +3,16 @@ import { useNavigate, Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, MapPin, CreditCard, Wallet, Banknote, ChevronRight, Plus, Gift, Navigation, Tag, Calendar, X } from 'lucide-react'
+import { ChevronLeft, MapPin, CreditCard, Wallet, Banknote, ChevronRight, Plus, Gift, Navigation, Tag, Calendar, X, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ordersApi, paymentsApi, couponsApi, platformApi } from '@grandxl/api-client'
+import { ordersApi, paymentsApi, couponsApi, platformApi, walletApi } from '@grandxl/api-client'
 import { PaymentMethod, OrderStatus } from '@grandxl/types'
 import type { Address, CouponValidationResult } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useCartStore } from '../features/cart/store/cart.store'
 import { useAddresses } from '../features/addresses/hooks/useAddresses'
 import { AddressPickerSheet } from '../features/addresses/components/AddressPickerSheet'
+import { TopUpSheet } from '../features/wallet/components/TopUpSheet'
 import { useLocationStore } from '../store/location.store'
 import { useAuthStore } from '../store/auth.store'
 import { ROUTES } from '../router/routes'
@@ -78,6 +79,20 @@ export default function CheckoutPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isSubmittingRef = useRef(false)
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null)
+  const [showTopUp, setShowTopUp] = useState(false)
+
+  // Wallet balance — fetched only when signed in. Kept fresh (short staleTime)
+  // because a top-up return trip should reflect immediately.
+  const {
+    data: walletData,
+    isLoading: walletLoading,
+  } = useQuery({
+    queryKey: ['wallet-balance'],
+    queryFn: () => walletApi.getBalance().then((r) => r.data.data),
+    enabled: Boolean(user),
+    staleTime: 30 * 1000,
+  })
+  const walletBalance = walletData?.balance ?? 0
 
   // --- Coupon code ---
   const [couponCode, setCouponCode] = useState('')
@@ -129,6 +144,12 @@ export default function CheckoutPage() {
   const effectiveDeliveryFee = isFirstOrder ? 0 : baseDeliveryFee
   const discount = appliedCoupon?.discountAmount ?? 0
   const total = subtotal + serviceFee + effectiveDeliveryFee - discount + tipKobo
+
+  // Wallet-only payment requires the balance to cover the full order total.
+  // When it doesn't, we surface the shortfall and offer an inline top-up.
+  const walletShortfall = Math.max(0, total - walletBalance)
+  const walletCoversOrder = walletBalance >= total
+  const walletMethodBlocked = paymentMethod === PaymentMethod.WALLET && !walletCoversOrder
 
   // Minimum datetime for scheduled delivery: 1 hour from now
   const minScheduledFor = new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)
@@ -182,6 +203,16 @@ export default function CheckoutPage() {
       return
     }
 
+    // Wallet-only: balance must cover the full total. If it doesn't, offer a
+    // top-up. The backend also enforces this via debitUpTo + payment.status
+    // check, but blocking client-side gives immediate, clear feedback.
+    if (paymentMethod === PaymentMethod.WALLET && !walletCoversOrder) {
+      isSubmittingRef.current = false
+      toast.error(t('checkout:walletInsufficientError'))
+      setShowTopUp(true)
+      return
+    }
+
     // Resolve delivery coordinates — GeoJSON stores [lng, lat]
     const addrLng = selectedAddress.coordinates?.coordinates?.[0] ?? 0
     const addrLat = selectedAddress.coordinates?.coordinates?.[1] ?? 0
@@ -225,6 +256,10 @@ export default function CheckoutPage() {
         coordinates: { lat: resolvedLat, lng: resolvedLng },
       },
       paymentMethod,
+      // When the user picks WALLET, the backend needs useWallet=true to
+      // actually debit the wallet against the total. Without this flag the
+      // order would sit as PENDING and eventually auto-cancel.
+      useWallet: paymentMethod === PaymentMethod.WALLET ? true : undefined,
       customerNote: customerNote.trim() || undefined,
       deliveryInstructions: deliveryInstructions.trim() || undefined,
       couponCode: appliedCoupon ? couponCode.trim() : undefined,
@@ -311,6 +346,12 @@ export default function CheckoutPage() {
           },
         })
         return
+      }
+
+      // Wallet-covered order was debited server-side; refresh balance so the
+      // sidebar/wallet page doesn't show a stale figure on next view.
+      if (paymentMethod === PaymentMethod.WALLET) {
+        void queryClient.invalidateQueries({ queryKey: ['wallet-balance'] })
       }
 
       clearCart()
@@ -477,27 +518,76 @@ export default function CheckoutPage() {
               { method: PaymentMethod.PAYSTACK, icon: CreditCard, label: t('checkout:paymentCard'),   sub: t('checkout:paymentCardSub') },
               { method: PaymentMethod.WALLET,   icon: Wallet,     label: t('checkout:paymentWallet'), sub: t('checkout:paymentWalletSub') },
               { method: PaymentMethod.CASH,     icon: Banknote,   label: t('checkout:paymentCash'),   sub: t('checkout:paymentCashSub') },
-            ].map(({ method, icon: Icon, label, sub }) => (
-              <button
-                key={method}
-                type="button"
-                onClick={() => setPaymentMethod(method)}
-                className="w-full flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-gray-50 transition-colors first:rounded-t-2xl last:rounded-b-2xl"
-                style={{ touchAction: 'manipulation', minHeight: '56px' }}
-              >
-                <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 transition-colors ${paymentMethod === method ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
-                  <Icon size={17} />
-                </div>
-                <div className="flex-1 text-left">
-                  <p className="text-sm font-medium text-gray-900">{label}</p>
-                  <p className="text-xs text-gray-400">{sub}</p>
-                </div>
-                <div className={`h-4 w-4 rounded-full border-2 shrink-0 transition-colors flex items-center justify-center ${paymentMethod === method ? 'border-primary bg-primary' : 'border-gray-300'}`}>
-                  {paymentMethod === method && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
-                </div>
-              </button>
-            ))}
+            ].map(({ method, icon: Icon, label, sub }) => {
+              const isWallet = method === PaymentMethod.WALLET
+              const walletSubLine = isWallet
+                ? walletLoading
+                  ? t('checkout:walletLoadingBalance')
+                  : t('checkout:walletBalance', { amount: formatMoney(walletBalance, currency) })
+                : sub
+              return (
+                <button
+                  key={method}
+                  type="button"
+                  onClick={() => setPaymentMethod(method)}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-gray-50 transition-colors first:rounded-t-2xl last:rounded-b-2xl"
+                  style={{ touchAction: 'manipulation', minHeight: '56px' }}
+                >
+                  <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 transition-colors ${paymentMethod === method ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'}`}>
+                    <Icon size={17} />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="text-sm font-medium text-gray-900">{label}</p>
+                    <p className={`text-xs ${isWallet && !walletLoading && walletCoversOrder && paymentMethod === PaymentMethod.WALLET ? 'text-green-600 font-medium' : 'text-gray-400'}`}>
+                      {walletSubLine}
+                    </p>
+                  </div>
+                  <div className={`h-4 w-4 rounded-full border-2 shrink-0 transition-colors flex items-center justify-center ${paymentMethod === method ? 'border-primary bg-primary' : 'border-gray-300'}`}>
+                    {paymentMethod === method && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                  </div>
+                </button>
+              )
+            })}
           </div>
+
+          {/* Insufficient-balance banner — only when Wallet is the active method */}
+          <AnimatePresence>
+            {paymentMethod === PaymentMethod.WALLET && !walletLoading && !walletCoversOrder && (
+              <motion.div
+                key="wallet-insufficient"
+                role="alert"
+                aria-live="polite"
+                initial={{ opacity: 0, y: -6, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                exit={{ opacity: 0, y: -6, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-3 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                  <div className="h-9 w-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <AlertTriangle size={16} className="text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-amber-800">
+                      {t('checkout:walletInsufficient')}
+                    </p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      {t('checkout:walletShortBy', { amount: formatMoney(walletShortfall, currency) })}
+                    </p>
+                  </div>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={() => setShowTopUp(true)}
+                    style={{ minHeight: 40, touchAction: 'manipulation' }}
+                    className="shrink-0 px-3.5 py-1.5 bg-primary text-white text-xs font-semibold rounded-full cursor-pointer hover:bg-primary/90 transition-colors"
+                  >
+                    {t('checkout:walletTopUp')}
+                  </motion.button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </section>
 
         {/* Note to restaurant */}
@@ -636,7 +726,7 @@ export default function CheckoutPage() {
           whileTap={{ scale: 0.97 }}
           transition={{ duration: 0.08 }}
           onClick={() => void handlePlaceOrder()}
-          disabled={isSubmitting}
+          disabled={isSubmitting || walletMethodBlocked}
           className="w-full flex items-center justify-center gap-2 bg-primary text-white rounded-2xl px-5 font-semibold cursor-pointer hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           style={{ touchAction: 'manipulation', minHeight: '56px' }}
         >
@@ -645,6 +735,8 @@ export default function CheckoutPage() {
             ? t('checkout:placingOrder')
             : !user
             ? t('checkout:signInToOrder')
+            : walletMethodBlocked
+            ? t('checkout:walletInsufficient')
             : t('checkout:placeOrder', { amount: formatMoney(total, currency) })}
         </motion.button>
       </div>
@@ -656,6 +748,17 @@ export default function CheckoutPage() {
         selected={selectedAddress}
         onSelect={setSelectedAddress}
       />
+
+      {/* Wallet top-up bottom sheet — reachable from the insufficient-balance
+          banner or the auto-open in handlePlaceOrder when wallet is short. */}
+      <AnimatePresence>
+        {showTopUp && (
+          <TopUpSheet
+            onClose={() => setShowTopUp(false)}
+            suggestedKobo={walletShortfall > 0 ? walletShortfall : undefined}
+          />
+        )}
+      </AnimatePresence>
     </>
   )
 }

@@ -1,20 +1,17 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Wallet, ArrowDownLeft, ArrowUpRight, X, Plus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import { Wallet, ArrowDownLeft, ArrowUpRight, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import toast from 'react-hot-toast'
 import { walletApi } from '@grandxl/api-client'
 import type { WalletTransaction } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
+import { TopUpSheet } from '../features/wallet/components/TopUpSheet'
+import { TransactionDetailSheet } from '../features/wallet/components/TransactionDetailSheet'
 
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const PRESET_AMOUNTS_KOBO = [50_000, 100_000, 200_000, 500_000] // ₦500, ₦1000, ₦2000, ₦5000
 const PAGE_SIZE = 10
-const MIN_AMOUNT_KOBO = 100 // ₦1
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+type Filter = 'all' | 'credit' | 'debit'
 
 function formatTxDate(date: Date | string): string {
   const d = new Date(date)
@@ -31,8 +28,6 @@ function formatTxDate(date: Date | string): string {
     year: diffDays > 365 ? 'numeric' : undefined,
   })
 }
-
-// ── Skeletons ─────────────────────────────────────────────────────────────────
 
 function BalanceSkeleton() {
   return (
@@ -59,19 +54,28 @@ function TxSkeleton() {
   )
 }
 
-// ── Transaction row ───────────────────────────────────────────────────────────
-
-function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
+function TxRow({
+  tx,
+  index,
+  onOpen,
+}: {
+  tx: WalletTransaction
+  index: number
+  onOpen: () => void
+}) {
   const isCredit = tx.type === 'credit'
 
   return (
-    <motion.div
+    <motion.button
+      type="button"
+      onClick={onOpen}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index, 8) * 0.04, duration: 0.2 }}
-      className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-3"
+      whileTap={{ scale: 0.98 }}
+      className="w-full text-left bg-white rounded-2xl shadow-sm p-4 flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow"
+      style={{ touchAction: 'manipulation' }}
     >
-      {/* Icon */}
       <div
         className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
           isCredit ? 'bg-green-50' : 'bg-red-50'
@@ -84,13 +88,13 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
         )}
       </div>
 
-      {/* Description + date */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 truncate">{tx.description}</p>
+        <p className="text-sm font-medium text-gray-900 truncate">
+          {tx.description ?? tx.reason.replace('_', ' ')}
+        </p>
         <p className="text-xs text-gray-400 mt-0.5">{formatTxDate(tx.createdAt)}</p>
       </div>
 
-      {/* Amount */}
       <p
         className={`text-sm font-semibold shrink-0 ${
           isCredit ? 'text-green-600' : 'text-red-500'
@@ -99,170 +103,67 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
         {isCredit ? '+' : '-'}
         {formatMoney(tx.amount, 'NGN')}
       </p>
-    </motion.div>
+    </motion.button>
   )
 }
 
-// ── Top-up bottom sheet ───────────────────────────────────────────────────────
-
-interface TopUpSheetProps {
-  onClose: () => void
-}
-
-function TopUpSheet({ onClose }: TopUpSheetProps) {
+function FilterChips({
+  value,
+  onChange,
+}: {
+  value: Filter
+  onChange: (v: Filter) => void
+}) {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
+  const reduceMotion = useReducedMotion()
 
-  const [selectedPreset, setSelectedPreset] = useState<number | null>(null)
-  const [customAmountNaira, setCustomAmountNaira] = useState('')
-
-  // Derived amount in kobo
-  const amountKobo: number | null = (() => {
-    if (customAmountNaira !== '') {
-      const naira = parseFloat(customAmountNaira)
-      if (!isNaN(naira) && naira >= 1) return Math.round(naira * 100)
-      return null
-    }
-    return selectedPreset
-  })()
-
-  const isValid = amountKobo !== null && amountKobo >= MIN_AMOUNT_KOBO
-
-  const { mutate: topUp, isPending } = useMutation({
-    mutationFn: () => {
-      if (!isValid || amountKobo === null) throw new Error('Invalid amount')
-      const idempotencyKey = crypto.randomUUID()
-      return walletApi.topUp({ amountKobo }, idempotencyKey)
-    },
-    onSuccess: (res) => {
-      void queryClient.invalidateQueries({ queryKey: ['wallet-balance'] })
-      const authUrl = res.data.data.authorizationUrl
-      window.location.href = authUrl
-    },
-    onError: () => {
-      toast.error(t('wallet.topUpError', 'Could not initiate top-up. Please try again.'))
-    },
-  })
-
-  function handlePresetSelect(kobo: number) {
-    setSelectedPreset(kobo)
-    setCustomAmountNaira('')
-  }
-
-  function handleCustomChange(val: string) {
-    setCustomAmountNaira(val)
-    setSelectedPreset(null)
-  }
+  const options: { key: Filter; label: string }[] = [
+    { key: 'all',    label: t('wallet.filterAll',    'All') },
+    { key: 'credit', label: t('wallet.filterCredits', 'Credits') },
+    { key: 'debit',  label: t('wallet.filterDebits',  'Debits') },
+  ]
 
   return (
-    <>
-      {/* Backdrop */}
-      <motion.div
-        key="backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/40 z-40"
-        onClick={onClose}
-      />
-
-      {/* Sheet */}
-      <motion.div
-        key="sheet"
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl px-5 pt-5 pb-10 shadow-2xl"
-      >
-        {/* Handle */}
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-gray-200" />
-
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-display font-bold text-gray-900">
-            {t('wallet.topUpTitle', 'Add money')}
-          </h2>
+    <div
+      role="tablist"
+      aria-label={t('wallet.filterLabel', 'Filter transactions')}
+      className="flex gap-2 mb-4"
+    >
+      {options.map(({ key, label }) => {
+        const active = value === key
+        return (
           <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
-            aria-label={t('common.close', 'Close')}
-            style={{ touchAction: 'manipulation' }}
+            key={key}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(key)}
+            style={{ touchAction: 'manipulation', minHeight: 36 }}
+            className={`relative px-4 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer ${
+              active ? 'text-white' : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+            }`}
           >
-            <X size={20} className="text-gray-500" />
+            {active && (
+              <motion.span
+                layoutId={reduceMotion ? undefined : 'wallet-filter-pill'}
+                className="absolute inset-0 bg-primary rounded-full shadow-sm"
+                transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+              />
+            )}
+            <span className="relative z-10">{label}</span>
           </button>
-        </div>
-
-        {/* Preset chips */}
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          {t('wallet.quickAmounts', 'Quick amounts')}
-        </p>
-        <div className="grid grid-cols-4 gap-2 mb-5">
-          {PRESET_AMOUNTS_KOBO.map((kobo) => (
-            <button
-              key={kobo}
-              onClick={() => handlePresetSelect(kobo)}
-              style={{ touchAction: 'manipulation', minHeight: 44 }}
-              className={`rounded-2xl text-sm font-semibold transition-colors cursor-pointer ${
-                selectedPreset === kobo
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {formatMoney(kobo, 'NGN').replace('.00', '')}
-            </button>
-          ))}
-        </div>
-
-        {/* Custom amount */}
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-          {t('wallet.customAmount', 'Or enter amount')}
-        </p>
-        <div className="relative mb-6">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium select-none">
-            ₦
-          </span>
-          <input
-            type="number"
-            inputMode="decimal"
-            min={1}
-            step="any"
-            placeholder={t('wallet.amountPlaceholder', '0.00')}
-            value={customAmountNaira}
-            onChange={(e) => handleCustomChange(e.target.value)}
-            className="w-full pl-8 pr-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-gray-900 font-medium text-base focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
-            style={{ minHeight: 48 }}
-          />
-        </div>
-
-        {/* CTA */}
-        <button
-          onClick={() => topUp()}
-          disabled={!isValid || isPending}
-          style={{ minHeight: 52, touchAction: 'manipulation' }}
-          className="w-full bg-primary text-white rounded-2xl font-semibold text-base transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isPending
-            ? t('wallet.processing', 'Processing…')
-            : isValid && amountKobo !== null
-            ? t('wallet.addAmount', 'Add {{amount}}', {
-                amount: formatMoney(amountKobo, 'NGN'),
-              })
-            : t('wallet.addMoney', 'Add money')}
-        </button>
-      </motion.div>
-    </>
+        )
+      })}
+    </div>
   )
 }
-
-// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
   const { t } = useTranslation()
   const [showTopUp, setShowTopUp] = useState(false)
+  const [detailTx, setDetailTx] = useState<WalletTransaction | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
   const [page, setPage] = useState(1)
 
-  // Balance
   const {
     data: balanceRes,
     isLoading: balanceLoading,
@@ -272,7 +173,6 @@ export default function WalletPage() {
     queryFn: () => walletApi.getBalance(),
   })
 
-  // Transactions — accumulate pages
   const {
     data: txRes,
     isLoading: txLoading,
@@ -285,19 +185,38 @@ export default function WalletPage() {
 
   const balance = balanceRes?.data.data.balance ?? 0
   const currency = balanceRes?.data.data.currency ?? 'NGN'
-  const transactions: WalletTransaction[] = txRes?.data.data.data ?? []
-  const txTotal = txRes?.data.data.meta?.total ?? transactions.length
-  const hasMore = transactions.length < txTotal && page * PAGE_SIZE <= txTotal
+  const allTx: WalletTransaction[] = txRes?.data.data.data ?? []
+  const txTotal = txRes?.data.data.meta?.total ?? allTx.length
+  const hasMore = allTx.length < txTotal && page * PAGE_SIZE <= txTotal
+
+  const transactions = useMemo(
+    () => (filter === 'all' ? allTx : allTx.filter((tx) => tx.type === filter)),
+    [allTx, filter],
+  )
+
+  const emptyCopy: { title: string; hint: string } = (() => {
+    if (filter === 'credit')
+      return {
+        title: t('wallet.noCredits', 'No credits yet'),
+        hint:  t('wallet.noCreditsHint', 'Top-ups, refunds and rewards will appear here'),
+      }
+    if (filter === 'debit')
+      return {
+        title: t('wallet.noDebits', 'No debits yet'),
+        hint:  t('wallet.noDebitsHint', 'Payments made from your wallet will appear here'),
+      }
+    return {
+      title: t('wallet.noTransactions', 'No transactions yet'),
+      hint:  t('wallet.noTransactionsHint', 'Top up your wallet to get started'),
+    }
+  })()
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-5 pb-24">
-
-      {/* Page title */}
       <h1 className="font-display font-bold text-xl text-gray-900 mb-5">
         {t('wallet.title', 'My Wallet')}
       </h1>
 
-      {/* ── Balance card ───────────────────────────────────────────────────── */}
       {balanceLoading ? (
         <BalanceSkeleton />
       ) : balanceError ? (
@@ -313,7 +232,6 @@ export default function WalletPage() {
           transition={{ duration: 0.25 }}
           className="bg-gradient-to-br from-primary to-primary/80 rounded-3xl p-6 text-white shadow-lg"
         >
-          {/* Label row */}
           <div className="flex items-center gap-2 mb-4">
             <Wallet size={16} className="text-white/70" />
             <span className="text-sm font-medium text-white/80">
@@ -321,7 +239,6 @@ export default function WalletPage() {
             </span>
           </div>
 
-          {/* Balance */}
           <p className="text-3xl font-display font-bold tracking-tight mb-1">
             {formatMoney(balance, currency)}
           </p>
@@ -329,7 +246,6 @@ export default function WalletPage() {
             {t('wallet.availableBalance', 'Available balance')}
           </p>
 
-          {/* Top-up button */}
           <button
             onClick={() => setShowTopUp(true)}
             style={{ minHeight: 44, touchAction: 'manipulation' }}
@@ -341,11 +257,12 @@ export default function WalletPage() {
         </motion.div>
       )}
 
-      {/* ── Transaction history ────────────────────────────────────────────── */}
       <div className="mt-6">
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
           {t('wallet.transactionHistory', 'Transaction history')}
         </h2>
+
+        <FilterChips value={filter} onChange={setFilter} />
 
         {txLoading ? (
           <div className="space-y-3">
@@ -368,27 +285,27 @@ export default function WalletPage() {
             <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
               <Wallet size={28} className="text-gray-300" />
             </div>
-            <p className="text-sm font-medium text-gray-700">
-              {t('wallet.noTransactions', 'No transactions yet')}
-            </p>
-            <p className="text-xs text-gray-400">
-              {t('wallet.noTransactionsHint', 'Top up your wallet to get started')}
-            </p>
+            <p className="text-sm font-medium text-gray-700">{emptyCopy.title}</p>
+            <p className="text-xs text-gray-400 text-center px-6">{emptyCopy.hint}</p>
           </motion.div>
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
-              key={`tx-page-${page}`}
+              key={`tx-${filter}-${page}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="space-y-3"
             >
               {transactions.map((tx, i) => (
-                <TxRow key={tx._id} tx={tx} index={i} />
+                <TxRow
+                  key={tx._id}
+                  tx={tx}
+                  index={i}
+                  onOpen={() => setDetailTx(tx)}
+                />
               ))}
 
-              {/* Load more */}
-              {hasMore && (
+              {hasMore && filter === 'all' && (
                 <button
                   onClick={() => setPage((p) => p + 1)}
                   disabled={txFetching}
@@ -405,9 +322,14 @@ export default function WalletPage() {
         )}
       </div>
 
-      {/* ── Top-up bottom sheet ────────────────────────────────────────────── */}
       <AnimatePresence>
         {showTopUp && <TopUpSheet onClose={() => setShowTopUp(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {detailTx && (
+          <TransactionDetailSheet tx={detailTx} onClose={() => setDetailTx(null)} />
+        )}
       </AnimatePresence>
     </div>
   )
