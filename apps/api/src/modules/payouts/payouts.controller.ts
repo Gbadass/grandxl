@@ -22,7 +22,7 @@ import {
   UpdateBankAccountDto,
   VerifyAccountDto,
 } from './dto/payout.dto'
-import { PayoutStatus } from './schemas/payout-request.schema'
+import { PayoutStatus, type PayoutEntityType } from './schemas/payout-request.schema'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { Public } from '../../common/decorators/public.decorator'
@@ -86,6 +86,67 @@ export class RiderPayoutsController {
   }
 }
 
+// ── Restaurant-facing (S12-6) ───────────────────────────────────────
+
+@ApiTags('Restaurant — Payouts')
+@ApiBearerAuth()
+@Roles(UserRole.RESTAURANT_OWNER)
+@Controller('restaurant/payouts')
+export class RestaurantPayoutsController {
+  constructor(private readonly payouts: PayoutsService) {}
+
+  @Get('bank-account')
+  @ApiOperation({ summary: 'Get my restaurant bank account' })
+  getBankAccount(@CurrentUser() user: JwtPayload) {
+    return this.payouts.getRestaurantBankAccount(user.sub)
+  }
+
+  @Put('bank-account')
+  @ApiOperation({ summary: 'Update my restaurant bank account' })
+  updateBankAccount(@CurrentUser() user: JwtPayload, @Body() dto: UpdateBankAccountDto) {
+    return this.payouts.updateRestaurantBankAccount(user.sub, dto)
+  }
+
+  @Get('banks')
+  @ApiOperation({ summary: 'List Nigerian banks (proxy of Paystack)' })
+  getBanks() {
+    return this.payouts.getBanksList()
+  }
+
+  @Post('verify-account')
+  @ApiOperation({ summary: 'Verify bank account number via Paystack' })
+  verifyAccount(@Body() dto: VerifyAccountDto) {
+    return this.payouts.resolveAccount(dto.accountNumber, dto.bankCode)
+  }
+
+  @Get('summary')
+  @ApiOperation({ summary: 'Available balance + pending hold + in-flight request status' })
+  getSummary(@CurrentUser() user: JwtPayload) {
+    return this.payouts.getRestaurantEarningsSummary(user.sub)
+  }
+
+  @Post()
+  @Idempotent()
+  @ApiOperation({ summary: 'Request a payout from my restaurant earnings (send Idempotency-Key header)' })
+  create(@CurrentUser() user: JwtPayload, @Body() dto: CreatePayoutRequestDto) {
+    return this.payouts.createRestaurantRequest(user.sub, dto.amountKobo)
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List my restaurant payout requests' })
+  list(
+    @CurrentUser() user: JwtPayload,
+    @Query('page')  page?:  string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.payouts.listForRestaurant(
+      user.sub,
+      page  ? parseInt(page,  10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    )
+  }
+}
+
 // ── Admin-facing ────────────────────────────────────────────────────
 
 @ApiTags('Admin — Payouts')
@@ -99,14 +160,16 @@ export class AdminPayoutsController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List payout requests (filterable by status)' })
+  @ApiOperation({ summary: 'List payout requests (filterable by status + entity type)' })
   list(
-    @Query('status') status?: PayoutStatus,
-    @Query('page')   page?:   string,
-    @Query('limit')  limit?:  string,
+    @Query('status')     status?:     PayoutStatus,
+    @Query('entityType') entityType?: PayoutEntityType,
+    @Query('page')       page?:       string,
+    @Query('limit')      limit?:      string,
   ) {
     return this.payouts.listForAdmin(
       status,
+      entityType,
       page  ? parseInt(page,  10) : 1,
       limit ? parseInt(limit, 10) : 20,
     )

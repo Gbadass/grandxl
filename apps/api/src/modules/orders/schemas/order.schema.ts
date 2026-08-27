@@ -176,6 +176,13 @@ export class OrderDocument extends Document {
   @Prop({ type: Date, default: null, index: true })
   riderEarningsSettledAt!: Date | null
 
+  // Sprint 12 (S12-6): mirror of rider settlement, for restaurant earnings.
+  // Same 24h hold + nightly settle model. The two fields advance independently
+  // — an order can be rider-settled but not yet restaurant-settled if the two
+  // settlement runs happen at different times (though today they're one job).
+  @Prop({ type: Date, default: null, index: true })
+  restaurantEarningsSettledAt!: Date | null
+
   @Prop({ required: true, default: 'NG' })
   country!: string
 

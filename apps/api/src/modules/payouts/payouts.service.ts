@@ -11,9 +11,11 @@ import { ConfigService } from '@nestjs/config'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { Connection, Model, Types } from 'mongoose'
 import { RiderDocument } from '../riders/schemas/rider.schema'
+import { RestaurantDocument } from '../restaurants/schemas/restaurant.schema'
 import {
   PayoutRequestDocument,
   PayoutStatus,
+  type PayoutEntityType,
 } from './schemas/payout-request.schema'
 import { UpdateBankAccountDto } from './dto/payout.dto'
 
@@ -53,6 +55,8 @@ export class PayoutsService {
     private readonly payoutModel: Model<PayoutRequestDocument>,
     @InjectModel('RiderDocument')
     private readonly riderModel: Model<RiderDocument>,
+    @InjectModel(RestaurantDocument.name)
+    private readonly restaurantModel: Model<RestaurantDocument>,
     private readonly config: ConfigService,
   ) {
     this.paystackSecret = this.config.getOrThrow<string>('PAYSTACK_SECRET_KEY')
@@ -217,6 +221,8 @@ export class PayoutsService {
     }
 
     return this.payoutModel.create({
+      entityType:    'rider',
+      entityId:      rider._id,
       riderId:       rider._id,
       userId:        new Types.ObjectId(userId),
       amountKobo,
@@ -243,15 +249,202 @@ export class PayoutsService {
     return { items, total, page, limit, pages: Math.ceil(total / limit) }
   }
 
-  // ── Admin ────────────────────────────────────────────────────────
+  // ── Restaurant-side (S12-6) ─────────────────────────────────────
+  //
+  // Mirror of the rider methods. Same shape, different collection. Kept as
+  // parallel methods rather than a single generic one so callers stay explicit
+  // about which type they're operating on — the only difference the caller
+  // sees is where the money comes from and which bank account is used.
 
-  async listForAdmin(status: PayoutStatus | undefined, page = 1, limit = 20) {
+  private async findRestaurantForOwner(userId: string): Promise<RestaurantDocument> {
+    const restaurant = await this.restaurantModel
+      .findOne({ ownerId: new Types.ObjectId(userId) })
+      .lean() as unknown as RestaurantDocument | null
+    if (!restaurant) throw new NotFoundException('Restaurant profile not found')
+    return restaurant
+  }
+
+  async getRestaurantBankAccount(userId: string) {
+    const r = await this.findRestaurantForOwner(userId)
+    // Never leak paystackRecipientCode to the client — internal only.
+    const b = r.bankDetails
+    return {
+      bankName:      b?.bankName ?? null,
+      accountNumber: b?.accountNumber ?? null,
+      accountName:   b?.accountName ?? null,
+      bankCode:      b?.bankCode ?? null,
+    }
+  }
+
+  async updateRestaurantBankAccount(userId: string, dto: UpdateBankAccountDto) {
+    const restaurant = await this.findRestaurantForOwner(userId)
+
+    let recipientCode: string | null = restaurant.bankDetails?.paystackRecipientCode ?? null
+    if (dto.bankCode) {
+      try {
+        recipientCode = await this.createOrFetchRecipient(
+          dto.accountName, dto.accountNumber, dto.bankCode,
+        )
+      } catch (err) {
+        this.logger.warn('Could not create Paystack recipient during restaurant bank save', err)
+        // Don't block the save — we'll create the recipient at payout time if missing
+      }
+    }
+
+    const updated = await this.restaurantModel.findByIdAndUpdate(
+      restaurant._id,
+      {
+        $set: {
+          bankDetails: {
+            bankName:              dto.bankName,
+            accountNumber:         dto.accountNumber,
+            accountName:           dto.accountName,
+            bankCode:              dto.bankCode ?? null,
+            paystackRecipientCode: recipientCode,
+          },
+        },
+      },
+      { new: true, projection: { bankDetails: 1 } },
+    ).lean() as unknown as { bankDetails: RestaurantDocument['bankDetails'] } | null
+
+    const b = updated?.bankDetails
+    return {
+      bankName:      b?.bankName ?? null,
+      accountNumber: b?.accountNumber ?? null,
+      accountName:   b?.accountName ?? null,
+      bankCode:      b?.bankCode ?? null,
+    }
+  }
+
+  async createRestaurantRequest(userId: string, amountKobo: number) {
+    const restaurant = await this.findRestaurantForOwner(userId)
+
+    const bank = restaurant.bankDetails
+    if (!bank?.bankName || !bank.accountNumber || !bank.accountName) {
+      throw new BadRequestException('Add your bank account before requesting a payout')
+    }
+    if (amountKobo > restaurant.earnings.totalKobo) {
+      throw new BadRequestException(
+        `You only have ₦${(restaurant.earnings.totalKobo / 100).toFixed(0)} available`,
+      )
+    }
+
+    const inFlight = await this.payoutModel.findOne({
+      entityType: 'restaurant',
+      entityId:   restaurant._id,
+      status:     { $in: [PayoutStatus.PENDING, PayoutStatus.APPROVED] },
+    }).lean()
+    if (inFlight) {
+      throw new BadRequestException('You already have a payout request in progress')
+    }
+
+    return this.payoutModel.create({
+      entityType:    'restaurant',
+      entityId:      restaurant._id,
+      // riderId + userId intentionally omitted for restaurant payouts.
+      amountKobo,
+      bankName:      bank.bankName,
+      accountNumber: bank.accountNumber,
+      accountName:   bank.accountName,
+      bankCode:      bank.bankCode ?? undefined,
+      status:        PayoutStatus.PENDING,
+    })
+  }
+
+  async listForRestaurant(userId: string, page = 1, limit = 20) {
+    const restaurant = await this.restaurantModel
+      .findOne({ ownerId: new Types.ObjectId(userId) }, { _id: 1 })
+      .lean() as unknown as { _id: Types.ObjectId } | null
+    if (!restaurant) throw new ForbiddenException('Restaurant profile not found')
+
     const skip = (page - 1) * limit
-    const filter = status ? { status } : {}
+    const filter = { entityType: 'restaurant' as const, entityId: restaurant._id }
     const [items, total] = await Promise.all([
       this.payoutModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       this.payoutModel.countDocuments(filter),
     ])
+    return { items, total, page, limit, pages: Math.ceil(total / limit) }
+  }
+
+  async getRestaurantEarningsSummary(userId: string) {
+    const restaurant = await this.restaurantModel
+      .findOne({ ownerId: new Types.ObjectId(userId) }, { _id: 1, earnings: 1, bankDetails: 1 })
+      .lean() as unknown as {
+        _id: Types.ObjectId
+        earnings: { totalKobo: number; pendingKobo: number }
+        bankDetails: RestaurantDocument['bankDetails']
+      } | null
+    if (!restaurant) throw new ForbiddenException('Restaurant profile not found')
+
+    const inFlight = await this.payoutModel.findOne({
+      entityType: 'restaurant',
+      entityId:   restaurant._id,
+      status:     { $in: [PayoutStatus.PENDING, PayoutStatus.APPROVED] },
+    }).lean() as unknown as { amountKobo: number; status: PayoutStatus } | null
+
+    const b = restaurant.bankDetails
+    return {
+      availableKobo:     restaurant.earnings.totalKobo,
+      pendingHoldKobo:   restaurant.earnings.pendingKobo,
+      hasBankAccount:    !!(b?.bankName && b.accountNumber && b.accountName),
+      inFlightRequest:   inFlight ? { amountKobo: inFlight.amountKobo, status: inFlight.status } : null,
+    }
+  }
+
+  // ── Admin ────────────────────────────────────────────────────────
+
+  async listForAdmin(status: PayoutStatus | undefined, entityType: PayoutEntityType | undefined, page = 1, limit = 20) {
+    const skip = (page - 1) * limit
+    const filter: Record<string, unknown> = {}
+    if (status)     filter.status     = status
+    if (entityType) filter.entityType = entityType
+    const [rawItems, total] = await Promise.all([
+      this.payoutModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      this.payoutModel.countDocuments(filter),
+    ])
+
+    // Enrich each row with the counterparty's display name so the admin doesn't
+    // have to open each payout to know who requested it. Batched via a single
+    // lookup per collection rather than N+1 fetches.
+    const riderEntityIds:      Types.ObjectId[] = []
+    const restaurantEntityIds: Types.ObjectId[] = []
+    for (const r of rawItems) {
+      const type = r.entityType ?? 'rider'
+      const id   = r.entityId ?? r.riderId
+      if (!id) continue
+      if (type === 'restaurant') restaurantEntityIds.push(id)
+      else riderEntityIds.push(id)
+    }
+
+    const [riderRows, restaurantRows] = await Promise.all([
+      riderEntityIds.length
+        ? this.riderModel.aggregate([
+            { $match: { _id: { $in: riderEntityIds } } },
+            { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
+            { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+            { $project: { _id: 1, name: { $concat: [{ $ifNull: ['$user.firstName', ''] }, ' ', { $ifNull: ['$user.lastName', ''] }] } } },
+          ])
+        : Promise.resolve([]),
+      restaurantEntityIds.length
+        ? this.restaurantModel.find({ _id: { $in: restaurantEntityIds } }, { _id: 1, name: 1 }).lean()
+        : Promise.resolve([]),
+    ]) as [Array<{ _id: Types.ObjectId; name: string }>, Array<{ _id: Types.ObjectId; name: string }>]
+
+    const nameByEntity = new Map<string, string>()
+    for (const r of riderRows)      nameByEntity.set(String(r._id), r.name.trim() || 'Unknown rider')
+    for (const r of restaurantRows) nameByEntity.set(String(r._id), r.name)
+
+    const items = rawItems.map((r) => {
+      const type = r.entityType ?? 'rider'
+      const id   = r.entityId ?? r.riderId
+      return {
+        ...r,
+        entityType: type,
+        entityId:   id,
+        entityName: id ? (nameByEntity.get(String(id)) ?? null) : null,
+      }
+    })
+
     return { items, total, page, limit, pages: Math.ceil(total / limit) }
   }
 
@@ -262,39 +455,53 @@ export class PayoutsService {
       throw new BadRequestException(`Already ${payout.status}`)
     }
 
-    // Get the rider's Paystack recipient code — create one on the fly if missing
-    const rider = await this.riderModel
-      .findById(payout.riderId, { bankAccount: 1 })
-      .lean()
-    if (!rider) throw new NotFoundException('Rider not found')
-
-    const bank = rider.bankAccount
-    // Prefer bank details snapshotted on the payout request (immutable), fall back to current bank account
-    const accountNumber = payout.accountNumber ?? bank?.accountNumber
-    const bankCode      = (payout as PayoutRequestDocument & { bankCode?: string }).bankCode ?? bank?.bankCode
-    const accountName   = payout.accountName  ?? bank?.accountName ?? accountNumber
+    // Snapshotted on the payout request at creation time — immutable, so we prefer
+    // it over the current bank account which the counterparty may have edited since.
+    const accountNumber = payout.accountNumber
+    const bankCode      = (payout as PayoutRequestDocument & { bankCode?: string }).bankCode
+    const accountName   = payout.accountName
 
     if (!accountNumber || !bankCode) {
-      throw new BadRequestException('Rider has no complete bank account on file')
+      throw new BadRequestException('Payout request has no complete bank account on file')
     }
 
-    let recipientCode = bank?.paystackRecipientCode ?? null
-    if (!recipientCode) {
-      recipientCode = await this.createOrFetchRecipient(
-        accountName,
-        accountNumber,
-        bankCode,
-      )
-      await this.riderModel.updateOne(
-        { _id: payout.riderId },
-        { $set: { 'bankAccount.paystackRecipientCode': recipientCode } },
-      )
+    // Fall back to (and cache) a Paystack recipient on the counterparty record so
+    // future payouts don't recreate it. Which record we read from depends on entityType.
+    const entityType = (payout.entityType ?? 'rider') as PayoutEntityType
+    const entityId   = payout.entityId ?? payout.riderId
+    if (!entityId) throw new BadRequestException('Payout has no counterparty reference')
+
+    let recipientCode: string | null
+    if (entityType === 'restaurant') {
+      const restaurant = await this.restaurantModel
+        .findById(entityId, { bankDetails: 1 })
+        .lean() as unknown as { bankDetails: RestaurantDocument['bankDetails'] } | null
+      if (!restaurant) throw new NotFoundException('Restaurant not found')
+      recipientCode = restaurant.bankDetails?.paystackRecipientCode ?? null
+      if (!recipientCode) {
+        recipientCode = await this.createOrFetchRecipient(accountName, accountNumber, bankCode)
+        await this.restaurantModel.updateOne(
+          { _id: entityId },
+          { $set: { 'bankDetails.paystackRecipientCode': recipientCode } },
+        )
+      }
+    } else {
+      const rider = await this.riderModel.findById(entityId, { bankAccount: 1 }).lean()
+      if (!rider) throw new NotFoundException('Rider not found')
+      recipientCode = rider.bankAccount?.paystackRecipientCode ?? null
+      if (!recipientCode) {
+        recipientCode = await this.createOrFetchRecipient(accountName, accountNumber, bankCode)
+        await this.riderModel.updateOne(
+          { _id: entityId },
+          { $set: { 'bankAccount.paystackRecipientCode': recipientCode } },
+        )
+      }
     }
 
-    // Initiate the transfer — Paystack debits our balance and sends to rider's bank.
+    // Initiate the transfer — Paystack debits our balance and sends to the counterparty.
     // Use the payout _id as the idempotency reference so retries won't double-pay.
     const reference = `payout_${payout._id.toString()}`
-    const reason    = `GrandXL rider payout — ${payout.accountName}`
+    const reason    = `GrandXL ${entityType} payout — ${payout.accountName}`
     const { transferCode } = await this.initiateTransfer(
       recipientCode,
       payout.amountKobo,
@@ -310,7 +517,7 @@ export class PayoutsService {
     payout.paystackTransferCode  = transferCode
     await payout.save()
 
-    this.logger.log(`Payout ${payoutId} approved — Paystack transfer ${transferCode} initiated for ₦${(payout.amountKobo / 100).toFixed(0)}`)
+    this.logger.log(`Payout ${payoutId} (${entityType}) approved — Paystack transfer ${transferCode} initiated for ₦${(payout.amountKobo / 100).toFixed(0)}`)
     return payout
   }
 
@@ -364,13 +571,24 @@ export class PayoutsService {
           throw new BadRequestException('Payout is no longer in APPROVED state — concurrent update detected')
         }
 
-        // Debit rider earnings — guarded by $gte so we can't go negative.
-        // Runs in the same session/transaction as the payout status update.
-        await this.riderModel.updateOne(
-          { _id: payout.riderId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
-          { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
-          { session },
-        )
+        // Debit the counterparty's totalKobo — guarded by $gte so we can't go
+        // negative. Runs in the same session/transaction as the payout status update.
+        const entityType = (payout.entityType ?? 'rider') as PayoutEntityType
+        const entityId   = payout.entityId ?? payout.riderId
+        if (!entityId) throw new BadRequestException('Payout has no counterparty reference')
+        if (entityType === 'restaurant') {
+          await this.restaurantModel.updateOne(
+            { _id: entityId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
+            { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
+            { session },
+          )
+        } else {
+          await this.riderModel.updateOne(
+            { _id: entityId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
+            { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
+            { session },
+          )
+        }
 
         result = updated
       })
@@ -421,11 +639,22 @@ export class PayoutsService {
             return
           }
 
-          await this.riderModel.updateOne(
-            { _id: payout.riderId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
-            { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
-            { session },
-          )
+          const entityType = (payout.entityType ?? 'rider') as PayoutEntityType
+          const entityId   = payout.entityId ?? payout.riderId
+          if (!entityId) return
+          if (entityType === 'restaurant') {
+            await this.restaurantModel.updateOne(
+              { _id: entityId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
+              { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
+              { session },
+            )
+          } else {
+            await this.riderModel.updateOne(
+              { _id: entityId, 'earnings.totalKobo': { $gte: payout.amountKobo } },
+              { $inc: { 'earnings.totalKobo': -payout.amountKobo } },
+              { session },
+            )
+          }
         })
       } finally {
         await session.endSession()
@@ -467,12 +696,23 @@ export class PayoutsService {
             return
           }
 
-          // Restore the rider's earnings so they can request a payout again.
-          await this.riderModel.updateOne(
-            { _id: payout.riderId },
-            { $inc: { 'earnings.totalKobo': payout.amountKobo } },
-            { session },
-          )
+          // Restore the counterparty's earnings so they can request a payout again.
+          const entityType = (payout.entityType ?? 'rider') as PayoutEntityType
+          const entityId   = payout.entityId ?? payout.riderId
+          if (!entityId) return
+          if (entityType === 'restaurant') {
+            await this.restaurantModel.updateOne(
+              { _id: entityId },
+              { $inc: { 'earnings.totalKobo': payout.amountKobo } },
+              { session },
+            )
+          } else {
+            await this.riderModel.updateOne(
+              { _id: entityId },
+              { $inc: { 'earnings.totalKobo': payout.amountKobo } },
+              { session },
+            )
+          }
         })
       } finally {
         await session.endSession()

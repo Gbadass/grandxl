@@ -9,10 +9,15 @@ import {
   RiderDocument,
   RiderSchema,
 } from '../riders/schemas/rider.schema'
+import {
+  RestaurantDocument,
+  RestaurantSchema,
+} from '../restaurants/schemas/restaurant.schema'
 import { PayoutsService } from './payouts.service'
 import {
   AdminPayoutsController,
   PaystackWebhookController,
+  RestaurantPayoutsController,
   RiderPayoutsController,
 } from './payouts.controller'
 
@@ -22,9 +27,10 @@ import {
     MongooseModule.forFeature([
       { name: PayoutRequestDocument.name, schema: PayoutRequestSchema },
       { name: RiderDocument.name,         schema: RiderSchema },
+      { name: RestaurantDocument.name,    schema: RestaurantSchema },
     ]),
   ],
-  controllers: [RiderPayoutsController, AdminPayoutsController, PaystackWebhookController],
+  controllers: [RiderPayoutsController, RestaurantPayoutsController, AdminPayoutsController, PaystackWebhookController],
   providers: [PayoutsService],
   exports: [PayoutsService],
 })

@@ -691,4 +691,34 @@ export class RestaurantsService {
 
     return updated
   }
+
+  // ── Sprint 12 (S12-6): earnings pipeline ────────────────────────────
+  //
+  // Mirrors RidersService.onDeliveryComplete / settleEarnings. Restaurant earns
+  // (subtotal − discount) on every DELIVERED order — the number lands in
+  // `earnings.pendingKobo` immediately (so the owner sees "pending" balance
+  // right away), then the nightly SettlementService moves it to `earnings.totalKobo`
+  // after a 24h dispute window elapses. Same lifecycle as riders, on purpose:
+  // no new mental model for the accounting team to learn.
+
+  async onDeliveryComplete(restaurantId: string, netEarningsKobo: number): Promise<void> {
+    // Non-negative guard: net (subtotal − discount) can go to zero on a fully-discounted
+    // free-meal promo, but shouldn't credit negative kobo. The caller is trusted (only
+    // OrdersService.updateStatus fires this) but the guard is cheap insurance.
+    if (netEarningsKobo <= 0) return
+    await this.restaurantModel.findByIdAndUpdate(restaurantId, {
+      $inc: { 'earnings.pendingKobo': netEarningsKobo },
+    })
+  }
+
+  // Moves earned kobo from pendingKobo to totalKobo — called by nightly settlement.
+  // Guarded so pendingKobo cannot go negative on a data inconsistency (the sweeper
+  // just skips that restaurant for this cycle, next run picks it up).
+  async settleEarnings(restaurantId: string, amountKobo: number): Promise<void> {
+    if (amountKobo <= 0) return
+    await this.restaurantModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(restaurantId), 'earnings.pendingKobo': { $gte: amountKobo } },
+      { $inc: { 'earnings.totalKobo': amountKobo, 'earnings.pendingKobo': -amountKobo } },
+    )
+  }
 }

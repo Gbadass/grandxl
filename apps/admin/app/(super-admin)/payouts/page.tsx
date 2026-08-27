@@ -7,13 +7,14 @@ import { UserRole } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
 import { adminPayoutsApi } from '@grandxl/api-client'
-import type { PayoutRequest } from '@grandxl/api-client'
+import type { PayoutRequest, PayoutRequestForAdmin, PayoutEntityType } from '@grandxl/api-client'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { StatsCard } from '../../../src/components/ui/StatsCard'
 import { DataTable, type Column } from '../../../src/components/ui/DataTable'
 import '../../../src/lib/axios'
 
 type TabStatus = 'all' | 'pending' | 'approved' | 'paid' | 'rejected'
+type TabEntity = 'all' | PayoutEntityType
 
 const TAB_LABELS: { key: TabStatus; label: string }[] = [
   { key: 'all',      label: 'All' },
@@ -22,6 +23,17 @@ const TAB_LABELS: { key: TabStatus; label: string }[] = [
   { key: 'paid',     label: 'Paid' },
   { key: 'rejected', label: 'Rejected' },
 ]
+
+const ENTITY_TAB_LABELS: { key: TabEntity; label: string }[] = [
+  { key: 'all',        label: 'All types' },
+  { key: 'rider',      label: 'Riders' },
+  { key: 'restaurant', label: 'Restaurants' },
+]
+
+const ENTITY_STYLES: Record<PayoutEntityType, string> = {
+  rider:      'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  restaurant: 'bg-orange-50 text-orange-700 ring-orange-200',
+}
 
 const STATUS_STYLES: Record<string, string> = {
   pending:  'bg-amber-50 text-amber-700',
@@ -40,7 +52,8 @@ export default function PayoutsPage() {
   const router      = useRouter()
   const queryClient = useQueryClient()
   const { isAuthenticated, isInitializing, user } = useAuthStore()
-  const [tab,  setTab]  = useState<TabStatus>('all')
+  const [tab,       setTab]       = useState<TabStatus>('all')
+  const [entityTab, setEntityTab] = useState<TabEntity>('all')
   const [page, setPage] = useState(1)
   const [rejectId,   setRejectId]   = useState<string | null>(null)
   const [rejectNote, setRejectNote] = useState('')
@@ -51,10 +64,15 @@ export default function PayoutsPage() {
   }, [isAuthenticated, isInitializing, user, router])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-payouts', tab, page],
+    queryKey: ['admin-payouts', tab, entityTab, page],
     queryFn: () =>
       adminPayoutsApi
-        .list({ status: tab === 'all' ? undefined : (tab as PayoutRequest['status']), page, limit: 20 })
+        .list({
+          status:     tab       === 'all' ? undefined : (tab       as PayoutRequest['status']),
+          entityType: entityTab === 'all' ? undefined : (entityTab as PayoutEntityType),
+          page,
+          limit: 20,
+        })
         .then((r) => r.data.data),
     staleTime: 30_000,
   })
@@ -65,7 +83,7 @@ export default function PayoutsPage() {
     staleTime: 30_000,
   })
 
-  const items: PayoutRequest[] = data?.items ?? []
+  const items: PayoutRequestForAdmin[] = data?.items ?? []
   const total = data?.total ?? 0
 
   const totalPendingKobo = items
@@ -90,13 +108,25 @@ export default function PayoutsPage() {
     },
   })
 
-  const columns: Column<PayoutRequest>[] = [
+  const columns: Column<PayoutRequestForAdmin>[] = [
     {
-      key: 'rider',
-      header: 'Rider / Bank',
+      key: 'entity',
+      header: 'Type',
+      render: (p) => {
+        const type = (p.entityType ?? 'rider') as PayoutEntityType
+        return (
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest ring-1 ring-inset ${ENTITY_STYLES[type]}`}>
+            {type}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'counterparty',
+      header: 'Counterparty / Bank',
       render: (p) => (
         <div>
-          <p className="font-medium text-gray-900 text-sm">{p.accountName}</p>
+          <p className="font-medium text-gray-900 text-sm">{p.entityName ?? p.accountName}</p>
           <p className="text-xs text-gray-400">{p.bankName} · {p.accountNumber}</p>
           <p className="text-xs text-gray-300 font-mono mt-0.5">{p._id.slice(-8)}</p>
         </div>
@@ -183,7 +213,7 @@ export default function PayoutsPage() {
     <div>
       <PageHeader
         title="Payouts"
-        subtitle="Rider payout requests — approve to send money via Paystack Transfer"
+        subtitle="Rider and restaurant payout requests — approve to send money via Paystack Transfer"
       />
 
       {/* KPIs */}
@@ -218,8 +248,8 @@ export default function PayoutsPage() {
         />
       </div>
 
-      {/* Tabs */}
-      <div className="mb-4 flex gap-2 flex-wrap">
+      {/* Status tabs */}
+      <div className="mb-3 flex gap-2 flex-wrap">
         {TAB_LABELS.map(({ key, label }) => (
           <button
             key={key}
@@ -236,6 +266,23 @@ export default function PayoutsPage() {
                 {pendingData?.total}
               </span>
             )}
+          </button>
+        ))}
+      </div>
+
+      {/* Entity-type tabs */}
+      <div className="mb-4 flex gap-2 flex-wrap">
+        {ENTITY_TAB_LABELS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => { setEntityTab(key); setPage(1) }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-widest transition-colors cursor-pointer ${
+              entityTab === key
+                ? 'bg-gray-900 text-white'
+                : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700'
+            }`}
+          >
+            {label}
           </button>
         ))}
       </div>

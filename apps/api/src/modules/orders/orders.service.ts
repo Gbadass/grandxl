@@ -881,6 +881,16 @@ export class OrdersService {
             updated.pricing.deliveryFee + (updated.pricing.tip ?? 0),
           )
         : Promise.resolve(),
+      // Sprint 12 (S12-6): on delivery, also credit the restaurant's pending
+      // earnings so the payouts page reflects money owed in real time. Same 24h
+      // hold as riders — settlement moves pending → total. Net = subtotal − discount,
+      // matching the model the Finance page (S12-5) uses.
+      dto.status === OrderStatus.DELIVERED
+        ? this.restaurantsService.onDeliveryComplete(
+            String(updated.restaurantId),
+            Math.max(0, updated.pricing.subtotal - (updated.pricing.discount ?? 0)),
+          )
+        : Promise.resolve(),
       // On cancellation: release the assigned rider. Auto-heal in acceptOrder self-corrects
       // a missed release eventually, but that leaves the rider locked out of new jobs in the
       // meantime — real earnings loss. Route through SideEffects so a transient failure

@@ -8,6 +8,7 @@ const NAV: NavItem[] = [
   { href: '/restaurant/kitchen',    label: 'Kitchen Display', icon: 'orders'     },
   { href: '/restaurant/payments',   label: 'Payments',       icon: 'payouts'    },
   { href: '/restaurant/finance',    label: 'Finance',        icon: 'reports'    },
+  { href: '/restaurant/payouts',    label: 'Payouts',        icon: 'payouts'    },
   { href: '/restaurant/menu',       label: 'Menu',       icon: 'menu'       },
   { href: '/restaurant/categories', label: 'Categories', icon: 'categories' },
   { href: '/restaurant/promotions', label: 'Promotions', icon: 'promotions' },

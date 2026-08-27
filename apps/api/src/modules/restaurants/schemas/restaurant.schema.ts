@@ -25,11 +25,28 @@ class BankDetailsSubdoc {
   @Prop({ type: String, default: null }) bankName!: string | null
   @Prop({ type: String, default: null }) accountNumber!: string | null
   @Prop({ type: String, default: null }) accountName!: string | null
+
+  // Sprint 12 (S12-6): Paystack code for the selected bank + recipient handle.
+  // Populated when the owner saves bank details through the restaurant portal so
+  // we don't have to re-create the Paystack transfer recipient on every payout.
+  @Prop({ type: String, default: null }) bankCode!: string | null
+  @Prop({ type: String, default: null }) paystackRecipientCode!: string | null
+}
+
+// Sprint 12 (S12-6): mirror of the rider EarningsSubdoc. `pendingKobo` accumulates
+// on DELIVERED (in the 24h dispute window). `settleEarnings` moves it to `totalKobo`
+// after the window elapses. `totalKobo` is what the restaurant can request as a
+// payout — same lifecycle as rider earnings.
+@Schema({ _id: false })
+class EarningsSubdoc {
+  @Prop({ type: Number, default: 0, min: 0 }) totalKobo!: number
+  @Prop({ type: Number, default: 0, min: 0 }) pendingKobo!: number
 }
 
 const DayHoursSchema = SchemaFactory.createForClass(DayHoursSubdoc)
 const OpeningHoursSchema = SchemaFactory.createForClass(OpeningHoursSubdoc)
 const BankDetailsSchema = SchemaFactory.createForClass(BankDetailsSubdoc)
+const EarningsSchema = SchemaFactory.createForClass(EarningsSubdoc)
 
 const DEFAULT_DAY = { open: '09:00', close: '22:00', isOpen: true }
 const DEFAULT_OPENING_HOURS = () => ({
@@ -162,9 +179,21 @@ export class RestaurantDocument extends Document {
   // Never returned in public API responses — admin and owner only
   @Prop({
     type: BankDetailsSchema,
-    default: () => ({ bankName: null, accountNumber: null, accountName: null }),
+    default: () => ({
+      bankName: null, accountNumber: null, accountName: null,
+      bankCode: null, paystackRecipientCode: null,
+    }),
   })
   bankDetails!: BankDetailsSubdoc
+
+  // Sprint 12 (S12-6): earnings pipeline. Only exposed to the restaurant owner
+  // via /restaurant/payouts. Legacy documents predate this field — the default
+  // makes reads safe until we backfill.
+  @Prop({
+    type: EarningsSchema,
+    default: () => ({ totalKobo: 0, pendingKobo: 0 }),
+  })
+  earnings!: EarningsSubdoc
 
   createdAt!: Date
   updatedAt!: Date
