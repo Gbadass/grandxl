@@ -391,6 +391,12 @@ export const menuManagementApi = {
       { itemIds, isAvailable },
     ),
 
+  bulkSetFeatured: (restaurantId: string, itemIds: string[], isFeatured: boolean) =>
+    getClient().post<ApiResponse<{ modifiedCount: number }>>(
+      `/restaurants/${restaurantId}/menu-items/bulk-featured`,
+      { itemIds, isFeatured },
+    ),
+
   bulkMoveCategory: (restaurantId: string, itemIds: string[], categoryId: string) =>
     getClient().post<ApiResponse<{ modifiedCount: number }>>(
       `/restaurants/${restaurantId}/menu-items/bulk-category`,

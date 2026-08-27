@@ -69,6 +69,7 @@ export default function NewMenuItemPage() {
     categoryId: '',
     preparationTime: '',
     isAvailable: true,
+    isPopular: false,
   })
   const [variants, setVariants] = useState<CreateMenuItemVariant[]>([])
   const [addOns, setAddOns] = useState<CreateMenuItemAddOn[]>([])
@@ -199,6 +200,7 @@ export default function NewMenuItemPage() {
         basePrice: Math.round(parseFloat(form.price) * 100),
         categoryId: form.categoryId,
         isAvailable: form.isAvailable,
+        isPopular:   form.isPopular,
         prepTimeMinutes: form.preparationTime ? parseInt(form.preparationTime, 10) : undefined,
         image: imageUrl ?? undefined,
         ...(variants.length > 0 ? { variants } : {}),
@@ -354,6 +356,31 @@ export default function NewMenuItemPage() {
                   <span
                     className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
                       form.isAvailable ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Sprint 12 (S12-8): Featured toggle */}
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-700">Feature this item</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Appears in the Featured section at the top of your menu with a star badge.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.isPopular}
+                  onClick={() => setForm((f) => ({ ...f, isPopular: !f.isPopular }))}
+                  className={`relative h-6 w-11 rounded-full transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 ${
+                    form.isPopular ? 'bg-amber-500' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                      form.isPopular ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
                 </button>

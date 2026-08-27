@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Plus, Pencil, Trash2, UtensilsCrossed, Clock,
   X, Package, CheckCircle2, XCircle, Check,
-  Tag, Coins, Eye, EyeOff, Loader2,
+  Tag, Coins, Eye, EyeOff, Loader2, Star,
 } from 'lucide-react'
 import { myRestaurantApi, menuApi, menuManagementApi } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
@@ -75,6 +75,18 @@ function ItemCard({
               Sold Out
             </span>
           </div>
+        )}
+        {/* Sprint 12 (S12-8): featured badge */}
+        {item.isPopular && (
+          <span
+            className={`absolute z-[5] rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white shadow flex items-center gap-1 ${
+              !item.isAvailable ? 'top-8 right-2' : 'top-2 right-2'
+            }`}
+            aria-label="Featured item"
+          >
+            <Star size={9} fill="currentColor" strokeWidth={0} />
+            Featured
+          </span>
         )}
         {/* Hover overlay */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-all duration-200 pointer-events-none group-hover:pointer-events-auto">
@@ -268,6 +280,7 @@ export default function RestaurantMenuPage() {
   const totalItems = allItems.length
   const availableItems = allItems.filter((i) => i.isAvailable).length
   const outOfStock = totalItems - availableItems
+  const featuredItems = allItems.filter((i) => i.isPopular).length
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -345,6 +358,19 @@ export default function RestaurantMenuPage() {
       invalidateItems()
     },
     onError: (e) => toast.error(serverMsg(e, 'Bulk update failed')),
+  })
+
+  // Sprint 12 (S12-8): bulk feature/unfeature
+  const bulkFeaturedMutation = useMutation({
+    mutationFn: ({ isFeatured }: { isFeatured: boolean }) =>
+      menuManagementApi.bulkSetFeatured(restaurantId!, Array.from(selectedIds), isFeatured),
+    onSuccess: (res, vars) => {
+      const n = res.data.data.modifiedCount
+      toast.success(`${n} item${n === 1 ? '' : 's'} ${vars.isFeatured ? 'featured' : 'unfeatured'}`)
+      setSelectedIds(new Set())
+      invalidateItems()
+    },
+    onError: (e) => toast.error(serverMsg(e, 'Bulk feature update failed')),
   })
 
   const bulkCategoryMutation = useMutation({
@@ -429,7 +455,7 @@ export default function RestaurantMenuPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-1">
             <Package size={15} className="text-gray-400" />
@@ -453,6 +479,15 @@ export default function RestaurantMenuPage() {
           </div>
           <p className="text-2xl font-bold text-red-500">{outOfStock}</p>
           <p className="text-xs text-gray-400 mt-0.5">unavailable</p>
+        </div>
+        {/* Sprint 12 (S12-8): featured count */}
+        <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Star size={15} className="text-amber-500" fill="currentColor" strokeWidth={0} />
+            <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Featured</span>
+          </div>
+          <p className="text-2xl font-bold text-amber-500">{featuredItems}</p>
+          <p className="text-xs text-gray-400 mt-0.5">promoted</p>
         </div>
       </div>
 
@@ -683,6 +718,21 @@ export default function RestaurantMenuPage() {
             >
               <EyeOff size={13} /> Sold out
             </button>
+            {/* Sprint 12 (S12-8): feature/unfeature */}
+            <button
+              onClick={() => bulkFeaturedMutation.mutate({ isFeatured: true })}
+              disabled={bulkFeaturedMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50 cursor-pointer"
+            >
+              <Star size={13} fill="currentColor" strokeWidth={0} /> Feature
+            </button>
+            <button
+              onClick={() => bulkFeaturedMutation.mutate({ isFeatured: false })}
+              disabled={bulkFeaturedMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 cursor-pointer"
+            >
+              <Star size={13} /> Unfeature
+            </button>
             <button
               onClick={() => setBulkAction('category')}
               className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 cursor-pointer"
@@ -708,7 +758,7 @@ export default function RestaurantMenuPage() {
             >
               <X size={16} />
             </button>
-            {(bulkAvailabilityMutation.isPending || bulkCategoryMutation.isPending || bulkPriceMutation.isPending || bulkDeleteMutation.isPending) && (
+            {(bulkAvailabilityMutation.isPending || bulkFeaturedMutation.isPending || bulkCategoryMutation.isPending || bulkPriceMutation.isPending || bulkDeleteMutation.isPending) && (
               <Loader2 size={14} className="animate-spin text-white/70" />
             )}
           </motion.div>

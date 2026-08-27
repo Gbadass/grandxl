@@ -22,6 +22,7 @@ import { CreateMenuCategoryDto, UpdateMenuCategoryDto } from './dto/menu-categor
 import {
   CreateMenuItemDto, UpdateMenuItemDto,
   BulkAvailabilityDto, BulkCategoryDto, BulkPriceDto, BulkItemIdsDto,
+  BulkFeaturedDto,
 } from './dto/menu-item.dto'
 import { Public } from '../../common/decorators/public.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
@@ -161,6 +162,21 @@ export class MenuItemsController {
   ) {
     return this.menuItemsService.bulkSetAvailability(
       restaurantId, dto.itemIds, dto.isAvailable, user.sub, user.roles.includes(UserRole.SUPER_ADMIN),
+    )
+  }
+
+  @Post('restaurants/:restaurantId/menu-items/bulk-featured')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Bulk mark N items as featured / remove featured (owner)' })
+  @ApiOkResponse({ description: '{ modifiedCount }' })
+  async bulkSetFeatured(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Body() dto: BulkFeaturedDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.menuItemsService.bulkSetFeatured(
+      restaurantId, dto.itemIds, dto.isFeatured, user.sub, user.roles.includes(UserRole.SUPER_ADMIN),
     )
   }
 

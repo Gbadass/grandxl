@@ -26,6 +26,7 @@ export default function EditMenuItemPage() {
     categoryId: '',
     allergens: '',
     isAvailable: true,
+    isPopular: false,
     prepTimeMinutes: '',
     calories: '',
   })
@@ -73,6 +74,7 @@ export default function EditMenuItemPage() {
         categoryId: item.categoryId,
         allergens: item.allergens?.join(', ') ?? '',
         isAvailable: item.isAvailable,
+        isPopular: item.isPopular ?? false,
         prepTimeMinutes: item.prepTimeMinutes != null ? String(item.prepTimeMinutes) : '',
         calories:        item.calories        != null ? String(item.calories)        : '',
       })
@@ -220,6 +222,7 @@ export default function EditMenuItemPage() {
         basePrice: Math.round(parseFloat(form.price) * 100),
         categoryId: form.categoryId,
         isAvailable: form.isAvailable,
+        isPopular: form.isPopular,
         allergens: form.allergens
           ? form.allergens.split(',').map((a) => a.trim()).filter(Boolean)
           : [],
@@ -350,6 +353,22 @@ export default function EditMenuItemPage() {
               <div className="peer h-5 w-9 rounded-full bg-gray-200 peer-checked:bg-orange-600 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:after:translate-x-4" />
             </label>
             <span className="text-sm text-gray-600">Available for order</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="relative inline-flex cursor-pointer items-center">
+              <input
+                type="checkbox"
+                checked={form.isPopular}
+                onChange={(e) => setForm((f) => ({ ...f, isPopular: e.target.checked }))}
+                className="peer sr-only"
+              />
+              <div className="peer h-5 w-9 rounded-full bg-gray-200 peer-checked:bg-amber-500 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:after:translate-x-4" />
+            </label>
+            <div>
+              <p className="text-sm text-gray-600">Feature this item</p>
+              <p className="text-xs text-gray-400">Appears in the Featured section at the top of your menu with a star badge.</p>
+            </div>
           </div>
 
           {/* Item Image */}

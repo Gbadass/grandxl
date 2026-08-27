@@ -295,6 +295,27 @@ export class MenuItemsService {
     return { modifiedCount: res.modifiedCount ?? 0 }
   }
 
+  // Sprint 12 (S12-8): promote/demote menu items. Writes to the existing
+  // `isPopular` schema field — kept for back-compat with the customer-side
+  // "Popular" badge that already reads it. Restaurant portal UI surfaces it
+  // as "Featured" since the toggle is curatorial (the owner picks), not
+  // data-driven ("popular with customers").
+  async bulkSetFeatured(
+    restaurantId: string,
+    itemIds: string[],
+    isFeatured: boolean,
+    requesterId: string,
+    isSuperAdmin: boolean,
+  ): Promise<{ modifiedCount: number }> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
+    const oids = await this.assertItemsBelongToRestaurant(itemIds, restaurantId)
+    const res = await this.itemModel.updateMany(
+      { _id: { $in: oids } },
+      { $set: { isPopular: isFeatured } },
+    )
+    return { modifiedCount: res.modifiedCount ?? 0 }
+  }
+
   async bulkMoveCategory(
     restaurantId: string,
     itemIds: string[],

@@ -275,6 +275,12 @@ export class BulkAvailabilityDto extends BulkItemIdsDto {
   isAvailable!: boolean
 }
 
+export class BulkFeaturedDto extends BulkItemIdsDto {
+  @ApiProperty({ example: true, description: 'Mark all selected items as featured/promoted (true) or remove (false)' })
+  @IsBoolean()
+  isFeatured!: boolean
+}
+
 export class BulkCategoryDto extends BulkItemIdsDto {
   @ApiProperty({ description: 'Target category ID (must belong to the same restaurant)' })
   @IsString()

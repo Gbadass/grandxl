@@ -41,10 +41,16 @@ function HeroSkeleton() {
   )
 }
 
+// Sprint 12 (S12-8): sentinel used for the synthetic "Featured" section — never
+// collides with a real MongoDB category id, so the sticky-tab handler can treat
+// it the same as any real category id.
+const FEATURED_SECTION_ID = '__featured'
+
 export default function RestaurantPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { t } = useTranslation('restaurants')
+  const { t }        = useTranslation('restaurants')
+  const { t: tMenu } = useTranslation('menu')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const categoryRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
@@ -54,6 +60,7 @@ export default function RestaurantPage() {
   const restaurant = restaurantRes
   const categories: MenuCategory[] = menuRes?.categories ?? []
   const items: MenuItem[] = menuRes?.items ?? []
+  const featured: MenuItem[] = items.filter((i) => i.isPopular)
 
   function scrollToCategory(categoryId: string) {
     setActiveCategory(categoryId)
@@ -154,9 +161,26 @@ export default function RestaurantPage() {
       </div>
 
       {/* Category sticky tabs */}
-      {categories.length > 1 && (
+      {(categories.length > 1 || featured.length > 0) && (
         <div className="sticky top-0 z-30 bg-white border-b border-gray-100 overflow-x-auto [&::-webkit-scrollbar]:hidden">
           <div className="flex gap-0 px-4">
+            {/* Sprint 12 (S12-8): Featured tab appears first when the restaurant
+                has any featured items. Uses the sentinel id so scrollToCategory
+                treats it identically to a real category. */}
+            {featured.length > 0 && (
+              <button
+                key={FEATURED_SECTION_ID}
+                onClick={() => scrollToCategory(FEATURED_SECTION_ID)}
+                className={`shrink-0 cursor-pointer px-4 py-3 text-sm font-medium border-b-2 transition-colors duration-150 inline-flex items-center gap-1.5 ${
+                  activeCategory === FEATURED_SECTION_ID
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <Star size={13} fill="currentColor" strokeWidth={0} className="text-amber-500" />
+                {tMenu('featured')}
+              </button>
+            )}
             {categories.map((cat) => (
               <button
                 key={cat._id}
@@ -183,7 +207,33 @@ export default function RestaurantPage() {
         ) : categories.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-400">{t('common:noResults')}</p>
         ) : (
-          categories.map((cat) => {
+          <>
+            {/* Sprint 12 (S12-8): Featured section — items curated by the
+                restaurant owner via the "Feature" toggle. Rendered above the
+                category loop so they get top-of-menu visibility. */}
+            {featured.length > 0 && (
+              <div
+                key={FEATURED_SECTION_ID}
+                ref={(el) => { categoryRefs.current[FEATURED_SECTION_ID] = el }}
+                className="mt-6"
+              >
+                <h2 className="font-display font-bold text-gray-900 text-base mb-1 flex items-center gap-2">
+                  <Star size={16} fill="currentColor" strokeWidth={0} className="text-amber-500" />
+                  {tMenu('featured')}
+                </h2>
+                <div>
+                  {featured.map((item) => (
+                    <MenuItemCard
+                      key={`featured-${item._id}`}
+                      item={item}
+                      restaurantId={restaurant._id}
+                      currency={restaurant.currency}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {categories.map((cat) => {
             const catItems = items.filter((item) => item.categoryId === cat._id)
             if (catItems.length === 0) return null
             return (
@@ -210,7 +260,8 @@ export default function RestaurantPage() {
                 </div>
               </div>
             )
-          })
+          })}
+          </>
         )}
       </div>
     </div>
