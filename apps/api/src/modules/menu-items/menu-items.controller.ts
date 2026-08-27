@@ -19,7 +19,10 @@ import {
 } from '@nestjs/swagger'
 import { MenuItemsService } from './menu-items.service'
 import { CreateMenuCategoryDto, UpdateMenuCategoryDto } from './dto/menu-category.dto'
-import { CreateMenuItemDto, UpdateMenuItemDto } from './dto/menu-item.dto'
+import {
+  CreateMenuItemDto, UpdateMenuItemDto,
+  BulkAvailabilityDto, BulkCategoryDto, BulkPriceDto, BulkItemIdsDto,
+} from './dto/menu-item.dto'
 import { Public } from '../../common/decorators/public.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
@@ -142,5 +145,67 @@ export class MenuItemsController {
     @CurrentUser() user: JwtPayload,
   ) {
     await this.menuItemsService.deleteItem(id, restaurantId, user.sub, user.roles.includes(UserRole.SUPER_ADMIN))
+  }
+
+  // ── Sprint 12 (S12-7): bulk edit ─────────────────────────────────
+
+  @Post('restaurants/:restaurantId/menu-items/bulk-availability')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Bulk toggle availability on N items (owner)' })
+  @ApiOkResponse({ description: '{ modifiedCount }' })
+  async bulkSetAvailability(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Body() dto: BulkAvailabilityDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.menuItemsService.bulkSetAvailability(
+      restaurantId, dto.itemIds, dto.isAvailable, user.sub, user.roles.includes(UserRole.SUPER_ADMIN),
+    )
+  }
+
+  @Post('restaurants/:restaurantId/menu-items/bulk-category')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Bulk reassign N items to a different category (owner)' })
+  @ApiOkResponse({ description: '{ modifiedCount }' })
+  async bulkMoveCategory(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Body() dto: BulkCategoryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.menuItemsService.bulkMoveCategory(
+      restaurantId, dto.itemIds, dto.categoryId, user.sub, user.roles.includes(UserRole.SUPER_ADMIN),
+    )
+  }
+
+  @Post('restaurants/:restaurantId/menu-items/bulk-price')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Bulk adjust prices on N items (percent/fixed/set)' })
+  @ApiOkResponse({ description: '{ modifiedCount }' })
+  async bulkAdjustPrice(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Body() dto: BulkPriceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.menuItemsService.bulkAdjustPrice(
+      restaurantId, dto.itemIds, dto.mode, dto.value, user.sub, user.roles.includes(UserRole.SUPER_ADMIN),
+    )
+  }
+
+  @Post('restaurants/:restaurantId/menu-items/bulk-delete')
+  @Roles(UserRole.RESTAURANT_OWNER, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Bulk delete N items (owner)' })
+  @ApiOkResponse({ description: '{ deletedCount }' })
+  async bulkDelete(
+    @Param('restaurantId', ParseObjectIdPipe) restaurantId: string,
+    @Body() dto: BulkItemIdsDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.menuItemsService.bulkDelete(
+      restaurantId, dto.itemIds, user.sub, user.roles.includes(UserRole.SUPER_ADMIN),
+    )
   }
 }

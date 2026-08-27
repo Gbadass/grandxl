@@ -6,12 +6,14 @@ import {
   IsNumber,
   IsArray,
   IsUrl,
+  IsIn,
   Min,
   Max,
   MaxLength,
   MinLength,
   ValidateNested,
   ArrayMinSize,
+  ArrayMaxSize,
 } from 'class-validator'
 import { Type } from 'class-transformer'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
@@ -249,4 +251,47 @@ export class UpdateMenuItemDto {
   @IsInt()
   @Min(0)
   lowStockThreshold?: number
+}
+
+// ── Sprint 12 (S12-7): bulk edit DTOs ────────────────────────────────────────
+// Cap at 200 items per call — well above the largest single-restaurant menu
+// we've seen in production, keeps the write batch small enough that a single
+// Mongo op stays fast.
+
+const BULK_MAX = 200
+
+export class BulkItemIdsDto {
+  @ApiProperty({ type: [String], description: 'Item IDs to operate on (max 200)' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(BULK_MAX)
+  @IsString({ each: true })
+  itemIds!: string[]
+}
+
+export class BulkAvailabilityDto extends BulkItemIdsDto {
+  @ApiProperty({ example: true, description: 'Set all selected items to this availability' })
+  @IsBoolean()
+  isAvailable!: boolean
+}
+
+export class BulkCategoryDto extends BulkItemIdsDto {
+  @ApiProperty({ description: 'Target category ID (must belong to the same restaurant)' })
+  @IsString()
+  categoryId!: string
+}
+
+// Price adjustment mode:
+//  - 'percent' → newPrice = round(oldPrice * (1 + value/100))  (+10 = +10%, -10 = -10%)
+//  - 'fixed'   → newPrice = max(0, oldPrice + valueKobo)       (add or subtract kobo)
+//  - 'set'     → newPrice = valueKobo                          (absolute price)
+export class BulkPriceDto extends BulkItemIdsDto {
+  @ApiProperty({ enum: ['percent', 'fixed', 'set'] })
+  @IsIn(['percent', 'fixed', 'set'])
+  mode!: 'percent' | 'fixed' | 'set'
+
+  // Percent for 'percent' mode; kobo for 'fixed'/'set'.
+  @ApiProperty({ example: 10, description: 'Percent (percent mode) or kobo (fixed/set)' })
+  @IsNumber()
+  value!: number
 }

@@ -382,6 +382,37 @@ export const menuManagementApi = {
 
   deleteItem: (restaurantId: string, id: string) =>
     getClient().delete(`/restaurants/${restaurantId}/menu-items/${id}`),
+
+  // ── Sprint 12 (S12-7): bulk edit ─────────────────────────────────────
+
+  bulkSetAvailability: (restaurantId: string, itemIds: string[], isAvailable: boolean) =>
+    getClient().post<ApiResponse<{ modifiedCount: number }>>(
+      `/restaurants/${restaurantId}/menu-items/bulk-availability`,
+      { itemIds, isAvailable },
+    ),
+
+  bulkMoveCategory: (restaurantId: string, itemIds: string[], categoryId: string) =>
+    getClient().post<ApiResponse<{ modifiedCount: number }>>(
+      `/restaurants/${restaurantId}/menu-items/bulk-category`,
+      { itemIds, categoryId },
+    ),
+
+  bulkAdjustPrice: (
+    restaurantId: string,
+    itemIds: string[],
+    mode: 'percent' | 'fixed' | 'set',
+    value: number,
+  ) =>
+    getClient().post<ApiResponse<{ modifiedCount: number }>>(
+      `/restaurants/${restaurantId}/menu-items/bulk-price`,
+      { itemIds, mode, value },
+    ),
+
+  bulkDelete: (restaurantId: string, itemIds: string[]) =>
+    getClient().post<ApiResponse<{ deletedCount: number }>>(
+      `/restaurants/${restaurantId}/menu-items/bulk-delete`,
+      { itemIds },
+    ),
 }
 
 // ── Analytics ────────────────────────────────────────────────────────────────

@@ -245,6 +245,132 @@ export class MenuItemsService {
     await this.itemModel.findByIdAndDelete(itemId)
   }
 
+  // ── Sprint 12 (S12-7): bulk edit ─────────────────────────────────
+  //
+  // All four bulk operations share the same guardrails: verify the caller owns
+  // the restaurant, coerce/validate every input id, refuse if any id doesn't
+  // resolve to an item on this restaurant (all-or-nothing — surfaces typos or
+  // stale UI state instead of silently skipping). Uses `updateMany`/`deleteMany`
+  // so the DB does the work in one round-trip rather than N calls.
+
+  private toObjectIds(itemIds: string[]): Types.ObjectId[] {
+    return itemIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id))
+  }
+
+  private async assertItemsBelongToRestaurant(
+    itemIds: string[],
+    restaurantId: string,
+  ): Promise<Types.ObjectId[]> {
+    const oids = this.toObjectIds(itemIds)
+    if (oids.length !== itemIds.length) {
+      throw new BadRequestException('One or more item IDs are invalid')
+    }
+    const count = await this.itemModel.countDocuments({
+      _id:          { $in: oids },
+      restaurantId: new Types.ObjectId(restaurantId),
+    })
+    if (count !== oids.length) {
+      throw new BadRequestException(
+        `Only ${count} of ${oids.length} items belong to this restaurant — refresh and try again`,
+      )
+    }
+    return oids
+  }
+
+  async bulkSetAvailability(
+    restaurantId: string,
+    itemIds: string[],
+    isAvailable: boolean,
+    requesterId: string,
+    isSuperAdmin: boolean,
+  ): Promise<{ modifiedCount: number }> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
+    const oids = await this.assertItemsBelongToRestaurant(itemIds, restaurantId)
+    const res = await this.itemModel.updateMany(
+      { _id: { $in: oids } },
+      { $set: { isAvailable } },
+    )
+    return { modifiedCount: res.modifiedCount ?? 0 }
+  }
+
+  async bulkMoveCategory(
+    restaurantId: string,
+    itemIds: string[],
+    categoryId: string,
+    requesterId: string,
+    isSuperAdmin: boolean,
+  ): Promise<{ modifiedCount: number }> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
+    if (!Types.ObjectId.isValid(categoryId)) {
+      throw new BadRequestException('Invalid category ID')
+    }
+    // Target category must exist on this restaurant — same rule as single-item move.
+    const cat = await this.categoryModel.findById(categoryId)
+    if (!cat || cat.restaurantId.toString() !== restaurantId) {
+      throw new BadRequestException('Category not found in this restaurant')
+    }
+    const oids = await this.assertItemsBelongToRestaurant(itemIds, restaurantId)
+    const res = await this.itemModel.updateMany(
+      { _id: { $in: oids } },
+      { $set: { categoryId: new Types.ObjectId(categoryId) } },
+    )
+    return { modifiedCount: res.modifiedCount ?? 0 }
+  }
+
+  async bulkAdjustPrice(
+    restaurantId: string,
+    itemIds: string[],
+    mode: 'percent' | 'fixed' | 'set',
+    value: number,
+    requesterId: string,
+    isSuperAdmin: boolean,
+  ): Promise<{ modifiedCount: number }> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
+
+    // Sanity checks — the DTO validates types but not domain ranges.
+    if (mode === 'percent' && (value < -95 || value > 500)) {
+      throw new BadRequestException('Percent must be between −95 and 500')
+    }
+    if ((mode === 'fixed' || mode === 'set') && !Number.isInteger(value)) {
+      throw new BadRequestException('Kobo values must be integers')
+    }
+    if (mode === 'set' && value < 0) {
+      throw new BadRequestException('Set price cannot be negative')
+    }
+
+    const oids = await this.assertItemsBelongToRestaurant(itemIds, restaurantId)
+
+    // Aggregation pipeline update — computes newPrice per document from oldPrice.
+    // Mongo evaluates $round/$max/$multiply per-document so we don't need to
+    // fan out into N calls. Requires MongoDB 4.2+.
+    const priceExpr =
+      mode === 'set'
+        ? value
+        : mode === 'fixed'
+          ? { $max: [{ $add: ['$basePrice', value] }, 0] }
+          : { $round: [{ $multiply: ['$basePrice', 1 + value / 100] }, 0] }
+
+    const res = await this.itemModel.updateMany(
+      { _id: { $in: oids } },
+      [{ $set: { basePrice: priceExpr } }],
+    )
+    return { modifiedCount: res.modifiedCount ?? 0 }
+  }
+
+  async bulkDelete(
+    restaurantId: string,
+    itemIds: string[],
+    requesterId: string,
+    isSuperAdmin: boolean,
+  ): Promise<{ deletedCount: number }> {
+    await this.assertRestaurantOwner(restaurantId, requesterId, isSuperAdmin)
+    const oids = await this.assertItemsBelongToRestaurant(itemIds, restaurantId)
+    const res = await this.itemModel.deleteMany({ _id: { $in: oids } })
+    return { deletedCount: res.deletedCount ?? 0 }
+  }
+
   // ── Stock mutation ──────────────────────────────────────────────
   // Atomic decrement using $inc with a $gte filter — guarantees no oversell
   // even under concurrent order create. Returns false if stock is insufficient.
