@@ -1560,6 +1560,163 @@ export class OrdersService {
     }, { jobId: `dispatch-${orderId}` })
   }
 
+  // ── Sprint 13 (S13-4): manual rider reassignment (super-admin) ────
+  //
+  // Yanks an in-flight order from its current rider (if any) and pins it to a
+  // specific new rider. Meant for live-ops intervention — the original rider
+  // went dark, refused pickup, is stuck in traffic, etc. Auto-dispatch would
+  // normally handle a stalled order via redispatch, but that broadcasts to N
+  // riders and takes rounds; reassign is the "I know who I want, do it now" tool.
+  //
+  // Concurrency: uses the same atomic isAvailable claim as riders.service.assignOrder
+  // so two concurrent admin reassigns cannot both grab the same rider.
+  async adminReassignRider(orderId: string, newRiderId: string): Promise<OrderDocument> {
+    if (!Types.ObjectId.isValid(orderId) || !Types.ObjectId.isValid(newRiderId)) {
+      throw new BadRequestException('Invalid orderId or riderId')
+    }
+
+    const order = await this.orderModel.findById(orderId)
+    if (!order) throw new NotFoundException('Order not found')
+
+    // Reassign only makes sense for active-in-fulfilment orders. Delivered /
+    // cancelled orders have nowhere to send a new rider; PENDING orders have
+    // no rider-relevant state yet (redispatch is the right tool there).
+    const activeStatuses = [
+      OrderStatus.CONFIRMED,
+      OrderStatus.PREPARING,
+      OrderStatus.READY,
+      OrderStatus.PICKED_UP,
+    ]
+    if (!activeStatuses.includes(order.status as OrderStatus)) {
+      throw new BadRequestException(`Cannot reassign — order is ${order.status}`)
+    }
+
+    const oldRiderId = order.riderId?.toString() ?? null
+    if (oldRiderId === newRiderId) {
+      throw new BadRequestException('This rider is already assigned to the order')
+    }
+
+    // Delegate the "claim + notify" to the existing rider-service flow so we
+    // share the atomic isAvailable check + verified/online guards, then patch
+    // the order's rider pointer separately below.
+    //
+    // We can't reuse assignRider directly because it filters `{ riderId: null }`
+    // (won't overwrite an existing rider). So we do the analogous logic here:
+    //   1. Atomically claim the new rider (isAvailable = true → false)
+    //   2. Overwrite order.riderId, stamp new riderAssignedAt
+    //   3. Release the old rider back into the available pool (if any)
+    //   4. Notify all parties (new rider, old rider, customer, restaurant)
+
+    const newRider = await this.ridersService.getRiderCore(newRiderId)
+    if (!newRider) throw new NotFoundException('New rider not found')
+    if (!newRider.isVerified) throw new ForbiddenException('New rider is not verified')
+    if (!newRider.isOnline)   throw new BadRequestException('New rider is offline')
+
+    // Atomic claim on the rider row
+    const claimed = await this.ridersService.acquireRiderForReassign(newRiderId)
+    if (!claimed) throw new BadRequestException('New rider is not available')
+
+    let updated: OrderDocument | null = null
+    try {
+      updated = await this.orderModel.findOneAndUpdate(
+        { _id: new Types.ObjectId(orderId), status: { $in: activeStatuses } },
+        { $set: { riderId: new Types.ObjectId(newRiderId), riderAssignedAt: new Date() } },
+        { new: true },
+      )
+      if (!updated) {
+        // Order moved to a terminal state between our check and the update.
+        // Release the rider we just claimed so they can accept the next offer.
+        await this.ridersService.releaseRider(newRiderId).catch(() => undefined)
+        throw new ConflictException('Order state changed — reassign aborted')
+      }
+    } catch (err) {
+      await this.ridersService.releaseRider(newRiderId).catch(() => undefined)
+      throw err
+    }
+
+    // Release the old rider back into the available pool (best-effort — a
+    // failure here shouldn't roll back the reassign; the rider can toggle
+    // themselves available via the app or admin can force it).
+    if (oldRiderId) {
+      void this.ridersService.releaseRider(oldRiderId).catch(() => undefined)
+    }
+
+    // Notify all parties in parallel. Old rider gets a status_update on the
+    // order they were formerly on so their PWA drops back to available-jobs.
+    // New rider gets the standard new-job push + socket.
+    const orderIdStr = updated._id.toString()
+    const customerId = updated.customerId.toString()
+    const restaurant = await this.restaurantsService.findByIdRaw(updated.restaurantId.toString())
+    const ownerId    = restaurant.ownerId.toString()
+    const newRiderUserId = newRider.userId.toString()
+
+    void Promise.all([
+      oldRiderId
+        ? this.ridersService.getUserIdByRiderId(oldRiderId).then((oldUserId) => {
+            if (!oldUserId) return
+            return this.trackingService.notifyOrderStatusUpdate(orderIdStr, customerId, ownerId, updated!.status, updated!.estimatedTime ?? undefined)
+              .then(() => this.notificationsService.onOrderStatusChanged(oldUserId, updated!.orderNumber, orderIdStr, updated!.status))
+          })
+        : Promise.resolve(),
+      this.notificationsService.onRiderAssigned(newRiderUserId, updated.orderNumber, orderIdStr),
+      this.notificationsService.onRiderComingToPickup(ownerId, newRiderUserId, updated.orderNumber, orderIdStr),
+      this.trackingService.notifyRiderNewJob(newRiderUserId, updated),
+      this.trackingService.notifyOrderStatusUpdate(orderIdStr, customerId, ownerId, updated.status, updated.estimatedTime ?? undefined),
+      this.trackingService.notifyRiderAssigned(ownerId, customerId, {
+        orderId: orderIdStr,
+        riderId: newRiderId,
+        riderUserId: newRiderUserId,
+      }),
+    ]).catch(() => undefined)
+
+    return updated
+  }
+
+  // Sprint 13 (S13-4): rider picker for the admin reassign modal. Returns
+  // available riders sorted by distance from the ORDER's pickup point, plus
+  // a computed distanceKm on each so the admin can eyeball the trade-off.
+  // Meant to be called just before opening the reassign modal.
+  async getReassignCandidates(orderId: string, limit = 20): Promise<Array<{
+    riderId: string
+    userId: string
+    firstName: string
+    lastName: string
+    phone: string | null
+    vehicleType: string
+    vehiclePlate: string | null
+    distanceKm: number | null
+  }>> {
+    const order = await this.getOrderById(orderId)
+    const pickup = order.restaurantPickupAddress?.coordinates?.coordinates as [number, number] | undefined
+    if (!pickup) throw new BadRequestException('Order has no pickup coordinates')
+    const [lng, lat] = pickup
+
+    const raw = await this.ridersService.findAvailableNear(lng, lat, limit) as unknown as Array<{
+      _id: Types.ObjectId
+      userId: { _id: Types.ObjectId; firstName: string; lastName: string; phone: string | null }
+      vehicleType: string
+      vehiclePlate: string | null
+      currentLocation: { coordinates: [number, number] } | null
+    }>
+
+    return raw.map((r) => {
+      const rc = r.currentLocation?.coordinates
+      const distanceKm = rc
+        ? Math.round(calculateDistance({ lat, lng }, { lat: rc[1], lng: rc[0] }) * 10) / 10
+        : null
+      return {
+        riderId:      r._id.toString(),
+        userId:       r.userId._id.toString(),
+        firstName:    r.userId.firstName,
+        lastName:     r.userId.lastName,
+        phone:        r.userId.phone,
+        vehicleType:  r.vehicleType,
+        vehiclePlate: r.vehiclePlate,
+        distanceKm,
+      }
+    })
+  }
+
   async getRiderDeliveries(
     riderId: string,
     query: QueryOrdersDto,

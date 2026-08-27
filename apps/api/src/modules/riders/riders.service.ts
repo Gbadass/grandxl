@@ -210,6 +210,72 @@ export class RidersService {
     await this.riderModel.findByIdAndUpdate(riderId, { $set: { isAvailable: true } })
   }
 
+  // Sprint 13 (S13-4): typed core-fields lookup for reassign pre-flight — the
+  // existing getProfileById returns Record<string, unknown> which is fine for
+  // rendering but not for the isVerified/isOnline checks the reassign flow runs.
+  async getRiderCore(riderId: string): Promise<{
+    _id: Types.ObjectId; userId: Types.ObjectId
+    isVerified: boolean; isOnline: boolean; isAvailable: boolean
+  } | null> {
+    if (!Types.ObjectId.isValid(riderId)) return null
+    const rider = await this.riderModel
+      .findById(riderId, { userId: 1, isVerified: 1, isOnline: 1, isAvailable: 1 })
+      .lean() as unknown as {
+        _id: Types.ObjectId; userId: Types.ObjectId
+        isVerified: boolean; isOnline: boolean; isAvailable: boolean
+      } | null
+    return rider
+  }
+
+  // Sprint 13 (S13-4): atomic isAvailable claim by rider id, used by admin
+  // reassign to guarantee two concurrent admin actions can't both grab the
+  // same rider (matches the TOCTOU pattern in assignOrder above).
+  async acquireRiderForReassign(riderId: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(riderId)) return false
+    const claimed = await this.riderModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(riderId), isAvailable: true, isOnline: true, isVerified: true },
+      { $set: { isAvailable: false } },
+    )
+    return !!claimed
+  }
+
+  // Sprint 13 (S13-4): rider picker for the admin reassign modal. Returns
+  // online + available + verified riders sorted by distance from an anchor
+  // point (typically the order's pickup coordinates). Radius default is wider
+  // than the auto-dispatch pool because admin intervention often means
+  // "grab whoever is closest, even if they're farther than the usual radius".
+  async findAvailableNear(
+    lng: number,
+    lat: number,
+    limit = 20,
+    radiusMeters = 20_000,
+  ): Promise<Array<{
+    _id: Types.ObjectId; userId: Types.ObjectId
+    vehicleType: string; vehiclePlate: string | null
+    location: { coordinates: [number, number] } | null
+  }>> {
+    return this.riderModel
+      .find({
+        isOnline: true,
+        isAvailable: true,
+        isVerified: true,
+        isSuspended: { $ne: true },
+        currentLocation: {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [lng, lat] },
+            $maxDistance: radiusMeters,
+          },
+        },
+      }, { userId: 1, vehicleType: 1, vehiclePlate: 1, currentLocation: 1 })
+      .populate('userId', 'firstName lastName phone')
+      .limit(Math.min(limit, 50))
+      .lean() as unknown as Array<{
+        _id: Types.ObjectId; userId: Types.ObjectId
+        vehicleType: string; vehiclePlate: string | null
+        location: { coordinates: [number, number] } | null
+      }>
+  }
+
   async onDeliveryComplete(riderId: string, earningsKobo: number): Promise<void> {
     // Money enters pendingKobo (24h hold). Settlement will move it to totalKobo.
     // Do NOT increment totalKobo here — settlement.service does that atomically.

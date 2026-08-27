@@ -4,10 +4,14 @@ import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { adminOrdersApi, analyticsApi } from '@grandxl/api-client'
+import { adminOrdersApi, analyticsApi, type ReassignCandidate } from '@grandxl/api-client'
 import { OrderStatus, UserRole } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
+import { X, RefreshCw, Loader2, User, Bike, Car } from 'lucide-react'
 import { useAuthStore } from '../../../src/store/auth.store'
 import { socket } from '../../../src/lib/socket'
 import '../../../src/lib/axios'
@@ -68,9 +72,12 @@ function OrderRow({ order, selected, onClick }: { order: Order; selected: boolea
 
 export default function DispatchPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { isAuthenticated, isInitializing, user } = useAuthStore()
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [showHeatmap, setShowHeatmap] = useState(false)
+  // Sprint 13 (S13-4): reassign-modal state — order id we're operating on
+  const [reassignFor, setReassignFor] = useState<Order | null>(null)
 
   // Rider positions keyed by riderId
   const riderPins = useRef<Map<string, RiderPin>>(new Map())
@@ -258,7 +265,217 @@ export default function DispatchPage() {
           onOrderSelect={setSelectedOrderId}
           heatPoints={showHeatmap ? heatPoints : []}
         />
+
+        {/* Sprint 13 (S13-4): selected-order floating action card. Only shown
+            when an order is picked — carries the reassign + close controls
+            without needing a full detail panel redesign. */}
+        <AnimatePresence>
+          {selectedOrder && (
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{    opacity: 0, y: 24 }}
+              transition={{ type: 'spring', stiffness: 360, damping: 30 }}
+              className="pointer-events-auto absolute bottom-4 right-4 z-[1000] w-80 overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs font-semibold text-gray-900 truncate">{selectedOrder.orderNumber}</p>
+                  <p className="mt-0.5 text-xs text-gray-500 truncate">
+                    {selectedOrder.deliveryAddress.street}, {selectedOrder.deliveryAddress.city}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedOrderId(null)}
+                  aria-label="Close"
+                  className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                  Rider {selectedOrder.riderId ? 'assigned' : 'unassigned'}
+                </p>
+                <button
+                  onClick={() => setReassignFor(selectedOrder)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-orange-700 cursor-pointer"
+                >
+                  <RefreshCw size={13} />
+                  {selectedOrder.riderId ? 'Reassign rider' : 'Assign rider manually'}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      {/* Sprint 13 (S13-4): reassign modal */}
+      <AnimatePresence>
+        {reassignFor && (
+          <ReassignRiderModal
+            order={reassignFor}
+            onClose={() => setReassignFor(null)}
+            onSuccess={() => {
+              setReassignFor(null)
+              void queryClient.invalidateQueries({ queryKey: ['admin', 'dispatch-orders'] })
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
+  )
+}
+
+// ── Sprint 13 (S13-4): rider-reassign modal ────────────────────────────────────
+
+function ReassignRiderModal({ order, onClose, onSuccess }: {
+  order: Order
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [candidates, setCandidates] = useState<ReassignCandidate[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reason, setReason] = useState('')
+  const [pickedId, setPickedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setCandidates(null)
+    setLoadError(null)
+    adminOrdersApi.reassignCandidates(order._id)
+      .then((res) => { if (!cancelled) setCandidates(res.data.data) })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        setLoadError(typeof msg === 'string' ? msg : 'Could not load rider list')
+      })
+    return () => { cancelled = true }
+  }, [order._id])
+
+  const reassignMutation = useMutation({
+    mutationFn: () => {
+      if (!pickedId) throw new Error('Pick a rider first')
+      return adminOrdersApi.reassignRider(order._id, pickedId, reason.trim() || undefined)
+    },
+    onSuccess: () => {
+      toast.success('Rider reassigned')
+      onSuccess()
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast.error(typeof msg === 'string' ? msg : 'Reassign failed')
+    },
+  })
+
+  const vehicleIcon = (v: string) => v === 'car' ? Car : Bike
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{    opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClose}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0,  scale: 1 }}
+        exit={{    opacity: 0, y: 10, scale: 0.97 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl flex flex-col max-h-[85vh]"
+      >
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h2 className="text-lg font-extrabold text-gray-900">
+            {order.riderId ? 'Reassign rider' : 'Assign rider'}
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Order <span className="font-mono">{order.orderNumber}</span> · nearest available riders first
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {loadError ? (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</p>
+          ) : candidates === null ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
+              <Loader2 size={16} className="animate-spin" /> Loading riders…
+            </div>
+          ) : candidates.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-400">
+              No available riders in range. Try widening dispatch radius via admin settings.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {candidates.map((c) => {
+                const Icon = vehicleIcon(c.vehicleType)
+                const picked = pickedId === c.riderId
+                return (
+                  <li key={c.riderId}>
+                    <button
+                      onClick={() => setPickedId(c.riderId)}
+                      className={`w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors cursor-pointer ${
+                        picked
+                          ? 'border-orange-400 bg-orange-50 ring-2 ring-orange-100'
+                          : 'border-gray-200 hover:border-orange-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`shrink-0 rounded-full p-2 ${picked ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                        <User size={14} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {c.firstName} {c.lastName}
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-2 text-xs text-gray-500">
+                          <Icon size={11} />
+                          <span className="capitalize">{c.vehicleType}</span>
+                          {c.vehiclePlate && <span className="text-gray-300">·</span>}
+                          {c.vehiclePlate && <span className="font-mono">{c.vehiclePlate}</span>}
+                        </p>
+                      </div>
+                      {c.distanceKm != null && (
+                        <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-gray-700 ring-1 ring-inset ring-gray-200 tabular-nums">
+                          {c.distanceKm} km
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="border-t border-gray-100 px-6 py-4 space-y-3">
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason (optional, audit-logged) — e.g. original rider unreachable"
+            maxLength={300}
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-100 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => reassignMutation.mutate()}
+              disabled={!pickedId || reassignMutation.isPending}
+              className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {reassignMutation.isPending && <Loader2 size={14} className="animate-spin" />}
+              Confirm reassign
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
   )
 }

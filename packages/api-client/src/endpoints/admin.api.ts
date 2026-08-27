@@ -162,6 +162,25 @@ export const adminOrdersApi = {
 
   dispatchDebug: (id: string) =>
     getClient().get(`/admin/orders/${id}/dispatch-debug`),
+
+  // Sprint 13 (S13-4): manual rider reassignment
+  reassignCandidates: (id: string) =>
+    getClient().get<ApiResponse<ReassignCandidate[]>>(`/admin/orders/${id}/reassign-candidates`),
+
+  reassignRider: (id: string, riderId: string, reason?: string) =>
+    getClient().post<ApiResponse<Order>>(`/admin/orders/${id}/reassign-rider`, { riderId, reason }),
+}
+
+// Sprint 13 (S13-4): shape returned by GET /admin/orders/:id/reassign-candidates
+export interface ReassignCandidate {
+  riderId:      string
+  userId:       string
+  firstName:    string
+  lastName:     string
+  phone:        string | null
+  vehicleType:  string
+  vehiclePlate: string | null
+  distanceKm:   number | null
 }
 
 // ── Admin — Reviews ──────────────────────────────────────────────────────────

@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Delete, Param, Query, Req, HttpCode, HttpStatus } from '@nestjs/common'
+import { Body, Controller, Get, Post, Delete, Param, Query, Req, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse } from '@nestjs/swagger'
 import type { Request } from 'express'
 import { OrdersService } from './orders.service'
 import { QueryOrdersDto } from './dto/query-orders.dto'
+import { ReassignRiderDto } from './dto/reassign-rider.dto'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
@@ -78,5 +79,38 @@ export class AdminOrdersController {
   @ApiOperation({ summary: 'Debug dispatch — shows what riders the processor would find right now' })
   async dispatchDebug(@Param('id', ParseObjectIdPipe) id: string) {
     return this.ordersService.dispatchDebug(id)
+  }
+
+  @Get(':id/reassign-candidates')
+  @ApiOperation({ summary: 'List available riders (sorted by distance to pickup) for reassigning this order' })
+  @ApiOkResponse({ description: 'Array of candidate riders with distanceKm' })
+  async reassignCandidates(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.ordersService.getReassignCandidates(id, 20)
+  }
+
+  @Post(':id/reassign-rider')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reassign an in-flight order to a specific rider (super-admin live-ops)' })
+  @ApiOkResponse({ description: 'Reassigned order' })
+  async reassignRider(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: ReassignRiderDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.ordersService.adminReassignRider(id, dto.riderId)
+    void this.audit.log({
+      actorId:    user.sub,
+      ipAddress:  (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip,
+      userAgent:  req.headers['user-agent'],
+      action:     'orders.reassign_rider',
+      targetType: 'order',
+      targetId:   id,
+      metadata:   {
+        newRiderId: dto.riderId,
+        reason: dto.reason ?? null,
+      },
+    })
+    return result
   }
 }
