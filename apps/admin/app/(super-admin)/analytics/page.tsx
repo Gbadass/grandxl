@@ -120,53 +120,79 @@ export default function AnalyticsPage() {
     if (!isAuthenticated || !user?.roles?.includes(UserRole.SUPER_ADMIN)) router.replace('/auth/login')
   }, [isAuthenticated, isInitializing, user, router])
 
-  const { data: analyticsRes, isLoading, isError } = useQuery({
+  // Sprint 13 (S13-2): every query now exposes isError + refetch so the top
+  // banner can list which sections actually failed and offer a targeted retry
+  // instead of the previous "one flag covers all seven" pattern.
+  const platformQ = useQuery({
     queryKey: ['analytics', 'platform'],
     queryFn:  () => analyticsApi.getPlatform().then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled:  isAuthenticated,
   })
+  const { data: analyticsRes, isLoading } = platformQ
 
-  const { data: dispatchRes, isLoading: dispatchLoading } = useQuery({
+  const dispatchQ = useQuery({
     queryKey: ['analytics', 'dispatch'],
     queryFn:  () => analyticsApi.getDispatchMetrics(7).then((r) => r.data),
     staleTime: 2 * 60_000,
     enabled:  isAuthenticated,
   })
+  const { data: dispatchRes, isLoading: dispatchLoading } = dispatchQ
 
-  const { data: queueRes, isLoading: queueLoading } = useQuery({
+  const queueQ = useQuery({
     queryKey: ['analytics', 'queue-depth'],
     queryFn:  () => analyticsApi.getQueueDepth().then((r) => r.data),
     staleTime: 30_000,
     refetchInterval: 30_000,
     enabled:  isAuthenticated,
   })
+  const { data: queueRes, isLoading: queueLoading } = queueQ
 
-  const { data: timeoutRes,     isLoading: timeoutLoading    } = useQuery({
+  const timeoutQ = useQuery({
     queryKey: ['analytics', 'order-timeouts', 7],
     queryFn:  () => analyticsApi.getOrderTimeouts(7).then((r) => r.data),
     staleTime: 2 * 60_000, enabled: isAuthenticated,
   })
-  const { data: engagementRes,  isLoading: engagementLoading } = useQuery({
+  const { data: timeoutRes, isLoading: timeoutLoading } = timeoutQ
+  const engagementQ = useQuery({
     queryKey: ['analytics', 'restaurant-engagement', 30],
     queryFn:  () => analyticsApi.getRestaurantEngagement(30).then((r) => r.data),
     staleTime: 5 * 60_000, enabled: isAuthenticated,
   })
-  const { data: waitTimesRes,   isLoading: waitTimesLoading  } = useQuery({
+  const { data: engagementRes, isLoading: engagementLoading } = engagementQ
+  const waitTimesQ = useQuery({
     queryKey: ['analytics', 'wait-times', 30],
     queryFn:  () => analyticsApi.getRestaurantWaitTimes(30).then((r) => r.data),
     staleTime: 5 * 60_000, enabled: isAuthenticated,
   })
-  const { data: utilRes,        isLoading: utilLoading       } = useQuery({
+  const { data: waitTimesRes, isLoading: waitTimesLoading } = waitTimesQ
+  const utilQ = useQuery({
     queryKey: ['analytics', 'rider-utilization', 7],
     queryFn:  () => analyticsApi.getRiderUtilization(7).then((r) => r.data),
     staleTime: 2 * 60_000, enabled: isAuthenticated,
   })
-  const { data: referralRes,    isLoading: referralLoading   } = useQuery({
+  const { data: utilRes, isLoading: utilLoading } = utilQ
+  const referralQ = useQuery({
     queryKey: ['analytics', 'referrals', 30],
     queryFn:  () => referralsApi.getAdminOverview(30).then((r) => r.data),
     staleTime: 5 * 60_000, enabled: isAuthenticated,
   })
+  const { data: referralRes, isLoading: referralLoading } = referralQ
+
+  // Sprint 13 (S13-2): build a list of failed sections so the banner names
+  // them precisely and the retry button targets only the failing queries —
+  // a green section shouldn't get a needless refetch when a red one didn't.
+  const sectionQueries = [
+    { label: 'Platform totals',       q: platformQ },
+    { label: 'Dispatch metrics',      q: dispatchQ },
+    { label: 'Queue depth',           q: queueQ },
+    { label: 'Order timeouts',        q: timeoutQ },
+    { label: 'Restaurant engagement', q: engagementQ },
+    { label: 'Restaurant wait times', q: waitTimesQ },
+    { label: 'Rider utilization',     q: utilQ },
+    { label: 'Referrals overview',    q: referralQ },
+  ] as const
+  const failedSections = sectionQueries.filter((s) => s.q.isError)
 
   const analytics = analyticsRes?.data
 
@@ -246,9 +272,30 @@ export default function AnalyticsPage() {
         subtitle="Platform-wide performance metrics"
       />
 
-      {isError && (
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          Failed to load analytics data. Please refresh the page.
+      {/* Sprint 13 (S13-2): per-section error banner. Names which queries
+          actually failed and offers a targeted retry so a healthy panel
+          isn't refetched for no reason. */}
+      {failedSections.length > 0 && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-red-800">
+                {failedSections.length === sectionQueries.length
+                  ? 'All analytics queries failed.'
+                  : `${failedSections.length} of ${sectionQueries.length} analytics queries failed:`}
+              </p>
+              <p className="mt-1 text-xs text-red-700">
+                {failedSections.map((s) => s.label).join(' · ')}
+              </p>
+            </div>
+            <button
+              onClick={() => failedSections.forEach((s) => { void s.q.refetch() })}
+              disabled={failedSections.some((s) => s.q.isFetching)}
+              className="shrink-0 rounded-lg bg-red-600 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50 cursor-pointer"
+            >
+              {failedSections.some((s) => s.q.isFetching) ? 'Retrying…' : 'Retry failed'}
+            </button>
+          </div>
         </div>
       )}
 
