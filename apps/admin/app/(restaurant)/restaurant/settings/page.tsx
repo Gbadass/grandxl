@@ -11,6 +11,7 @@ import { useAuthStore } from '../../../../src/store/auth.store'
 import {
   User, Image as ImageIcon, MapPin, Truck, Clock, CreditCard,
   Plus, X, Check, Loader2, AlertCircle, ChevronRight, Copy,
+  Images, ArrowLeft, ArrowRight,
 } from 'lucide-react'
 import '../../../../src/lib/axios'
 
@@ -45,7 +46,7 @@ type TabKey = 'profile' | 'branding' | 'location' | 'delivery' | 'hours' | 'payo
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode; desc: string }[] = [
   { key: 'profile',  label: 'Profile',   icon: <User size={16} />,       desc: 'Name, description, contact' },
-  { key: 'branding', label: 'Branding',  icon: <ImageIcon size={16} />,  desc: 'Cover image & logo'         },
+  { key: 'branding', label: 'Branding',  icon: <ImageIcon size={16} />,  desc: 'Cover, logo & photo gallery' },
   { key: 'location', label: 'Location',  icon: <MapPin size={16} />,     desc: 'Address & coordinates'      },
   { key: 'delivery', label: 'Delivery',  icon: <Truck size={16} />,      desc: 'Fees, radius & minimums'    },
   { key: 'hours',    label: 'Hours',     icon: <Clock size={16} />,      desc: 'Opening times per day'      },
@@ -165,6 +166,11 @@ export default function RestaurantSettingsPage() {
   const [coverUploading, setCoverUploading] = useState(false)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [logoUploading, setLogoUploading] = useState(false)
+  // Sprint 12 (S12-9): photo gallery state
+  const [gallery, setGallery] = useState<string[]>([])
+  const [galleryUploading, setGalleryUploading] = useState(false)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
+  const GALLERY_MAX = 12
   const [loaded, setLoaded] = useState(false)
   const [showBankNumber, setShowBankNumber] = useState(false)
   const [bankFilter, setBankFilter] = useState('')
@@ -205,6 +211,7 @@ export default function RestaurantSettingsPage() {
       if (restaurant.cuisine?.length) setCuisine(restaurant.cuisine)
       if (restaurant.coverImage) setCoverImageUrl(restaurant.coverImage)
       if (restaurant.logo) setLogoUrl(restaurant.logo)
+      if (restaurant.gallery?.length) setGallery(restaurant.gallery)
       if (restaurant.bankDetails) setBankDetails(restaurant.bankDetails)
       if (restaurant.address) {
         const coords = restaurant.address.coordinates?.coordinates
@@ -259,6 +266,59 @@ export default function RestaurantSettingsPage() {
       setLogoUploading(false)
       e.target.value = ''
     }
+  }
+
+  // Sprint 12 (S12-9): gallery upload / reorder / remove
+  //
+  // Files are pushed through the existing restaurant-cover upload — same
+  // Cloudinary folder, same 5 MB / JPG-PNG-WebP validation. We loop sequentially
+  // rather than in parallel so a bad file surfaces a single toast instead of N
+  // simultaneous ones, and to keep the "N of M uploaded" ordering intuitive.
+  async function handleGalleryUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (files.length === 0) return
+
+    const remainingSlots = GALLERY_MAX - gallery.length
+    if (remainingSlots <= 0) {
+      toast.error(`Gallery is full (${GALLERY_MAX} photos max)`)
+      return
+    }
+    if (files.length > remainingSlots) {
+      toast.error(`Only ${remainingSlots} slot${remainingSlots === 1 ? '' : 's'} left — trimming to fit`)
+    }
+    const toUpload = files.slice(0, remainingSlots)
+
+    setGalleryUploading(true)
+    try {
+      for (const file of toUpload) {
+        const res = await uploadsApi.uploadRestaurantCover(file)
+        setGallery((g) => [...g, res.data.data.url])
+      }
+      markDirty()
+      toast.success(`${toUpload.length} photo${toUpload.length === 1 ? '' : 's'} added — save to publish`)
+    } catch {
+      toast.error('Upload failed — files must be JPG, PNG or WebP under 5 MB.')
+    } finally {
+      setGalleryUploading(false)
+    }
+  }
+
+  function removeGalleryPhoto(idx: number) {
+    setGallery((g) => g.filter((_, i) => i !== idx))
+    markDirty()
+  }
+
+  function moveGalleryPhoto(idx: number, dir: -1 | 1) {
+    const to = idx + dir
+    if (to < 0 || to >= gallery.length) return
+    setGallery((g) => {
+      const next = [...g]
+      const [item] = next.splice(idx, 1)
+      next.splice(to, 0, item!)
+      return next
+    })
+    markDirty()
   }
 
   // ── Geocoding ────────────────────────────────────────────────────────────
@@ -329,6 +389,7 @@ export default function RestaurantSettingsPage() {
         cuisine: cuisine.length ? cuisine : undefined,
         coverImage: coverImageUrl ?? null,
         logo: logoUrl ?? null,
+        gallery,
         bankDetails: (bankDetails.bankName || bankDetails.accountNumber || bankDetails.accountName)
           ? bankDetails : undefined,
       }
@@ -687,6 +748,101 @@ export default function RestaurantSettingsPage() {
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Sprint 12 (S12-9): Photo gallery */}
+              <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-6 space-y-4">
+                <SectionHeader
+                  icon={<Images size={18} />}
+                  title={`Photo gallery (${gallery.length}/${GALLERY_MAX})`}
+                  desc="Extra photos of your food, space, and team — shown as a scrollable strip on your restaurant page"
+                />
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={handleGalleryUpload}
+                />
+
+                {gallery.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    disabled={galleryUploading}
+                    className="flex aspect-[5/2] w-full flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-orange-300 hover:bg-orange-50/50 hover:text-orange-500 transition-all cursor-pointer disabled:opacity-60"
+                  >
+                    {galleryUploading ? (
+                      <><Spinner size={24} /><span className="text-sm font-medium text-orange-500">Uploading…</span></>
+                    ) : (
+                      <>
+                        <Images size={32} />
+                        <div className="text-center">
+                          <p className="text-sm font-semibold">Click to add up to {GALLERY_MAX} photos</p>
+                          <p className="text-xs mt-0.5">JPG, PNG or WebP · Max 5 MB each · Multi-select supported</p>
+                        </div>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                      {gallery.map((url, idx) => (
+                        <div
+                          key={`${url}-${idx}`}
+                          className="group relative aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-100"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={url} alt={`Gallery ${idx + 1}`} className="h-full w-full object-cover" />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={() => moveGalleryPhoto(idx, -1)}
+                              disabled={idx === 0}
+                              aria-label="Move left"
+                              className="h-8 w-8 flex items-center justify-center rounded-full bg-white/90 text-gray-700 hover:bg-white cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <ArrowLeft size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveGalleryPhoto(idx, 1)}
+                              disabled={idx === gallery.length - 1}
+                              aria-label="Move right"
+                              className="h-8 w-8 flex items-center justify-center rounded-full bg-white/90 text-gray-700 hover:bg-white cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <ArrowRight size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeGalleryPhoto(idx)}
+                              aria-label="Remove photo"
+                              className="h-8 w-8 flex items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-700 cursor-pointer"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                          <span className="absolute top-1.5 left-1.5 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-bold text-white tabular-nums">
+                            {idx + 1}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between pt-2">
+                      <p className="text-xs text-gray-400">Drag the arrows to reorder · #1 shows first on your restaurant page</p>
+                      <button
+                        type="button"
+                        onClick={() => galleryInputRef.current?.click()}
+                        disabled={galleryUploading || gallery.length >= GALLERY_MAX}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {galleryUploading ? <Spinner size={14} /> : <Plus size={14} />}
+                        Add more
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

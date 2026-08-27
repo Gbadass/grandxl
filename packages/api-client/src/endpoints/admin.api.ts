@@ -282,6 +282,8 @@ export interface UpdateRestaurantDto {
   estimatedDeliveryTime?: number
   coverImage?: string | null
   logo?: string | null
+  // Sprint 12 (S12-9): photo gallery URLs (max 12 enforced server-side)
+  gallery?: string[]
   address?: {
     street: string
     city: string

@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ChevronLeft, Star, Clock, ShoppingBag } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ChevronLeft, ChevronRight, Star, Clock, ShoppingBag, X } from 'lucide-react'
 
 const GRADIENTS = [
   'from-orange-400 to-red-500',
@@ -53,6 +54,8 @@ export default function RestaurantPage() {
   const { t: tMenu } = useTranslation('menu')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const categoryRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  // Sprint 12 (S12-9): lightbox state — index into restaurant.gallery, or null when closed
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
   const { data: restaurantRes, isLoading: loadingRestaurant } = useRestaurant(id ?? '')
   const { data: menuRes, isLoading: loadingMenu } = useRestaurantMenu(id ?? '')
@@ -61,11 +64,25 @@ export default function RestaurantPage() {
   const categories: MenuCategory[] = menuRes?.categories ?? []
   const items: MenuItem[] = menuRes?.items ?? []
   const featured: MenuItem[] = items.filter((i) => i.isPopular)
+  const gallery: string[]      = restaurant?.gallery ?? []
 
   function scrollToCategory(categoryId: string) {
     setActiveCategory(categoryId)
     categoryRefs.current[categoryId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+
+  // Sprint 12 (S12-9): lightbox keyboard shortcuts. Left/right cycle, Esc closes.
+  // Wraps around end-to-start so the customer can browse without knowing the count.
+  useEffect(() => {
+    if (lightboxIndex === null) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape')     setLightboxIndex(null)
+      if (e.key === 'ArrowLeft')  setLightboxIndex((i) => (i === null ? null : (i - 1 + gallery.length) % gallery.length))
+      if (e.key === 'ArrowRight') setLightboxIndex((i) => (i === null ? null : (i + 1) % gallery.length))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightboxIndex, gallery.length])
 
   if (loadingRestaurant) return <HeroSkeleton />
 
@@ -159,6 +176,24 @@ export default function RestaurantPage() {
           </p>
         )}
       </div>
+
+      {/* Sprint 12 (S12-9): photo gallery strip (only when owner has added photos) */}
+      {gallery.length > 0 && (
+        <div className="border-b border-gray-100 px-4 py-3">
+          <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            {gallery.map((url, i) => (
+              <button
+                key={`${url}-${i}`}
+                onClick={() => setLightboxIndex(i)}
+                aria-label={`Open photo ${i + 1} of ${gallery.length}`}
+                className="shrink-0 h-24 w-32 overflow-hidden rounded-xl bg-gray-100 cursor-pointer transition-transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary/60"
+              >
+                <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Category sticky tabs */}
       {(categories.length > 1 || featured.length > 0) && (
@@ -264,6 +299,69 @@ export default function RestaurantPage() {
           </>
         )}
       </div>
+
+      {/* Sprint 12 (S12-9): fullscreen lightbox */}
+      <AnimatePresence>
+        {lightboxIndex !== null && gallery[lightboxIndex] && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{    opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setLightboxIndex(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setLightboxIndex(null)
+              }}
+              aria-label={t('common:close', { defaultValue: 'Close' })}
+              className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+            {gallery.length > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setLightboxIndex((i) => (i === null ? null : (i - 1 + gallery.length) % gallery.length))
+                  }}
+                  aria-label="Previous photo"
+                  className="absolute left-2 sm:left-6 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 cursor-pointer"
+                >
+                  <ChevronLeft size={22} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setLightboxIndex((i) => (i === null ? null : (i + 1) % gallery.length))
+                  }}
+                  aria-label="Next photo"
+                  className="absolute right-2 sm:right-6 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 cursor-pointer"
+                >
+                  <ChevronRight size={22} />
+                </button>
+              </>
+            )}
+            <motion.img
+              key={lightboxIndex}
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1   }}
+              exit={{    opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.15 }}
+              src={gallery[lightboxIndex]}
+              alt=""
+              className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <p className="absolute bottom-4 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white tabular-nums">
+              {lightboxIndex + 1} / {gallery.length}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

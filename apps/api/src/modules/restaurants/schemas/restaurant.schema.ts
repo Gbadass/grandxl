@@ -75,6 +75,13 @@ export class RestaurantDocument extends Document {
   @Prop({ type: String, default: null })
   coverImage!: string | null
 
+  // Sprint 12 (S12-9): photo gallery. Additional Cloudinary URLs beyond the
+  // single hero coverImage — dining room, plated dishes, chef portrait, etc.
+  // Capped at 12 by the DTO; storing the array preserves owner-defined order
+  // so it's the same on the customer-facing strip and the lightbox.
+  @Prop({ type: [String], default: [] })
+  gallery!: string[]
+
   @Prop({ required: true })
   phone!: string
 

@@ -39,6 +39,7 @@ export interface Restaurant {
   description: string
   logo: string | null
   coverImage: string | null
+  gallery: string[]
   phone: string
   email: string
   cuisine: string[]

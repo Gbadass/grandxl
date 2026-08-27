@@ -261,6 +261,7 @@ export class RestaurantsService {
     if (dto.isOpen !== undefined) updates.isOpen = dto.isOpen
     if (dto.coverImage !== undefined) updates.coverImage = dto.coverImage
     if (dto.logo !== undefined) updates.logo = dto.logo
+    if (dto.gallery !== undefined) updates.gallery = dto.gallery
 
     if (dto.address !== undefined) {
       updates.address = {
