@@ -334,6 +334,22 @@ export default function RestaurantOrdersPage() {
                             <span className="text-sm font-bold text-gray-900">{formatMoney(order.pricing.total, order.currency)}</span>
                           </div>
 
+                          {/* Sprint 12 (S12-11): distance + far-delivery signalling */}
+                          {(order.deliveryDistanceKm != null || order.isFarDelivery) && (
+                            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                              {order.deliveryDistanceKm != null && (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 tabular-nums">
+                                  {order.deliveryDistanceKm} km away
+                                </span>
+                              )}
+                              {order.isFarDelivery && (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-800 ring-1 ring-inset ring-amber-300">
+                                  ★ Far delivery
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           <p className="mb-3 line-clamp-2 text-xs text-gray-600">
                             {itemSummary.length > 70 ? itemSummary.slice(0, 70) + '…' : itemSummary}
                           </p>

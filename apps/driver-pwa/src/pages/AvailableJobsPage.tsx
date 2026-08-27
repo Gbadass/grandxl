@@ -283,6 +283,17 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
               <span className="text-xs font-semibold text-primary">{distanceKm.toFixed(1)} km trip</span>
             </>
           )}
+          {/* Sprint 12 (S12-11): far-delivery signal — customer opted-in to a
+              trip beyond the restaurant's normal range. Not a decision override,
+              just a heads-up so the rider isn't surprised. */}
+          {order.isFarDelivery && (
+            <>
+              <span className="text-zinc-800">·</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest rounded-full bg-amber-500/20 text-amber-300 ring-1 ring-inset ring-amber-500/30 px-2 py-0.5">
+                ★ Far delivery
+              </span>
+            </>
+          )}
         </div>
       </div>
 

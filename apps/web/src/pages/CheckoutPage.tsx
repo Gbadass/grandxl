@@ -110,6 +110,14 @@ export default function CheckoutPage() {
 
   // --- Scheduled delivery ---
   const [scheduledFor, setScheduledFor] = useState('')
+  // Sprint 12 (S12-11): far-delivery confirm modal. Populated when the server
+  // rejects the initial submit with the "outside normal range" error; the modal
+  // extracts the two numbers from the error and asks the customer to confirm.
+  const [farDeliveryPrompt, setFarDeliveryPrompt] = useState<{
+    message: string
+    distanceKm: string | null
+    radiusKm:   string | null
+  } | null>(null)
 
   // Dynamic platform pricing — service fee % and delivery tiers
   const { data: pricingData } = useQuery({
@@ -182,7 +190,7 @@ export default function CheckoutPage() {
     }
   }
 
-  async function handlePlaceOrder() {
+  async function handlePlaceOrder(opts?: { farDeliveryAcknowledged?: boolean }) {
     // useRef guard is synchronous — closes the race between two rapid taps that both
     // pass a useState check before the first setIsSubmitting(true) re-renders.
     if (isSubmittingRef.current) return
@@ -265,6 +273,10 @@ export default function CheckoutPage() {
       couponCode: appliedCoupon ? couponCode.trim() : undefined,
       tip: tipKobo || undefined,
       scheduledFor: scheduledFor || undefined,
+      // Sprint 12 (S12-11): only true after the customer explicitly confirms
+      // via the far-delivery modal — the modal calls this same function with
+      // the flag set, and the server double-checks the geometry either way.
+      farDeliveryAcknowledged: opts?.farDeliveryAcknowledged || undefined,
     }
 
     setIsSubmitting(true)
@@ -358,7 +370,17 @@ export default function CheckoutPage() {
       toast.success(t('orders:placed_success'))
       setPlacedOrderId(order._id)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, t('common:error')))
+      // Sprint 12 (S12-11): server rejects out-of-range addresses with a message
+      // like "This address is 6.2 km from the restaurant — outside their 5 km
+      // normal range. Please acknowledge and retry." Pull the two numbers out
+      // and open the confirm modal instead of just toasting.
+      const msg = getApiErrorMessage(err, '')
+      const match = /is\s+([\d.]+)\s+km\s+.*outside their\s+([\d.]+)\s+km/i.exec(msg)
+      if (match && !opts?.farDeliveryAcknowledged) {
+        setFarDeliveryPrompt({ message: msg, distanceKm: match[1] ?? null, radiusKm: match[2] ?? null })
+      } else {
+        toast.error(getApiErrorMessage(err, t('common:error')))
+      }
       // On any error, unlock so user can try again
       isSubmittingRef.current = false
       setIsSubmitting(false)
@@ -757,6 +779,68 @@ export default function CheckoutPage() {
             onClose={() => setShowTopUp(false)}
             suggestedKobo={walletShortfall > 0 ? walletShortfall : undefined}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Sprint 12 (S12-11): far-delivery acknowledgement modal */}
+      <AnimatePresence>
+        {farDeliveryPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{    opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setFarDeliveryPrompt(null)}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0,  scale: 1   }}
+              exit={{    opacity: 0, y: 20, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl"
+            >
+              <div className="border-b border-gray-100 px-6 py-5">
+                <h2 className="text-lg font-extrabold text-gray-900">Address outside normal range</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  This restaurant may charge more or take longer for far deliveries. Confirm you still want to proceed.
+                </p>
+              </div>
+              <div className="px-6 py-5 space-y-3">
+                {farDeliveryPrompt.distanceKm && farDeliveryPrompt.radiusKm && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-amber-50 px-4 py-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-700">Distance</p>
+                      <p className="mt-0.5 text-xl font-extrabold text-amber-900 tabular-nums">{farDeliveryPrompt.distanceKm} km</p>
+                    </div>
+                    <div className="rounded-2xl bg-gray-50 px-4 py-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Normal range</p>
+                      <p className="mt-0.5 text-xl font-extrabold text-gray-800 tabular-nums">{farDeliveryPrompt.radiusKm} km</p>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">{farDeliveryPrompt.message}</p>
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-gray-50 px-6 py-4">
+                <button
+                  onClick={() => setFarDeliveryPrompt(null)}
+                  className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setFarDeliveryPrompt(null)
+                    void handlePlaceOrder({ farDeliveryAcknowledged: true })
+                  }}
+                  className="rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+                >
+                  Deliver anyway
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </>

@@ -693,6 +693,13 @@ export default function ActiveDeliveryPage() {
               {isPendingPickup ? t('head_to_restaurant') : t('step_delivering')}
             </p>
             <p className="text-xs text-zinc-500 mt-0.5 font-mono">{order.orderNumber}</p>
+            {/* Sprint 12 (S12-11): far-delivery heads-up so rider knows this
+                trip is longer than the restaurant's normal range. */}
+            {order.isFarDelivery && (
+              <span className="mt-1 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-300 ring-1 ring-inset ring-amber-500/30">
+                ★ Far delivery
+              </span>
+            )}
           </div>
           <div className="text-right shrink-0">
             <div className="flex items-center gap-1 justify-end">

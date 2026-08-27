@@ -173,4 +173,12 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(300)
   deliveryInstructions?: string
+
+  // Sprint 12 (S12-11): the customer explicitly opted-in to a delivery whose
+  // address is beyond the restaurant's normal `deliveryRadius`. Server double-
+  // checks the geometry — a truthy flag alone won't bypass a hard-limit check.
+  @ApiPropertyOptional({ example: true, description: 'Customer opted in to a far-delivery beyond the restaurant\'s normal radius' })
+  @IsOptional()
+  @IsBoolean()
+  farDeliveryAcknowledged?: boolean
 }

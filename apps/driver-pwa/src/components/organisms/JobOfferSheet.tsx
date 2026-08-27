@@ -164,6 +164,12 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
           <div>
             <p className="text-lg font-bold text-white">{t('new_job_offer')}</p>
             <p className="text-sm text-zinc-400">#{order.orderNumber} · {seconds}s left</p>
+            {/* Sprint 12 (S12-11): far-delivery heads-up */}
+            {order.isFarDelivery && (
+              <span className="mt-1 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-300 ring-1 ring-inset ring-amber-500/30">
+                ★ Far delivery
+              </span>
+            )}
           </div>
           <div className="rounded-xl bg-primary/15 px-3 py-1.5">
             <p className="text-base font-bold text-primary">{formatMoney(payout, order.currency)}</p>

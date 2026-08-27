@@ -118,6 +118,11 @@ export class OrdersService {
     surgeMultiplier: number
     currency: string
     isFirstOrder: boolean
+    // Sprint 12 (S12-11): distance + radius signalling so the client can render
+    // the far-delivery warning card + acknowledgement checkbox before placement.
+    deliveryDistanceKm:   number | null
+    restaurantRadiusKm:   number
+    isFarDelivery:        boolean
   }> {
     if (!Types.ObjectId.isValid(dto.restaurantId)) {
       throw new BadRequestException('Invalid restaurant ID')
@@ -205,6 +210,22 @@ export class OrdersService {
     const effectiveDeliveryFee = freeDelivery ? 0 : deliveryFee
     const total = Math.max(0, subtotal + effectiveDeliveryFee + serviceFee - discount)
 
+    // Sprint 12 (S12-11): straight-line distance restaurant → customer. Uses the
+    // same haversine helper as elsewhere in the codebase; ~1km accuracy at Lagos
+    // latitudes, plenty for a radius check that's already fuzzy.
+    const restaurantRadiusKm = restaurant.deliveryRadius ?? 0
+    const restaurantCoords = restaurant.address?.coordinates?.coordinates as [number, number] | undefined
+    const deliveryDistanceKm = restaurantCoords
+      ? Math.round(calculateDistance(
+          { lat: restaurantCoords[1], lng: restaurantCoords[0] },
+          { lat: dto.deliveryAddress.coordinates.lat, lng: dto.deliveryAddress.coordinates.lng },
+        ) * 10) / 10
+      : null
+    const isFarDelivery =
+      restaurantRadiusKm > 0 &&
+      deliveryDistanceKm !== null &&
+      deliveryDistanceKm > restaurantRadiusKm
+
     return {
       subtotal,
       deliveryFee: effectiveDeliveryFee,
@@ -214,6 +235,9 @@ export class OrdersService {
       surgeMultiplier,
       currency: restaurant.currency,
       isFirstOrder: false,
+      deliveryDistanceKm,
+      restaurantRadiusKm,
+      isFarDelivery,
     }
   }
 
@@ -314,6 +338,30 @@ export class OrdersService {
     if (hasAnyZones && !zone) {
       throw new BadRequestException("Sorry — we don't deliver to this address yet")
     }
+
+    // Sprint 12 (S12-11): per-restaurant delivery radius. Compute straight-line
+    // distance; if beyond the restaurant's radius the customer must have opted-in
+    // via `farDeliveryAcknowledged` (the checkout page prompts for it after the
+    // estimate call flags the situation). radius === 0 disables the check so
+    // restaurants that lean purely on the zone map behave as before.
+    const restaurantRadiusKm = restaurant.deliveryRadius ?? 0
+    const restaurantCoords = restaurant.address?.coordinates?.coordinates as [number, number] | undefined
+    const deliveryDistanceKm = restaurantCoords
+      ? Math.round(calculateDistance(
+          { lat: restaurantCoords[1], lng: restaurantCoords[0] },
+          { lat: dto.deliveryAddress.coordinates.lat, lng: dto.deliveryAddress.coordinates.lng },
+        ) * 10) / 10
+      : null
+    const beyondRadius =
+      restaurantRadiusKm > 0 &&
+      deliveryDistanceKm !== null &&
+      deliveryDistanceKm > restaurantRadiusKm
+    if (beyondRadius && !dto.farDeliveryAcknowledged) {
+      throw new BadRequestException(
+        `This address is ${deliveryDistanceKm} km from the restaurant — outside their ${restaurantRadiusKm} km normal range. Please acknowledge and retry.`,
+      )
+    }
+    const isFarDelivery = beyondRadius === true
     const zoneMultiplier  = zone?.deliveryFeeMultiplier ?? 1.0
     // Surge stacks on the zone multiplier. Combined result is capped at 5× the base
     // fee to prevent pathological edge-cases (e.g. 3× surge × 2× zone = 6× base).
@@ -460,6 +508,9 @@ export class OrdersService {
         country: restaurant.country,
         currency: restaurant.currency,
         scheduledFor,
+        // Sprint 12 (S12-11): snapshot distance + far-delivery flag
+        deliveryDistanceKm,
+        isFarDelivery,
       }).save()
     } catch (saveErr) {
       // Wallet was already debited — refund it so the customer is not charged for a

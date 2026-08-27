@@ -183,6 +183,20 @@ export class OrderDocument extends Document {
   @Prop({ type: Date, default: null, index: true })
   restaurantEarningsSettledAt!: Date | null
 
+  // Sprint 12 (S12-11): straight-line distance restaurant → delivery address,
+  // computed once at order create. Null on old rows and on edge cases where
+  // one side is missing coords. Restaurant portal + rider PWA render this so
+  // both sides know how far the trip is before accepting.
+  @Prop({ type: Number, default: null })
+  deliveryDistanceKm!: number | null
+
+  // Sprint 12 (S12-11): true when the customer explicitly acknowledged that
+  // this address is outside the restaurant's normal `deliveryRadius`. Shown as
+  // a "Far delivery" chip in the restaurant portal and rider PWA so nobody is
+  // surprised by a longer-than-usual trip.
+  @Prop({ type: Boolean, default: false, index: true })
+  isFarDelivery!: boolean
+
   @Prop({ required: true, default: 'NG' })
   country!: string
 

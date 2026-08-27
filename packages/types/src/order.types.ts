@@ -91,6 +91,10 @@ export interface Order {
   cancelReasonCode: CancelReasonCode | null
   timeoutJobId: string | null
   scheduledFor: Date | null
+  // Sprint 12 (S12-11): straight-line distance restaurant→customer at order create
+  deliveryDistanceKm?: number | null
+  // Sprint 12 (S12-11): true when customer accepted an out-of-normal-range delivery
+  isFarDelivery?: boolean
   country: string
   currency: string
   createdAt: Date

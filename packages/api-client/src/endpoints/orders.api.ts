@@ -26,6 +26,10 @@ export interface CreateOrderDto {
   scheduledFor?: string
   customerNote?: string
   deliveryInstructions?: string
+  // Sprint 12 (S12-11): customer opts-in to a delivery beyond the restaurant's
+  // normal radius. Server still runs the geometry check — a truthy value alone
+  // won't bypass a hard-limit rejection.
+  farDeliveryAcknowledged?: boolean
 }
 
 export interface UpdateOrderStatusDto {
