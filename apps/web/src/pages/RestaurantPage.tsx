@@ -27,7 +27,7 @@ function initials(name: string) {
 import type { MenuItem, MenuCategory } from '@grandxl/types'
 import { useRestaurant, useRestaurantMenu } from '../features/restaurants/hooks/useRestaurant'
 import { MenuItemCard } from '../features/restaurants/components/MenuItemCard'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, findSpecialHoursForDay } from '@grandxl/utils'
 
 function HeroSkeleton() {
   return (
@@ -65,6 +65,13 @@ export default function RestaurantPage() {
   const items: MenuItem[] = menuRes?.items ?? []
   const featured: MenuItem[] = items.filter((i) => i.isPopular)
   const gallery: string[]      = restaurant?.gallery ?? []
+  // Sprint 12 (S12-10): today's date-specific override — null when the weekly
+  // schedule applies. Rendered as a banner above the menu so customers see it
+  // before they start browsing.
+  const todaySpecial = findSpecialHoursForDay(
+    restaurant?.specialHours,
+    (restaurant as unknown as { timezone?: string } | undefined)?.timezone ?? 'Africa/Lagos',
+  )
 
   function scrollToCategory(categoryId: string) {
     setActiveCategory(categoryId)
@@ -176,6 +183,36 @@ export default function RestaurantPage() {
           </p>
         )}
       </div>
+
+      {/* Sprint 12 (S12-10): today's special-hours override banner */}
+      {todaySpecial && (
+        <div
+          className={`border-b px-4 py-2.5 text-sm ${
+            todaySpecial.isClosed
+              ? 'bg-red-50 border-red-200 text-red-800'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}
+          role="status"
+        >
+          <div className="flex items-start gap-2">
+            <Clock size={15} className="mt-0.5 shrink-0" />
+            <p className="flex-1">
+              {todaySpecial.isClosed ? (
+                <>
+                  <span className="font-semibold">Closed today.</span>
+                  {todaySpecial.note ? ` ${todaySpecial.note}` : ''}
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold">Special hours today:</span>{' '}
+                  <span className="tabular-nums">{todaySpecial.open} – {todaySpecial.close}</span>
+                  {todaySpecial.note ? ` · ${todaySpecial.note}` : ''}
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Sprint 12 (S12-9): photo gallery strip (only when owner has added photos) */}
       {gallery.length > 0 && (

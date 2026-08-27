@@ -43,7 +43,7 @@ import { OrderStatus, PaymentMethod, PaymentStatus, UserRole } from '@grandxl/ty
 import type { JwtPayload } from '@grandxl/types'
 import { MAX_ORDER_VALUE_KOBO } from '../../common/constants/app.constants'
 import { isRestaurantOpen, formatMoney, calculateDistance } from '@grandxl/utils'
-import type { RestaurantHours } from '@grandxl/utils'
+import type { RestaurantHours, RestaurantSpecialHours } from '@grandxl/utils'
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PENDING]:    [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
@@ -380,7 +380,11 @@ export class OrdersService {
         throw new BadRequestException('Scheduled orders can be no more than 7 days out')
       }
       const tz = (restaurant as unknown as { timezone?: string }).timezone ?? 'Africa/Lagos'
-      if (restaurant.openingHours && !isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours, tz, when)) {
+      // Sprint 12 (S12-10): pass specialHours so date-specific overrides gate
+      // scheduled orders too — a customer can't schedule for Christmas Day if
+      // the restaurant marked it closed.
+      const specialHours = (restaurant as unknown as { specialHours?: RestaurantSpecialHours }).specialHours
+      if (restaurant.openingHours && !isRestaurantOpen(restaurant.openingHours as unknown as RestaurantHours, tz, when, specialHours)) {
         throw new BadRequestException('Restaurant will be closed at the scheduled time')
       }
       scheduledFor = when

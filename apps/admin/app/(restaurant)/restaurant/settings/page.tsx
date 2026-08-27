@@ -49,7 +49,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode; desc: string }[
   { key: 'branding', label: 'Branding',  icon: <ImageIcon size={16} />,  desc: 'Cover, logo & photo gallery' },
   { key: 'location', label: 'Location',  icon: <MapPin size={16} />,     desc: 'Address & coordinates'      },
   { key: 'delivery', label: 'Delivery',  icon: <Truck size={16} />,      desc: 'Fees, radius & minimums'    },
-  { key: 'hours',    label: 'Hours',     icon: <Clock size={16} />,      desc: 'Opening times per day'      },
+  { key: 'hours',    label: 'Hours',     icon: <Clock size={16} />,      desc: 'Weekly hours + date overrides' },
   { key: 'payout',   label: 'Payout',   icon: <CreditCard size={16} />, desc: 'Bank account for payouts'   },
 ]
 
@@ -156,6 +156,9 @@ export default function RestaurantSettingsPage() {
     estimatedDeliveryTime: '', minOrderAmount: '', deliveryFeeFixed: '', deliveryRadius: '',
   })
   const [hours, setHours] = useState<OpeningHours>(DEFAULT_HOURS)
+  // Sprint 12 (S12-10): date-specific overrides
+  const [specialHours, setSpecialHours] = useState<Array<{ date: string; isClosed: boolean; open: string; close: string; note: string }>>([])
+  const [newOverride, setNewOverride] = useState({ date: '', isClosed: true, open: '09:00', close: '18:00', note: '' })
   const [cuisine, setCuisine] = useState<string[]>([])
   const [cuisineInput, setCuisineInput] = useState('')
   const [address, setAddress] = useState<AddressState>({ street: '', city: '', state: '', lat: null, lng: null, geocoded: false })
@@ -208,6 +211,15 @@ export default function RestaurantSettingsPage() {
         deliveryRadius: String(restaurant.deliveryRadius ?? 5),
       })
       if (restaurant.openingHours) setHours(restaurant.openingHours)
+      if (restaurant.specialHours?.length) {
+        setSpecialHours(restaurant.specialHours.map((s) => ({
+          date:     s.date,
+          isClosed: s.isClosed,
+          open:     s.open  ?? '09:00',
+          close:    s.close ?? '18:00',
+          note:     s.note  ?? '',
+        })))
+      }
       if (restaurant.cuisine?.length) setCuisine(restaurant.cuisine)
       if (restaurant.coverImage) setCoverImageUrl(restaurant.coverImage)
       if (restaurant.logo) setLogoUrl(restaurant.logo)
@@ -390,6 +402,14 @@ export default function RestaurantSettingsPage() {
         coverImage: coverImageUrl ?? null,
         logo: logoUrl ?? null,
         gallery,
+        // Sprint 12 (S12-10): normalize before send — open/close null when isClosed
+        specialHours: specialHours.map((s) => ({
+          date:     s.date,
+          isClosed: s.isClosed,
+          open:     s.isClosed ? null : s.open,
+          close:    s.isClosed ? null : s.close,
+          note:     s.note.trim() || null,
+        })),
         bankDetails: (bankDetails.bankName || bankDetails.accountNumber || bankDetails.accountName)
           ? bankDetails : undefined,
       }
@@ -1078,6 +1098,148 @@ export default function RestaurantSettingsPage() {
                     </div>
                   )
                 })}
+              </div>
+
+              {/* Sprint 12 (S12-10): Special hours override */}
+              <div className="border-t border-gray-50 pt-5 space-y-4">
+                <SectionHeader
+                  icon={<Clock size={18} />}
+                  title="Special hours"
+                  desc="Override the weekly schedule for specific dates — holidays, staff training, private events"
+                />
+
+                {/* Add-override row */}
+                <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="date"
+                      value={newOverride.date}
+                      min={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => setNewOverride((o) => ({ ...o, date: e.target.value }))}
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                    />
+                    <div className="flex items-center gap-1 rounded-xl border border-gray-200 bg-white p-1">
+                      <button
+                        type="button"
+                        onClick={() => setNewOverride((o) => ({ ...o, isClosed: true }))}
+                        className={`rounded-lg px-3 py-1 text-xs font-semibold transition cursor-pointer ${
+                          newOverride.isClosed ? 'bg-red-600 text-white' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Closed all day
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewOverride((o) => ({ ...o, isClosed: false }))}
+                        className={`rounded-lg px-3 py-1 text-xs font-semibold transition cursor-pointer ${
+                          !newOverride.isClosed ? 'bg-orange-600 text-white' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Custom hours
+                      </button>
+                    </div>
+                    {!newOverride.isClosed && (
+                      <>
+                        <input
+                          type="time"
+                          value={newOverride.open}
+                          onChange={(e) => setNewOverride((o) => ({ ...o, open: e.target.value }))}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        />
+                        <span className="text-xs text-gray-400">to</span>
+                        <input
+                          type="time"
+                          value={newOverride.close}
+                          onChange={(e) => setNewOverride((o) => ({ ...o, close: e.target.value }))}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        />
+                      </>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      value={newOverride.note}
+                      onChange={(e) => setNewOverride((o) => ({ ...o, note: e.target.value }))}
+                      placeholder="Note customers will see (optional) — e.g. Christmas Day"
+                      maxLength={140}
+                      className="flex-1 min-w-[220px] rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!newOverride.date) { toast.error('Pick a date first'); return }
+                        if (specialHours.some((s) => s.date === newOverride.date)) {
+                          toast.error(`Already have an override for ${newOverride.date}`); return
+                        }
+                        if (!newOverride.isClosed && newOverride.open >= newOverride.close) {
+                          toast.error('Close time must be after open time'); return
+                        }
+                        if (specialHours.length >= 90) {
+                          toast.error('Maximum 90 overrides'); return
+                        }
+                        setSpecialHours((s) => [...s, { ...newOverride }])
+                        setNewOverride({ date: '', isClosed: true, open: '09:00', close: '18:00', note: '' })
+                        markDirty()
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-700 cursor-pointer"
+                    >
+                      <Plus size={13} />
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Existing overrides — upcoming first, past collapsed to a count */}
+                {specialHours.length > 0 ? (() => {
+                  const todayIso = new Date().toISOString().slice(0, 10)
+                  const upcoming = specialHours
+                    .filter((s) => s.date >= todayIso)
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                  const past = specialHours.filter((s) => s.date < todayIso)
+                  return (
+                    <div className="space-y-2">
+                      {upcoming.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic">No upcoming overrides. Add one above.</p>
+                      ) : (
+                        upcoming.map((s) => (
+                          <div key={s.date} className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3">
+                            <span className="min-w-[110px] text-sm font-semibold text-gray-800 tabular-nums">
+                              {new Date(s.date).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                            {s.isClosed ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-bold uppercase text-red-700 ring-1 ring-inset ring-red-200">
+                                Closed
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2.5 py-0.5 text-[11px] font-bold text-orange-700 ring-1 ring-inset ring-orange-200 tabular-nums">
+                                {s.open} – {s.close}
+                              </span>
+                            )}
+                            {s.note && (
+                              <span className="flex-1 min-w-[120px] text-xs italic text-gray-500">&ldquo;{s.note}&rdquo;</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => { setSpecialHours((h) => h.filter((x) => x.date !== s.date)); markDirty() }}
+                              aria-label="Remove override"
+                              className="ml-auto rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 cursor-pointer transition-colors"
+                            >
+                              <X size={15} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                      {past.length > 0 && (
+                        <p className="pt-1 text-xs text-gray-400">
+                          {past.length} past override{past.length === 1 ? '' : 's'} hidden. They stay saved for record but don&apos;t affect service.
+                        </p>
+                      )}
+                    </div>
+                  )
+                })() : (
+                  <p className="text-xs text-gray-400 italic">No special hours yet.</p>
+                )}
               </div>
 
               {/* Quick-set shortcuts */}

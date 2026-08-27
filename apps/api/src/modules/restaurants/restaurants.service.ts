@@ -254,6 +254,9 @@ export class RestaurantsService {
     if (dto.email !== undefined) updates.email = dto.email.toLowerCase().trim()
     if (dto.cuisine !== undefined) updates.cuisine = dto.cuisine
     if (dto.openingHours !== undefined) updates.openingHours = dto.openingHours
+    // Sprint 12 (S12-10): date-specific overrides — pass through as-is. DTO
+    // already ran nested validation and enforced the 90-entry cap.
+    if (dto.specialHours !== undefined) updates.specialHours = dto.specialHours
     if (dto.deliveryRadius !== undefined) updates.deliveryRadius = dto.deliveryRadius
     if (dto.minOrderAmount !== undefined) updates.minOrderAmount = dto.minOrderAmount
     if (dto.deliveryFeeFixed !== undefined) updates.deliveryFeeFixed = dto.deliveryFeeFixed

@@ -284,6 +284,14 @@ export interface UpdateRestaurantDto {
   logo?: string | null
   // Sprint 12 (S12-9): photo gallery URLs (max 12 enforced server-side)
   gallery?: string[]
+  // Sprint 12 (S12-10): date-specific overrides (max 90 enforced server-side)
+  specialHours?: Array<{
+    date:      string
+    isClosed:  boolean
+    open?:     string | null
+    close?:    string | null
+    note?:     string | null
+  }>
   address?: {
     street: string
     city: string

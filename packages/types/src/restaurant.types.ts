@@ -17,6 +17,17 @@ export interface OpeningHours {
   sunday: OpeningHoursDay
 }
 
+// Sprint 12 (S12-10): date-specific override on top of the weekly openingHours.
+// `date` is a local calendar day 'YYYY-MM-DD'. When `isClosed`, `open`/`close`
+// are ignored. Otherwise `open`/`close` in 'HH:mm' replace that day's hours.
+export interface SpecialHoursEntry {
+  date:      string
+  isClosed:  boolean
+  open?:     string | null
+  close?:    string | null
+  note?:     string | null
+}
+
 export interface RestaurantAddress {
   street: string
   city: string
@@ -45,6 +56,7 @@ export interface Restaurant {
   cuisine: string[]
   address: RestaurantAddress
   openingHours: OpeningHours
+  specialHours: SpecialHoursEntry[]
   deliveryRadius: number
   minOrderAmount: number
   deliveryFeeType: DeliveryFeeType

@@ -20,6 +20,19 @@ class OpeningHoursSubdoc {
   @Prop({ type: DayHoursSubdoc }) sunday!: DayHoursSubdoc
 }
 
+// Sprint 12 (S12-10): per-date override on top of the weekly openingHours.
+// Stored as a small array (client caps at 60 upcoming entries, older ones can
+// be pruned client-side or by a future cron). `date` is the local calendar day
+// in 'YYYY-MM-DD' — no timezone drift because we never treat it as a Date.
+@Schema({ _id: false })
+class SpecialHoursDaySubdoc {
+  @Prop({ type: String, required: true }) date!: string   // 'YYYY-MM-DD'
+  @Prop({ type: Boolean, required: true, default: false }) isClosed!: boolean
+  @Prop({ type: String, default: null })  open!: string | null   // 'HH:mm', null when isClosed
+  @Prop({ type: String, default: null })  close!: string | null  // 'HH:mm', null when isClosed
+  @Prop({ type: String, default: null })  note!: string | null   // Free-text shown to customer
+}
+
 @Schema({ _id: false })
 class BankDetailsSubdoc {
   @Prop({ type: String, default: null }) bankName!: string | null
@@ -47,6 +60,7 @@ const DayHoursSchema = SchemaFactory.createForClass(DayHoursSubdoc)
 const OpeningHoursSchema = SchemaFactory.createForClass(OpeningHoursSubdoc)
 const BankDetailsSchema = SchemaFactory.createForClass(BankDetailsSubdoc)
 const EarningsSchema = SchemaFactory.createForClass(EarningsSubdoc)
+const SpecialHoursDaySchema = SchemaFactory.createForClass(SpecialHoursDaySubdoc)
 
 const DEFAULT_DAY = { open: '09:00', close: '22:00', isOpen: true }
 const DEFAULT_OPENING_HOURS = () => ({
@@ -114,6 +128,11 @@ export class RestaurantDocument extends Document {
 
   @Prop({ type: OpeningHoursSchema, default: DEFAULT_OPENING_HOURS })
   openingHours!: OpeningHoursSubdoc
+
+  // Sprint 12 (S12-10): date-specific overrides. Take precedence over openingHours
+  // when the current calendar date (in the restaurant's timezone) matches an entry.
+  @Prop({ type: [SpecialHoursDaySchema], default: [] })
+  specialHours!: SpecialHoursDaySubdoc[]
 
   @Prop({ default: 5 })
   deliveryRadius!: number // km
