@@ -505,30 +505,38 @@ export default function RestaurantDashboardPage() {
           </div>
         ) : (
           <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-            {/* Header */}
-            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-5 py-3 border-b border-gray-50">
-              {['Order #', 'Status', 'Items', 'Total', 'Time'].map((h) => (
-                <span key={h} className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">{h}</span>
-              ))}
+            {/* Sprint 12 (S12-13): horizontal-scroll wrapper so the 5-column grid
+                stays readable on phones instead of squishing or overflowing the
+                page. Rows still align to the header because both share the same
+                grid template inside the same scrolling container. */}
+            <div className="overflow-x-auto">
+              <div className="min-w-[560px]">
+                {/* Header */}
+                <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-5 py-3 border-b border-gray-50">
+                  {['Order #', 'Status', 'Items', 'Total', 'Time'].map((h) => (
+                    <span key={h} className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">{h}</span>
+                  ))}
+                </div>
+                {/* Rows */}
+                {recentList.map((o, idx) => (
+                  <button
+                    key={o._id}
+                    onClick={() => router.push(`/restaurant/orders/${o._id}`)}
+                    className={`w-full grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-5 py-3.5 text-left hover:bg-gray-50/60 transition-colors cursor-pointer ${
+                      idx !== recentList.length - 1 ? 'border-b border-gray-50' : ''
+                    }`}
+                  >
+                    <span className="font-mono text-sm font-semibold text-gray-900 whitespace-nowrap">{o.orderNumber}</span>
+                    <StatusBadge label={o.status} orderStatus={o.status} />
+                    <span className="text-sm text-gray-500 whitespace-nowrap">{o.items.length} item{o.items.length !== 1 ? 's' : ''}</span>
+                    <span className="text-sm font-bold text-gray-900 whitespace-nowrap">{formatMoney(o.pricing.total, o.currency)}</span>
+                    <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap">
+                      {new Date(o.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-            {/* Rows */}
-            {recentList.map((o, idx) => (
-              <button
-                key={o._id}
-                onClick={() => router.push(`/restaurant/orders/${o._id}`)}
-                className={`w-full grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-5 py-3.5 text-left hover:bg-gray-50/60 transition-colors cursor-pointer ${
-                  idx !== recentList.length - 1 ? 'border-b border-gray-50' : ''
-                }`}
-              >
-                <span className="font-mono text-sm font-semibold text-gray-900">{o.orderNumber}</span>
-                <StatusBadge label={o.status} orderStatus={o.status} />
-                <span className="text-sm text-gray-500">{o.items.length} item{o.items.length !== 1 ? 's' : ''}</span>
-                <span className="text-sm font-bold text-gray-900">{formatMoney(o.pricing.total, o.currency)}</span>
-                <span className="text-xs text-gray-400 tabular-nums">
-                  {new Date(o.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </button>
-            ))}
           </div>
         )}
       </div>

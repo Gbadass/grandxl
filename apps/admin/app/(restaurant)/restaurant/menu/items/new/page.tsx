@@ -511,7 +511,9 @@ export default function NewMenuItemPage() {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  <div className="grid grid-cols-[1fr_7rem_auto_2rem] gap-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 px-1">
+                  {/* Sprint 12 (S12-13): header is hidden on mobile because the
+                      row itself collapses to a 2-col + toggle layout under sm. */}
+                  <div className="hidden sm:grid grid-cols-[1fr_7rem_auto_2rem] gap-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 px-1">
                     <span>Name</span>
                     <span>Price (₦)</span>
                     <span>Available</span>
@@ -520,7 +522,7 @@ export default function NewMenuItemPage() {
                   {addOns.map((addOn, ai) => (
                     <div
                       key={ai}
-                      className="grid grid-cols-[1fr_7rem_auto_2rem] gap-2 items-center rounded-xl bg-gray-50 border border-gray-100 px-3 py-2"
+                      className="grid grid-cols-[1fr_5.5rem_auto_1.75rem] sm:grid-cols-[1fr_7rem_auto_2rem] gap-2 items-center rounded-xl bg-gray-50 border border-gray-100 px-2 sm:px-3 py-2"
                     >
                       <input
                         value={addOn.name}

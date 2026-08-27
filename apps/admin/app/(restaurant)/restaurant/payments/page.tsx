@@ -167,8 +167,10 @@ export default function RestaurantPaymentsPage() {
       </div>
 
       {/* ── Table ──────────────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-        <table className="w-full text-sm">
+      {/* Sprint 12 (S12-13): overflow-x-auto lets the 6-col table scroll on
+          phones instead of cropping. min-width keeps columns from squishing. */}
+      <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table className="w-full text-sm min-w-[640px]">
           <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
             <tr>
               <th className="px-5 py-3 font-semibold">Order</th>
