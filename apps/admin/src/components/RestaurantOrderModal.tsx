@@ -33,34 +33,47 @@ export function RestaurantOrderModal({ order, onClose }: Props) {
         if (s <= 1) {
           clearInterval(intervalRef.current!)
           stopLoopAlarm()
-          // Before auto-cancelling, verify no rider has already accepted. This handles
-          // the Nigerian flow where a disengaged restaurant lets the rider drive the
-          // order — we must NOT cancel an in-flight order out from under a rider who
-          // committed to it. Also survives a missed order:status_update socket event.
-          // If the refetch fails, we don't know the current state — attempting cancel is
-          // safer than doing nothing. The 30-min payment timeout would catch it eventually,
-          // but that leaves the customer waiting with no signal.
+          // Sprint 12 (S12-12): every outcome of the auto-cancel path now surfaces
+          // an appropriately-toned toast so the restaurant knows what happened
+          // when the modal disappears. Previously the modal just vanished silently
+          // on success and swallowed cancel-call failures — the owner would only
+          // find out when the customer complained. Four outcomes now surface:
+          //   - already accepted by rider  → info toast (no action needed)
+          //   - auto-cancel succeeded      → warning toast (auto-cancelled)
+          //   - refetch failed but cancel worked → same warning toast
+          //   - both refetch AND cancel failed  → error toast (needs manual action)
+          const shortNum = order.orderNumber ?? order._id.slice(-6)
           void ordersApi.getById(order._id)
             .then((res) => {
               const current = res.data.data
               const alreadyMovedOn =
                 !!current?.riderId ||
                 (current?.status && current.status !== OrderStatus.PENDING && current.status !== OrderStatus.CONFIRMED)
-              if (alreadyMovedOn) return  // Rider took it — just close silently
+              if (alreadyMovedOn) {
+                toast(`#${shortNum} was already accepted — no action needed`, { icon: 'ℹ️' })
+                return
+              }
               return ordersApi.updateStatus(order._id, {
                 status: OrderStatus.CANCELLED,
                 cancelReason: 'Restaurant did not respond in time',
+              }).then(() => {
+                toast(`#${shortNum} auto-cancelled — you didn't respond in ${TIMEOUT_SECONDS / 60} minutes`, { icon: '⏱️', duration: 6000 })
               })
             })
             .catch(() => {
               // Refetch failed — try to cancel anyway. Server-side transition guard
               // will reject the cancel if the order has moved to PREPARING (rider took it),
               // so this is safe: worst case we get a 409, best case we clean up a stuck order.
-              toast('Could not verify order state — attempting cancel')
               return ordersApi.updateStatus(order._id, {
                 status: OrderStatus.CANCELLED,
                 cancelReason: 'Restaurant did not respond in time',
-              }).catch(() => undefined)
+              }).then(() => {
+                toast(`#${shortNum} auto-cancelled — you didn't respond in ${TIMEOUT_SECONDS / 60} minutes`, { icon: '⏱️', duration: 6000 })
+              }).catch(() => {
+                // Both paths failed — the restaurant needs to know so they can
+                // check the order manually. Longer duration; louder tone.
+                toast.error(`Could not auto-cancel #${shortNum}. Please open the order and reject or accept manually.`, { duration: 8000 })
+              })
             })
           onClose()
           return 0
@@ -71,7 +84,7 @@ export function RestaurantOrderModal({ order, onClose }: Props) {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [onClose, order._id])
+  }, [onClose, order._id, order.orderNumber])
 
   function dismiss() {
     if (intervalRef.current) clearInterval(intervalRef.current)
