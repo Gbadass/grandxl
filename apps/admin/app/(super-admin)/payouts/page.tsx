@@ -90,10 +90,32 @@ export default function PayoutsPage() {
     .filter((p) => p.status === 'pending')
     .reduce((s, p) => s + p.amountKobo, 0)
 
+  // Sprint 13 (S13-3): patch the affected row in-cache before invalidating so
+  // the status pill updates the moment the server confirms — no waiting for a
+  // full-table refetch to resolve. Then invalidate in the background so any
+  // server-computed fields (transferReference, decidedAt) catch up.
+  function patchRowStatus(id: string, next: PayoutRequest['status'], patch: Partial<PayoutRequestForAdmin> = {}) {
+    queryClient.setQueriesData<{ items: PayoutRequestForAdmin[]; total: number; page: number; limit: number; pages: number } | undefined>(
+      { queryKey: ['admin-payouts'] },
+      (old) => {
+        if (!old?.items) return old
+        return {
+          ...old,
+          items: old.items.map((row) =>
+            row._id === id ? { ...row, status: next, ...patch } : row,
+          ),
+        }
+      },
+    )
+  }
+
   const approveMutation = useMutation({
     mutationFn: (id: string) =>
       adminPayoutsApi.decide(id, { decision: 'approve', decisionNote: 'Approved — Paystack transfer initiated' }),
-    onSuccess: () => {
+    onSuccess: (_res, id) => {
+      patchRowStatus(id, 'approved', { decisionNote: 'Approved — Paystack transfer initiated' })
+      // Background revalidation for server-computed fields — no `void` refetch flicker
+      // because there's cached data, so `isLoading` stays false while `isFetching` goes true.
       void queryClient.invalidateQueries({ queryKey: ['admin-payouts'] })
     },
   })
@@ -101,7 +123,8 @@ export default function PayoutsPage() {
   const rejectMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) =>
       adminPayoutsApi.decide(id, { decision: 'reject', decisionNote: note }),
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
+      patchRowStatus(vars.id, 'rejected', { decisionNote: vars.note })
       setRejectId(null)
       setRejectNote('')
       void queryClient.invalidateQueries({ queryKey: ['admin-payouts'] })
@@ -186,14 +209,18 @@ export default function PayoutsPage() {
       header: '',
       render: (p) => {
         if (p.status !== 'pending') return <span className="text-xs text-gray-300">—</span>
+        // Sprint 13 (S13-3): row-scoped disabled — a mutation on any OTHER row
+        // shouldn't dim every approve button on the page. Previously all N
+        // buttons flickered to opacity-50 during a single approve request.
+        const thisRowPending = approveMutation.isPending && approveMutation.variables === p._id
         return (
           <div className="flex items-center gap-2">
             <button
-              disabled={approveMutation.isPending}
+              disabled={thisRowPending}
               onClick={() => approveMutation.mutate(p._id)}
               className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition-colors cursor-pointer"
             >
-              {approveMutation.isPending && approveMutation.variables === p._id ? 'Sending…' : 'Approve & Pay'}
+              {thisRowPending ? 'Sending…' : 'Approve & Pay'}
             </button>
             <button
               onClick={() => { setRejectId(p._id); setRejectNote('') }}
