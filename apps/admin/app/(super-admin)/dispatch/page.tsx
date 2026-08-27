@@ -103,26 +103,59 @@ export default function DispatchPage() {
   const allOrders: Order[] = ordersData?.data?.data?.data ?? []
   const activeOrders = allOrders.filter((o) => DISPATCH_STATUSES.has(o.status))
 
-  // Join all active order rooms to receive rider:location events
+  // Sprint 13 (S13-1): incremental room join/leave. Previous version emitted
+  // leave+rejoin for the ENTIRE active-order set on any single-order change —
+  // 20 orders × 2 emits per churn was hammering the socket layer. Now we track
+  // joined rooms in a ref and emit only the delta each time the ID set shifts.
+  const joinedRoomsRef = useRef<Set<string>>(new Set())
+  const activeIdsKey = activeOrders.map((o) => o._id).sort().join(',')
   useEffect(() => {
-    if (!activeOrders.length) return
-    activeOrders.forEach((o) => {
-      socket.emit('order:join_room', { orderId: o._id })
-    })
-    return () => {
-      activeOrders.forEach((o) => {
-        socket.emit('order:leave_room', { orderId: o._id })
-      })
-    }
-    // Re-run when order IDs change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeOrders.map((o) => o._id).join(',')])
+    const currentIds = new Set(activeOrders.map((o) => o._id))
 
-  // Listen for rider location events
+    // Rooms in `currentIds` but not yet joined → emit join
+    for (const id of currentIds) {
+      if (!joinedRoomsRef.current.has(id)) {
+        socket.emit('order:join_room', { orderId: id })
+        joinedRoomsRef.current.add(id)
+      }
+    }
+    // Rooms previously joined but no longer active → emit leave
+    for (const id of joinedRoomsRef.current) {
+      if (!currentIds.has(id)) {
+        socket.emit('order:leave_room', { orderId: id })
+        joinedRoomsRef.current.delete(id)
+      }
+    }
+    // Re-run only when the active-ID set actually changes (sorted string dep).
+    // No cleanup — leaves on unmount are handled by the mount-only effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIdsKey])
+
+  // Sprint 13 (S13-1): on route-away, leave every room we ever joined so the
+  // server isn't holding orphaned subscriptions for this socket. Runs only on
+  // unmount because the dep array is empty.
+  useEffect(() => {
+    const rooms = joinedRoomsRef.current
+    return () => {
+      for (const id of rooms) {
+        socket.emit('order:leave_room', { orderId: id })
+      }
+      rooms.clear()
+    }
+  }, [])
+
+  // Sprint 13 (S13-1): register the rider-location listener ONCE. Previous
+  // version re-registered on every change to activeOrders/riderId — cheap in
+  // isolation, but combined with the room-join explosion it churned the socket
+  // continuously. The handler now reads latest activeOrders through a ref so
+  // it never needs to re-close over the array.
+  const activeOrdersRef = useRef<Order[]>(activeOrders)
+  useEffect(() => { activeOrdersRef.current = activeOrders }, [activeOrders])
   useEffect(() => {
     function onRiderLocation(data: { riderId: string; lat: number; lng: number; bearing: number }) {
-      // Map riderId → orderId for the pin (find matching active order)
-      const order = activeOrders.find((o) => o.riderId === data.riderId)
+      // Map riderId → orderId for the pin (find matching active order — read
+      // from ref so we always see the latest set without re-registering).
+      const order = activeOrdersRef.current.find((o) => o.riderId === data.riderId)
       if (!order) return
 
       riderPins.current.set(data.riderId, {
@@ -138,8 +171,7 @@ export default function DispatchPage() {
 
     socket.on('rider:location', onRiderLocation)
     return () => { socket.off('rider:location', onRiderLocation) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeOrders.map((o) => o._id + o.riderId).join(',')])
+  }, [])
 
   if (isInitializing) return null
 
