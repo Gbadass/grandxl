@@ -502,6 +502,18 @@ export default function RestaurantDashboardPage() {
                 ? 'Your first order will appear here once customers start ordering.'
                 : 'Orders will appear here once your restaurant is approved.'}
             </p>
+            {/* Sprint 12 (S12-14): action CTA for approved restaurants — a
+                populated, well-priced menu is the load-bearing prerequisite for
+                orders. Points the owner at the next useful action instead of
+                just describing the empty state. */}
+            {approvalStatus === RestaurantApprovalStatus.APPROVED && (
+              <button
+                onClick={() => router.push('/restaurant/menu')}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 cursor-pointer transition-colors"
+              >
+                Go to menu
+              </button>
+            )}
           </div>
         ) : (
           <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">

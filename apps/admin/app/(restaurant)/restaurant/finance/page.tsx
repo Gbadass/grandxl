@@ -520,9 +520,22 @@ export default function RestaurantFinancePage() {
             </table>
           </div>
         ) : (
-          <p className="py-6 text-center text-xs text-gray-400">
-            {isLoading ? 'Loading…' : 'No delivered orders in this period.'}
-          </p>
+          <div className="py-6 text-center">
+            <p className="text-xs text-gray-400">
+              {isLoading ? 'Loading…' : 'No delivered orders in this period.'}
+            </p>
+            {/* Sprint 12 (S12-14): only offer the reset when the user actually
+                narrowed the range — no point suggesting "reset to 30d" when
+                they're already on it and just have no orders. */}
+            {!isLoading && preset !== '30d' && (
+              <button
+                onClick={() => applyPreset(PRESETS.find((p) => p.key === '30d')!)}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-xs font-semibold text-white hover:bg-orange-700 cursor-pointer transition-colors"
+              >
+                Reset to last 30 days
+              </button>
+            )}
+          </div>
         )}
       </Card>
     </div>

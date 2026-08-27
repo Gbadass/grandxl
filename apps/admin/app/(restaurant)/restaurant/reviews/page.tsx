@@ -316,6 +316,17 @@ export default function RestaurantReviewsPage() {
               ? 'Your first review will appear here once a customer rates their order.'
               : 'Try selecting a different star filter above.'}
           </p>
+          {/* Sprint 12 (S12-14): CTA for the filtered-empty case — one tap
+              back to the full list rather than making the owner hunt for the
+              filter chip they clicked earlier. */}
+          {allReviews.length > 0 && (
+            <button
+              onClick={() => setRatingFilter('all')}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 cursor-pointer transition-colors"
+            >
+              Show all reviews
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

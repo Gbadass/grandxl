@@ -626,6 +626,16 @@ export default function PromotionsPage() {
                   ? 'Create your first coupon using the form on the left.'
                   : 'Try switching to a different filter.'}
               </p>
+              {/* Sprint 12 (S12-14): Show-all CTA only for the filtered case;
+                  the 'all' state's copy already points to the form on the left. */}
+              {filter !== 'all' && (
+                <button
+                  onClick={() => setFilter('all')}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 cursor-pointer transition-colors"
+                >
+                  Show all promotions
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">

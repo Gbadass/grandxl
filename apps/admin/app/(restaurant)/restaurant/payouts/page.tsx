@@ -293,9 +293,22 @@ export default function RestaurantPayoutsPage() {
             </table>
           </div>
         ) : (
-          <p className="py-8 text-center text-sm text-gray-400">
-            {ordersLoading ? 'Loading…' : 'No delivered orders yet.'}
-          </p>
+          <div className="py-8 text-center">
+            <p className="text-sm text-gray-400">
+              {ordersLoading ? 'Loading…' : 'No delivered orders yet.'}
+            </p>
+            {/* Sprint 12 (S12-14): payouts only start filling once orders are
+                being delivered — point the owner at the menu (their upstream
+                dependency) instead of leaving them on a dead-end page. */}
+            {!ordersLoading && (
+              <button
+                onClick={() => router.push('/restaurant/menu')}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-xs font-semibold text-white hover:bg-orange-700 cursor-pointer transition-colors"
+              >
+                Go to menu
+              </button>
+            )}
+          </div>
         )}
       </div>
 
