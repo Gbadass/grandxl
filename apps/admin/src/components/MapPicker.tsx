@@ -45,10 +45,30 @@ const NIGERIA_CENTER = { lat: 9.082, lng: 8.6753 }
 
 // Programmatic recenter — called when the caller passes new initial coords
 // (e.g., autocomplete just selected a new address; move the pin there).
-function RecenterOnPropChange({ lat, lng }: { lat: number; lng: number }) {
+//
+// Feedback-loop guard: after every drag, handleMove emits onChange({lat,lng})
+// which the parent typically writes back into its state and passes back down
+// as initialLat/initialLng. Without the guard below, that echo triggers
+// setView, which cancels the user's in-progress zoom/pan gesture — the map
+// visibly "bounces back". `lastEmittedRef` records the coords we just emitted;
+// if the incoming prop matches (within ~1m tolerance), we skip the recenter.
+function RecenterOnPropChange({
+  lat, lng, lastEmittedRef,
+}: {
+  lat: number
+  lng: number
+  lastEmittedRef: React.MutableRefObject<{ lat: number; lng: number } | null>
+}) {
   const map = useMap()
   useEffect(() => {
+    const last = lastEmittedRef.current
+    // ~1e-5 degrees ≈ 1.1 meters at the equator — well below drag precision,
+    // safely above float-round noise from Leaflet's getCenter() → setView() cycle.
+    if (last && Math.abs(last.lat - lat) < 1e-5 && Math.abs(last.lng - lng) < 1e-5) {
+      return
+    }
     map.setView([lat, lng], Math.max(map.getZoom(), 16), { animate: true, duration: 0.4 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lat, lng, map])
   return null
 }
@@ -82,12 +102,17 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
   const [fullscreen, setFullscreen] = useState(false)
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFired = useRef<string>('') // dedupe: "lat,lng" — reverse-geocode only if changed
+  // Tracks the coords we last emitted upward via onChange. RecenterOnPropChange
+  // reads this to skip the setView when the parent is just echoing back what
+  // we sent — otherwise every user gesture gets cancelled by our own recenter.
+  const lastEmittedRef = useRef<{ lat: number; lng: number } | null>(null)
 
   // Fire onChange on every map move (real-time coord capture) + start a
   // debounced reverse-geocode so the address label lags cleanly behind.
   const handleMove = useCallback((lat: number, lng: number) => {
     setCurrentLat(lat)
     setCurrentLng(lng)
+    lastEmittedRef.current = { lat, lng }
     onChange({ lat, lng })
 
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current)
@@ -109,7 +134,8 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
         const formatted = data.result?.formatted_address ?? null
         setAddress(formatted)
         // Second onChange with the resolved address so the caller can persist
-        // or display it. The lat/lng is unchanged from the initial fire.
+        // or display it. The lat/lng is unchanged from the initial fire — no
+        // need to update lastEmittedRef.
         onChange({ lat, lng, address: formatted })
       } catch {
         setAddress(null)
@@ -172,7 +198,7 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
           />
         )}
         {initialLat != null && initialLng != null && (
-          <RecenterOnPropChange lat={initialLat} lng={initialLng} />
+          <RecenterOnPropChange lat={initialLat} lng={initialLng} lastEmittedRef={lastEmittedRef} />
         )}
         <CenterTracker onMove={handleMove} />
       </MapContainer>
@@ -180,9 +206,13 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
   }
 
   function renderPin() {
+    // z-[1000]: sit above Leaflet's internal panes (tiles 200, overlay 400,
+    // markers 600, tooltips 650, popups 700, controls 800) so the pin doesn't
+    // get hidden behind the tile layer once the map loads. `pointer-events-none`
+    // keeps drag gestures flowing through to the underlying map.
     return (
       <div
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
+        className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center"
         aria-hidden
       >
         <div className="flex flex-col items-center -translate-y-3">
