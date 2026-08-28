@@ -183,12 +183,25 @@ const defaultForm = {
   deliveryRadius: '5',
 }
 
+// Sprint 13 (S13-6): four-step wizard sequence. Each step guards only the
+// fields it renders so mistakes surface at the step they were made, not at
+// final submit five sections away.
+const WIZARD_STEPS = [
+  { key: 1, label: 'Owner',    hint: 'Who runs the restaurant' },
+  { key: 2, label: 'Restaurant', hint: 'Name, contact, cuisine' },
+  { key: 3, label: 'Address',  hint: 'Where they operate' },
+  { key: 4, label: 'Settings', hint: 'Delivery + pricing defaults' },
+] as const
+type StepKey = typeof WIZARD_STEPS[number]['key']
+
 export function OnboardSlideOver({ open, onClose }: Props) {
   const qc = useQueryClient()
   const [form, setForm] = useState(defaultForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [cuisineOpen, setCuisineOpen] = useState(false)
   const [cuisineSuggestions, setCuisineSuggestions] = useState<string[]>(FALLBACK_CUISINE_SUGGESTIONS)
+  // Sprint 13 (S13-6): current wizard step (1..4)
+  const [step, setStep] = useState<StepKey>(1)
 
   // Owner phone lookup — determines whether password fields are shown
   const [ownerLookup, setOwnerLookup] = useState<{
@@ -206,6 +219,7 @@ export function OnboardSlideOver({ open, onClose }: Props) {
       setErrors({})
       setOwnerLookup({ status: 'idle', user: null })
       setShowPassword(false)
+      setStep(1) // Sprint 13 (S13-6): reset wizard to step 1 on open
       setTimeout(() => firstInput.current?.focus(), 100)
     }
   }, [open])
@@ -285,10 +299,13 @@ export function OnboardSlideOver({ open, onClose }: Props) {
     },
   })
 
-  function validate() {
+  // Sprint 13 (S13-6): per-step validators. Each returns the subset of errors
+  // relevant to that step so Continue only advances when the current step is
+  // clean; final Submit runs all four for defence in depth.
+  function validateStep1(): Record<string, string> {
     const e: Record<string, string> = {}
     if (!form.ownerFirstName.trim()) e.ownerFirstName = 'First name is required'
-    if (!form.ownerLastName.trim()) e.ownerLastName = 'Last name is required'
+    if (!form.ownerLastName.trim())  e.ownerLastName  = 'Last name is required'
     if (form.ownerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.ownerEmail)) e.ownerEmail = 'Invalid email address'
     if (!form.ownerPhone.match(/^\+[1-9]\d{7,14}$/)) e.ownerPhone = 'E.164 format required (+2348012345678)'
     if (ownerLookup.status === 'loading') e.ownerPhone = 'Checking account — please wait a moment'
@@ -298,15 +315,39 @@ export function OnboardSlideOver({ open, onClose }: Props) {
       else if (!/[0-9]/.test(form.ownerPassword)) e.ownerPassword = 'Must include at least one number'
       if (form.ownerConfirmPassword !== form.ownerPassword) e.ownerConfirmPassword = 'Passwords do not match'
     }
+    return e
+  }
+  function validateStep2(): Record<string, string> {
+    const e: Record<string, string> = {}
     if (form.name.trim().length < 2) e.name = 'Name is required'
     if (!form.phone.match(/^\+[1-9]\d{7,14}$/)) e.phone = 'E.164 format required (+2348012345678)'
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email'
     if (form.cuisine.length === 0) e.cuisine = 'At least one cuisine type'
+    return e
+  }
+  function validateStep3(): Record<string, string> {
+    const e: Record<string, string> = {}
     if (!form.street.trim()) e.street = 'Street is required'
-    if (!form.city.trim()) e.city = 'City is required'
-    if (!form.state) e.state = 'State is required'
+    if (!form.city.trim())   e.city   = 'City is required'
+    if (!form.state)         e.state  = 'State is required'
+    return e
+  }
+  function validateStep4(): Record<string, string> {
+    // All Step 4 fields have safe defaults on submit — no required validation.
+    return {}
+  }
+  function validateAll(): boolean {
+    const e = { ...validateStep1(), ...validateStep2(), ...validateStep3(), ...validateStep4() }
     setErrors(e)
     return Object.keys(e).length === 0
+  }
+  function validateCurrentStep(): boolean {
+    const v = step === 1 ? validateStep1()
+            : step === 2 ? validateStep2()
+            : step === 3 ? validateStep3()
+            :              validateStep4()
+    setErrors(v)
+    return Object.keys(v).length === 0
   }
 
   function addCuisine(tag: string) {
@@ -344,26 +385,55 @@ export function OnboardSlideOver({ open, onClose }: Props) {
       {/* Panel */}
       <div className="relative ml-auto flex h-full w-full max-w-lg flex-col bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Onboard Restaurant</h2>
-            <p className="mt-0.5 text-sm text-gray-500">Create and approve a restaurant directly</p>
+        <div className="border-b border-gray-100 px-6 py-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Onboard Restaurant</h2>
+              <p className="mt-0.5 text-sm text-gray-500">Step {step} of {WIZARD_STEPS.length} · {WIZARD_STEPS[step - 1]?.hint}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+
+          {/* Sprint 13 (S13-6): step indicator — clickable dots let admin
+              jump backward to fix an earlier step; forward clicks are a no-op
+              until the current step validates (Continue is the only forward
+              path so validation always runs). */}
+          <div className="mt-4 flex items-center gap-1.5">
+            {WIZARD_STEPS.map((s) => {
+              const active = s.key === step
+              const done   = s.key < step
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  disabled={s.key > step}
+                  onClick={() => s.key < step && setStep(s.key)}
+                  className={`flex-1 rounded-full py-1 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                    active ? 'bg-orange-600 text-white' :
+                    done   ? 'bg-orange-100 text-orange-700 cursor-pointer hover:bg-orange-200' :
+                             'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  {s.key}. {s.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* Form */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
           <div className="space-y-6">
 
-            {/* Owner — same fields as self-service Step 1 */}
+            {/* Sprint 13 (S13-6): STEP 1 — Owner */}
+            {step === 1 && (
             <Section label="Owner Account" icon="person">
               <div className="grid grid-cols-2 gap-3">
                 <Field label="First Name" error={errors.ownerFirstName} required>
@@ -483,8 +553,10 @@ export function OnboardSlideOver({ open, onClose }: Props) {
                 </div>
               )}
             </Section>
+            )}
 
-            {/* Restaurant Details */}
+            {/* Sprint 13 (S13-6): STEP 2 — Restaurant Details */}
+            {step === 2 && (
             <Section label="Restaurant Details" icon="store">
               <Field label="Restaurant Name" error={errors.name} required>
                 <input
@@ -584,8 +656,10 @@ export function OnboardSlideOver({ open, onClose }: Props) {
                 })()}
               </Field>
             </Section>
+            )}
 
-            {/* Address */}
+            {/* Sprint 13 (S13-6): STEP 3 — Address */}
+            {step === 3 && (
             <Section label="Address" icon="location">
               <Field label="Search Address">
                 <AddressAutocomplete
@@ -656,8 +730,10 @@ export function OnboardSlideOver({ open, onClose }: Props) {
               </div>
               <p className="text-xs text-gray-400 -mt-1">Optional — look up on Google Maps for accurate delivery radius. Defaults to Lagos if blank.</p>
             </Section>
+            )}
 
-            {/* Business Settings */}
+            {/* Sprint 13 (S13-6): STEP 4 — Business Settings */}
+            {step === 4 && (
             <Section label="Business Settings" icon="settings">
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Min Order (₦)">
@@ -707,35 +783,46 @@ export function OnboardSlideOver({ open, onClose }: Props) {
                 </Field>
               </div>
             </Section>
+            )}
 
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+        {/* Sprint 13 (S13-6): Wizard footer — Back / Continue / Submit */}
+        <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-6 py-4">
           <button
             type="button"
-            onClick={onClose}
+            onClick={step === 1 ? onClose : () => setStep((s) => (s - 1) as StepKey)}
             className="cursor-pointer rounded-lg px-4 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
           >
-            Cancel
+            {step === 1 ? 'Cancel' : '← Back'}
           </button>
-          <button
-            type="button"
-            disabled={mutation.isPending}
-            onClick={() => { if (validate()) mutation.mutate() }}
-            className="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-orange-700 disabled:opacity-60"
-          >
-            {mutation.isPending ? (
-              <>
-                <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Onboarding…
-              </>
-            ) : 'Onboard Restaurant'}
-          </button>
+          {step < WIZARD_STEPS.length ? (
+            <button
+              type="button"
+              onClick={() => { if (validateCurrentStep()) setStep((s) => (s + 1) as StepKey) }}
+              className="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-orange-700"
+            >
+              Continue →
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={mutation.isPending}
+              onClick={() => { if (validateAll()) mutation.mutate(); else setStep(1) }}
+              className="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-orange-700 disabled:opacity-60"
+            >
+              {mutation.isPending ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Onboarding…
+                </>
+              ) : 'Onboard Restaurant'}
+            </button>
+          )}
         </div>
       </div>
     </div>
