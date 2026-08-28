@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { adminOrdersApi, adminRidersApi } from '@grandxl/api-client'
-import { UserRole } from '@grandxl/types'
+import { adminOrdersApi, adminRidersApi, adminSupportApi } from '@grandxl/api-client'
+import { UserRole, PaymentStatus } from '@grandxl/types'
 import type { Rider } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
@@ -232,7 +232,121 @@ export default function AdminOrderDetailPage() {
               <p className="text-sm text-gray-500 font-mono">{String(order.riderId)}</p>
             </div>
           )}
+
+          {/* Sprint 13 (S13-5): force-refund panel. Only usable when the
+              customer actually paid — free-to-customer orders (fully covered
+              by wallet at debit or 100% coupon) can't be refunded through
+              this path because there's nothing to refund. */}
+          {order.payment?.status === PaymentStatus.COMPLETED && (
+            <ForceRefundPanel
+              orderId={order._id}
+              orderNumber={order.orderNumber}
+              totalKobo={order.pricing.total}
+              currency={order.currency}
+              onRefunded={() => void qc.invalidateQueries({ queryKey: ['admin', 'order', id] })}
+            />
+          )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Sprint 13 (S13-5): Force refund inline component ─────────────────────────
+
+function ForceRefundPanel({ orderId, orderNumber, totalKobo, currency, onRefunded }: {
+  orderId:     string
+  orderNumber: string
+  totalKobo:   number
+  currency:    string
+  onRefunded:  () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [amount, setAmount] = useState<string>((totalKobo / 100).toFixed(2))
+  const [reason, setReason] = useState('')
+
+  const mutation = useMutation({
+    mutationFn: () => adminSupportApi.forceRefund({
+      orderId,
+      amountKobo: Math.round(parseFloat(amount) * 100),
+      reason:     reason.trim(),
+    }),
+    onSuccess: (res) => {
+      toast.success(`Refunded ${formatMoney(res.data.data.refundedKobo, currency)} to customer wallet`)
+      setOpen(false)
+      setReason('')
+      onRefunded()
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast.error(typeof msg === 'string' ? msg : 'Force refund failed')
+    },
+  })
+
+  const parsedKobo = Math.round((parseFloat(amount) || 0) * 100)
+  const valid = parsedKobo >= 1 && parsedKobo <= totalKobo && reason.trim().length >= 3
+
+  if (!open) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50/60 p-6">
+        <h2 className="mb-1 font-semibold text-red-900">Force refund</h2>
+        <p className="mb-3 text-sm text-red-700">
+          Credit the customer&apos;s wallet for this order. Reason is audit-logged. Use for post-delivery complaints and service failures — customer-requested refunds go through the Refunds queue instead.
+        </p>
+        <button
+          onClick={() => setOpen(true)}
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 cursor-pointer"
+        >
+          Open refund form
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-red-200 bg-white p-6 space-y-3">
+      <h2 className="font-semibold text-red-900">Force refund on {orderNumber}</h2>
+      <p className="text-xs text-gray-500">Order total: <span className="font-semibold tabular-nums text-gray-800">{formatMoney(totalKobo, currency)}</span></p>
+
+      <div>
+        <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-gray-500">Amount ({currency})</label>
+        <input
+          type="number"
+          step="0.01"
+          min="0.01"
+          max={totalKobo / 100}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-lg font-bold tabular-nums outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-gray-500">Reason (min 3 chars, audit-logged)</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={2}
+          placeholder="e.g. Cold food, customer sent photo in Slack #escalations"
+          maxLength={300}
+          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+        />
+      </div>
+
+      <div className="flex items-center justify-end gap-2 pt-2">
+        <button
+          onClick={() => { setOpen(false); setReason('') }}
+          className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-100 cursor-pointer"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => mutation.mutate()}
+          disabled={!valid || mutation.isPending}
+          className="rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          {mutation.isPending ? 'Refunding…' : 'Confirm refund'}
+        </button>
       </div>
     </div>
   )

@@ -267,6 +267,40 @@ export const adminUsersApi = {
     getClient().delete<ApiResponse<{ deleted: boolean }>>(`/admin/users/${id}`),
 }
 
+// ── Admin — Support (S13-5): force refund + emergency credit ─────────────────
+
+export interface ForceRefundRequest {
+  orderId:     string
+  amountKobo?: number  // omit for full refund
+  reason:      string
+}
+
+export interface ForceRefundResult {
+  orderId:       string
+  refundedKobo:  number
+  balanceAfter:  number
+}
+
+export interface EmergencyCreditRequest {
+  userId:      string
+  amountKobo:  number
+  reason:      string
+}
+
+export interface EmergencyCreditResult {
+  userId:        string
+  creditedKobo:  number
+  balanceAfter:  number
+}
+
+export const adminSupportApi = {
+  forceRefund: (dto: ForceRefundRequest) =>
+    getClient().post<ApiResponse<ForceRefundResult>>('/admin/support/force-refund', dto),
+
+  emergencyCredit: (dto: EmergencyCreditRequest) =>
+    getClient().post<ApiResponse<EmergencyCreditResult>>('/admin/support/emergency-credit', dto),
+}
+
 // ── Restaurant Owner — own restaurant & orders ───────────────────────────────
 
 export interface CreateRestaurantDto {

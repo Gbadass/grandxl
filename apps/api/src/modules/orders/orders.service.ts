@@ -1654,8 +1654,10 @@ export class OrdersService {
       oldRiderId
         ? this.ridersService.getUserIdByRiderId(oldRiderId).then((oldUserId) => {
             if (!oldUserId) return
-            return this.trackingService.notifyOrderStatusUpdate(orderIdStr, customerId, ownerId, updated!.status, updated!.estimatedTime ?? undefined)
-              .then(() => this.notificationsService.onOrderStatusChanged(oldUserId, updated!.orderNumber, orderIdStr, updated!.status))
+            // notifyOrderStatusUpdate is fire-and-forget (returns void); the
+            // status-changed push is the one the old rider actually sees.
+            this.trackingService.notifyOrderStatusUpdate(orderIdStr, customerId, ownerId, updated!.status, updated!.estimatedTime ?? undefined)
+            return this.notificationsService.onOrderStatusChanged(oldUserId, updated!.orderNumber, orderIdStr, updated!.status)
           })
         : Promise.resolve(),
       this.notificationsService.onRiderAssigned(newRiderUserId, updated.orderNumber, orderIdStr),

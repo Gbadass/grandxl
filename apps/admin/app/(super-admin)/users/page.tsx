@@ -4,7 +4,8 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { adminUsersApi, type AdminCreateUserDto } from '@grandxl/api-client'
+import { adminUsersApi, adminSupportApi, type AdminCreateUserDto } from '@grandxl/api-client'
+import { formatMoney } from '@grandxl/utils'
 import { UserRole } from '@grandxl/types'
 import type { User } from '@grandxl/types'
 import { useAuthStore } from '../../../src/store/auth.store'
@@ -77,11 +78,13 @@ function UserDetailPanel({
   onBan,
   onUnban,
   onDelete,
+  onCredit,
 }: {
   user: User | null
   onClose: () => void
   onBan: (u: User) => void
   onUnban: (u: User) => void
+  onCredit: (u: User) => void
   onDelete: (u: User) => void
 }) {
   if (!user) return null
@@ -227,6 +230,16 @@ function UserDetailPanel({
               Restore Access
             </button>
           )}
+          {/* Sprint 13 (S13-5): emergency service credit — goodwill wallet grant */}
+          <button
+            onClick={() => onCredit(user)}
+            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
+            </svg>
+            Emergency wallet credit
+          </button>
           <button
             onClick={() => onDelete(user)}
             className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
@@ -304,6 +317,8 @@ export default function UsersPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [confirm, setConfirm] = useState<{ user: User; action: 'ban' | 'unban' | 'delete' } | null>(null)
+  // Sprint 13 (S13-5): emergency credit modal state
+  const [creditFor, setCreditFor] = useState<User | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState<AdminCreateUserDto>({
     firstName: '', lastName: '', phone: '', email: '', password: '', roles: [UserRole.CUSTOMER], country: 'NG',
@@ -554,7 +569,20 @@ export default function UsersPage() {
         onBan={handleBan}
         onUnban={handleUnban}
         onDelete={handleDelete}
+        onCredit={(u) => setCreditFor(u)}
       />
+
+      {/* Sprint 13 (S13-5): emergency credit modal */}
+      {creditFor && (
+        <EmergencyCreditModal
+          user={creditFor}
+          onClose={() => setCreditFor(null)}
+          onDone={() => {
+            setCreditFor(null)
+            void qc.invalidateQueries({ queryKey: ['admin', 'users'] })
+          }}
+        />
+      )}
 
       {/* Confirm dialog */}
       <ConfirmDialog
@@ -904,6 +932,98 @@ function UsersTable({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Sprint 13 (S13-5): Emergency wallet credit modal ─────────────────────────
+
+function EmergencyCreditModal({ user, onClose, onDone }: {
+  user:    User
+  onClose: () => void
+  onDone:  () => void
+}) {
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+
+  const parsedKobo = Math.round((parseFloat(amount) || 0) * 100)
+  const valid = parsedKobo >= 100 && reason.trim().length >= 3 // ₦1 min
+
+  const mutation = useMutation({
+    mutationFn: () => adminSupportApi.emergencyCredit({
+      userId:     user._id,
+      amountKobo: parsedKobo,
+      reason:     reason.trim(),
+    }),
+    onSuccess: (res) => {
+      toast.success(`Credited ${formatMoney(res.data.data.creditedKobo, 'NGN')} to ${user.firstName || 'user'}'s wallet`)
+      onDone()
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast.error(typeof msg === 'string' ? msg : 'Emergency credit failed')
+    },
+  })
+
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl"
+      >
+        <div className="border-b border-gray-100 px-6 py-5">
+          <h2 className="text-lg font-extrabold text-gray-900">Emergency wallet credit</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Goodwill credit to <span className="font-semibold text-gray-800">{user.firstName} {user.lastName}</span>. Not tied to any specific order. Audit-logged.
+          </p>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-gray-500">Amount (NGN)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="1"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="e.g. 1000"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-lg font-bold tabular-nums outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-gray-500">Reason (min 3 chars)</label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Escalation ticket #789 — 3 bad orders in a row, agreed ₦1k credit"
+              maxLength={300}
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-gray-50 px-6 py-4">
+          <button
+            onClick={onClose}
+            className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-100 cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => mutation.mutate()}
+            disabled={!valid || mutation.isPending}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          >
+            {mutation.isPending ? 'Crediting…' : 'Confirm credit'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
