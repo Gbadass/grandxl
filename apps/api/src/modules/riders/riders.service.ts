@@ -485,14 +485,36 @@ export class RidersService {
   }
 
   async verifyRider(riderId: string): Promise<RiderDocument> {
+    // Sprint 13 (S13-7): verifying clears any prior KYC rejection so a rider
+    // who re-uploaded after a bounce doesn't show a stale rejection banner.
     const rider = await this.riderModel.findByIdAndUpdate(
       riderId,
-      { $set: { isVerified: true } },
+      { $set: { isVerified: true, kycRejectionReason: null, kycRejectedAt: null } },
       { new: true },
     )
     if (!rider) throw new NotFoundException('Rider not found')
     void this.notifications.onAdminActionOnRider(rider.userId.toString(), 'verified').catch(() => undefined)
     return rider
+  }
+
+  // Sprint 13 (S13-7): reject a rider's KYC with a reason so they know what
+  // to fix and re-upload. Does NOT touch isVerified (was already false) —
+  // just stamps the reason + timestamp so the rider PWA can render a banner
+  // and admin can filter for pending vs rejected in the queue.
+  async rejectKyc(riderId: string, reason: string): Promise<RiderDocument> {
+    if (!Types.ObjectId.isValid(riderId)) throw new NotFoundException('Rider not found')
+    const rider = await this.riderModel.findById(riderId)
+    if (!rider) throw new NotFoundException('Rider not found')
+    if (rider.isVerified) {
+      throw new BadRequestException('Cannot reject KYC on a verified rider — suspend or terminate instead.')
+    }
+    const updated = await this.riderModel.findByIdAndUpdate(
+      riderId,
+      { $set: { kycRejectionReason: reason, kycRejectedAt: new Date() } },
+      { new: true },
+    ) as RiderDocument
+    void this.notifications.onAdminActionOnRider(updated.userId.toString(), 'kyc_rejected', reason).catch(() => undefined)
+    return updated
   }
 
   // Best-effort: close any currently open online session for this rider.

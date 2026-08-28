@@ -23,6 +23,7 @@ import { AuditService } from '../audit/audit.service'
 import { AdminOnboardRiderDto } from './dto/admin-onboard-rider.dto'
 import { SuspendRiderDto } from './dto/suspend-rider.dto'
 import { TerminateRiderDto } from './dto/terminate-rider.dto'
+import { RejectKycDto } from './dto/reject-kyc.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
@@ -98,6 +99,27 @@ export class AdminRidersController {
   ) {
     const result = await this.ridersService.verifyRider(id)
     void this.audit.log({ ...this.auditMeta(req, user), action: 'rider.verify', targetType: 'rider', targetId: id })
+    return result
+  }
+
+  @Post(':id/reject-kyc')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reject a rider\'s KYC with a reason — rider gets a push to re-upload' })
+  @ApiOkResponse({ description: 'KYC rejected' })
+  async rejectKyc(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: RejectKycDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.ridersService.rejectKyc(id, dto.reason)
+    void this.audit.log({
+      ...this.auditMeta(req, user),
+      action:     'rider.reject_kyc',
+      targetType: 'rider',
+      targetId:   id,
+      metadata:   { reason: dto.reason },
+    })
     return result
   }
 

@@ -14,7 +14,9 @@ import { StatusBadge } from '../../../../src/components/ui/StatusBadge'
 import { ConfirmDialog } from '../../../../src/components/ui/ConfirmDialog'
 import '../../../../src/lib/axios'
 
-type Action = 'verify' | 'suspend' | 'reinstate' | 'terminate' | null
+// Sprint 13 (S13-7): reject_kyc added — bounces uploaded docs back with a
+// reason so the rider knows what to fix before they can be verified.
+type Action = 'verify' | 'reject_kyc' | 'suspend' | 'reinstate' | 'terminate' | null
 
 export default function RiderDetailPage() {
   const router = useRouter()
@@ -43,10 +45,11 @@ export default function RiderDetailPage() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (action === 'verify')    return adminRidersApi.verify(id)
-      if (action === 'reinstate') return adminRidersApi.reinstate(id)
-      if (action === 'suspend')   return adminRidersApi.suspend(id, { reason })
-      if (action === 'terminate') return adminRidersApi.terminate(id, { reason })
+      if (action === 'verify')     return adminRidersApi.verify(id)
+      if (action === 'reject_kyc') return adminRidersApi.rejectKyc(id, reason)
+      if (action === 'reinstate')  return adminRidersApi.reinstate(id)
+      if (action === 'suspend')    return adminRidersApi.suspend(id, { reason })
+      if (action === 'terminate')  return adminRidersApi.terminate(id, { reason })
       throw new Error('Unknown action')
     },
     onSuccess: () => {
@@ -73,7 +76,7 @@ export default function RiderDetailPage() {
 
   const isTerminated = !!rider.terminatedAt
   const isSuspended  = rider.isSuspended && !isTerminated
-  const needsReason  = action === 'suspend' || action === 'terminate'
+  const needsReason  = action === 'suspend' || action === 'terminate' || action === 'reject_kyc'
 
   const docs = [
     { label: 'Government ID',    key: 'idCard',        url: rider.documents.idCard        },
@@ -144,6 +147,18 @@ export default function RiderDetailPage() {
             className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Verify Rider
+          </button>
+        )}
+
+        {/* Sprint 13 (S13-7): Reject KYC — only when docs uploaded, not yet
+            verified, not suspended/terminated. Bounces docs back with a reason
+            instead of the admin having to silently leave the rider stuck. */}
+        {!rider.isVerified && !isSuspended && !isTerminated && allDocsUploaded && (
+          <button
+            onClick={() => setAction('reject_kyc')}
+            className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+          >
+            Reject KYC
           </button>
         )}
 
@@ -301,14 +316,27 @@ export default function RiderDetailPage() {
             ))}
           </div>
 
-          {!rider.isVerified && !isTerminated && (
+          {/* Sprint 13 (S13-7): rejection banner takes precedence over the
+              docs-status banner — surfaces the reason admin sent last time so
+              anyone reviewing knows what the rider was asked to fix. */}
+          {!rider.isVerified && !isTerminated && rider.kycRejectionReason && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-red-700">
+                KYC previously rejected {rider.kycRejectedAt ? `on ${new Date(rider.kycRejectedAt).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+              </p>
+              <p className="mt-1 text-sm text-red-900">&ldquo;{rider.kycRejectionReason}&rdquo;</p>
+              <p className="mt-1 text-xs text-red-700">Rider was notified. Wait for re-upload, then verify to clear this state.</p>
+            </div>
+          )}
+
+          {!rider.isVerified && !isTerminated && !rider.kycRejectionReason && (
             <div className={`mt-4 rounded-lg p-3 text-sm ${
               allDocsUploaded
                 ? 'bg-green-50 text-green-800'
                 : 'bg-amber-50 text-amber-800'
             }`}>
               {allDocsUploaded
-                ? '✓ All documents received. Review the images above and click "Verify Rider" to approve.'
+                ? '✓ All documents received. Review the images above and click "Verify Rider" to approve or "Reject KYC" to ask for changes.'
                 : '⚠ Rider has not uploaded all required documents yet. Ask them to complete the app onboarding.'}
             </div>
           )}
@@ -319,17 +347,19 @@ export default function RiderDetailPage() {
       <ConfirmDialog
         open={action !== null}
         title={
-          action === 'verify'    ? 'Verify Rider' :
-          action === 'suspend'   ? 'Suspend Rider' :
-          action === 'reinstate' ? 'Reinstate Rider' :
+          action === 'verify'     ? 'Verify Rider' :
+          action === 'reject_kyc' ? 'Reject KYC — ask rider to re-upload' :
+          action === 'suspend'    ? 'Suspend Rider' :
+          action === 'reinstate'  ? 'Reinstate Rider' :
           'Terminate Rider'
         }
         confirmLabel={
           action === 'verify' || action === 'reinstate' ? 'Confirm' :
           action === 'terminate' ? 'Terminate' :
+          action === 'reject_kyc' ? 'Send rejection' :
           'Suspend'
         }
-        confirmVariant={action === 'suspend' || action === 'terminate' ? 'danger' : 'primary'}
+        confirmVariant={action === 'suspend' || action === 'terminate' || action === 'reject_kyc' ? 'danger' : 'primary'}
         loading={mutation.isPending}
         onConfirm={() => mutation.mutate()}
         onCancel={() => { setAction(null); setReason('') }}
@@ -338,7 +368,9 @@ export default function RiderDetailPage() {
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Reason…"
+            placeholder={action === 'reject_kyc'
+              ? 'Tell the rider exactly what to fix (e.g. "License photo is blurry — retake in daylight")…'
+              : 'Reason…'}
             rows={3}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100"
           />

@@ -130,6 +130,16 @@ export class RiderDocument extends Document {
   @Prop({ type: String, default: null })
   terminationReason!: string | null
 
+  // Sprint 13 (S13-7): KYC review decision trail. Rejection lets admin ask
+  // the rider to re-upload with a specific reason (blurry ID, expired licence,
+  // wrong doc for vehicle type). Verify clears both fields so a re-approved
+  // rider isn't stuck showing a stale rejection banner.
+  @Prop({ type: String, default: null })
+  kycRejectionReason!: string | null
+
+  @Prop({ type: Date, default: null })
+  kycRejectedAt!: Date | null
+
   createdAt!: Date
   updatedAt!: Date
 }

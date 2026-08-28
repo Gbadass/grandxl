@@ -124,6 +124,11 @@ export const adminRidersApi = {
   verify: (id: string) =>
     getClient().post<ApiResponse<Rider>>(`/admin/riders/${id}/verify`),
 
+  // Sprint 13 (S13-7): reject KYC with a specific reason — rider gets a
+  // push and re-uploads. Verified riders can't be KYC-rejected (use suspend).
+  rejectKyc: (id: string, reason: string) =>
+    getClient().post<ApiResponse<Rider>>(`/admin/riders/${id}/reject-kyc`, { reason }),
+
   suspend: (id: string, dto: SuspendRiderDto) =>
     getClient().patch<ApiResponse<Rider>>(`/admin/riders/${id}/suspend`, dto),
 

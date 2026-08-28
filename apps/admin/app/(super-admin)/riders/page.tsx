@@ -16,15 +16,34 @@ function riderUser(r: Rider): RiderUser | null {
   return r.userId && typeof r.userId === 'object' ? (r.userId as RiderUser) : null
 }
 
-type FilterTab = 'all' | 'verified' | 'unverified' | 'online' | 'offline'
+// Sprint 13 (S13-7): 'ready' = all 3 docs uploaded AND not verified AND not
+// previously rejected. The queue admins actually work from.
+type FilterTab = 'all' | 'ready' | 'verified' | 'unverified' | 'online' | 'offline'
 
 const TABS: { label: string; value: FilterTab }[] = [
   { label: 'All', value: 'all' },
+  { label: 'Ready to review', value: 'ready' },
   { label: 'Verified', value: 'verified' },
   { label: 'Unverified', value: 'unverified' },
   { label: 'Online', value: 'online' },
   { label: 'Offline', value: 'offline' },
 ]
+
+function isReadyForReview(r: {
+  isVerified: boolean
+  documents: { idCard: string | null; driverLicense: string | null; vehiclePhoto: string | null }
+  kycRejectionReason?: string | null
+  terminatedAt: Date | null
+}): boolean {
+  return (
+    !r.isVerified &&
+    !r.terminatedAt &&
+    !r.kycRejectionReason &&
+    !!r.documents.idCard &&
+    !!r.documents.driverLicense &&
+    !!r.documents.vehiclePhoto
+  )
+}
 
 function VehicleIcon({ type }: { type: string }) {
   if (type === 'bicycle') {
@@ -69,10 +88,12 @@ export default function RidersPage() {
     online:      allRiders.filter((r) => r.isOnline).length,
     verified:    allRiders.filter((r) => r.isVerified && !r.terminatedAt && !r.isSuspended).length,
     unverified:  allRiders.filter((r) => !r.isVerified && !r.terminatedAt && !r.isSuspended).length,
+    ready:       allRiders.filter(isReadyForReview).length,
   }), [allRiders])
 
   const filtered = useMemo(() => {
     let list = allRiders
+    if (tab === 'ready')      list = list.filter(isReadyForReview)
     if (tab === 'verified')   list = list.filter((r) => r.isVerified)
     if (tab === 'unverified') list = list.filter((r) => !r.isVerified)
     if (tab === 'online')     list = list.filter((r) => r.isOnline)
@@ -183,6 +204,7 @@ export default function RidersPage() {
           {TABS.map((t) => {
             const count =
               t.value === 'all'        ? stats.total :
+              t.value === 'ready'      ? stats.ready :
               t.value === 'verified'   ? stats.verified :
               t.value === 'unverified' ? stats.unverified :
               t.value === 'online'     ? stats.online :

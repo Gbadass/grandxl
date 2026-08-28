@@ -44,6 +44,10 @@ export interface Rider {
   suspensionReason: string | null
   terminatedAt: Date | null
   terminationReason: string | null
+  // Sprint 13 (S13-7): KYC review — admin can reject uploaded docs with a
+  // reason. Cleared on next successful verify.
+  kycRejectionReason?: string | null
+  kycRejectedAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }

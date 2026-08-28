@@ -297,14 +297,17 @@ export class NotificationsService {
 
   async onAdminActionOnRider(
     riderUserId: string,
-    action: 'verified' | 'suspended' | 'reinstated' | 'terminated',
+    action: 'verified' | 'suspended' | 'reinstated' | 'terminated' | 'kyc_rejected',
     detail?: string,
   ): Promise<void> {
     const messages: Record<typeof action, { title: string; body: string }> = {
-      verified:   { title: 'Account verified!', body: 'Your rider account has been verified. You can now go online and accept deliveries.' },
-      suspended:  { title: 'Account suspended', body: `Your rider account has been suspended. Reason: ${detail ?? 'Contact support.'}` },
-      reinstated: { title: 'Account reinstated', body: 'Your rider account has been reinstated. You can now go online again.' },
-      terminated: { title: 'Account terminated', body: 'Your rider account has been permanently deactivated.' },
+      verified:     { title: 'Account verified!', body: 'Your rider account has been verified. You can now go online and accept deliveries.' },
+      suspended:    { title: 'Account suspended', body: `Your rider account has been suspended. Reason: ${detail ?? 'Contact support.'}` },
+      reinstated:   { title: 'Account reinstated', body: 'Your rider account has been reinstated. You can now go online again.' },
+      terminated:   { title: 'Account terminated', body: 'Your rider account has been permanently deactivated.' },
+      // Sprint 13 (S13-7): KYC review bounced back to the rider so they know
+      // exactly what to fix and re-upload. Body carries the admin's reason.
+      kyc_rejected: { title: 'KYC needs updates',   body: `Your documents need updates before you can go online. ${detail ?? 'Please re-upload and try again.'}` },
     }
     const msg = messages[action]
     void this.send(riderUserId, NotificationType.ADMIN_ACTION, msg.title, msg.body, {
