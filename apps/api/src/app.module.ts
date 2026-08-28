@@ -54,6 +54,7 @@ import { DisputesModule } from './modules/disputes/disputes.module'
 import { ReferralsModule } from './modules/referrals/referrals.module'
 import { SideEffectsModule } from './modules/side-effects/side-effects.module'
 import { AdminSupportModule } from './modules/admin-support/admin-support.module'
+import { AdminBroadcastsModule } from './modules/admin-broadcasts/admin-broadcasts.module'
 
 @Module({
   imports: [
@@ -138,6 +139,7 @@ import { AdminSupportModule } from './modules/admin-support/admin-support.module
     ReferralsModule,
     SideEffectsModule,
     AdminSupportModule,
+    AdminBroadcastsModule,
   ],
   providers: [
     // AllExceptionsFilter uses Winston DI — must be APP_FILTER, not new in main.ts

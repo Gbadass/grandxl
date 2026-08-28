@@ -11,7 +11,7 @@ import type {
   Coupon,
   BankDetails,
 } from '@grandxl/types'
-import type { RestaurantApprovalStatus, OrderStatus } from '@grandxl/types'
+import type { RestaurantApprovalStatus, OrderStatus, UserRole } from '@grandxl/types'
 
 // ── Admin — Restaurants ──────────────────────────────────────────────────────
 
@@ -304,6 +304,48 @@ export const adminSupportApi = {
 
   emergencyCredit: (dto: EmergencyCreditRequest) =>
     getClient().post<ApiResponse<EmergencyCreditResult>>('/admin/support/emergency-credit', dto),
+}
+
+// ── Admin — Broadcasts (S13-8) ───────────────────────────────────────────────
+
+export interface CreateBroadcastRequest {
+  audiences:  UserRole[]  // one or more of customer / rider / restaurant_owner
+  title:      string
+  body:       string
+  actionUrl?: string
+}
+
+export interface CreateBroadcastResult {
+  broadcastId:    string
+  recipientCount: number
+  deliveredCount: number
+}
+
+export interface BroadcastHistoryRow {
+  _id:            string
+  actorId:        string | { firstName?: string; lastName?: string }
+  audiences:      UserRole[]
+  title:          string
+  body:           string
+  actionUrl:      string | null
+  recipientCount: number
+  deliveredCount: number
+  sentAt:         Date
+  createdAt:      Date
+}
+
+export const adminBroadcastsApi = {
+  send: (dto: CreateBroadcastRequest) =>
+    getClient().post<ApiResponse<CreateBroadcastResult>>('/admin/broadcasts', dto),
+
+  list: (params?: { page?: number; limit?: number }) =>
+    getClient().get<ApiResponse<{
+      items: BroadcastHistoryRow[]
+      total: number
+      page:  number
+      limit: number
+      pages: number
+    }>>('/admin/broadcasts', { params }),
 }
 
 // ── Restaurant Owner — own restaurant & orders ───────────────────────────────

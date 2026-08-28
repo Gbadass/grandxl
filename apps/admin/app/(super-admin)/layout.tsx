@@ -15,6 +15,7 @@ const NAV: NavItem[] = [
   { href: '/users',       label: 'Users',       icon: 'users'       },
   { href: '/payouts',     label: 'Payouts',     icon: 'payouts'     },
   { href: '/analytics',   label: 'Analytics',   icon: 'analytics'   },
+  { href: '/broadcasts',  label: 'Broadcasts',  icon: 'promotions'  },
   { href: '/settings',    label: 'Settings',    icon: 'settings'    },
 ]
 
