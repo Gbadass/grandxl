@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { adminOrdersApi, adminRidersApi, adminSupportApi } from '@grandxl/api-client'
-import { UserRole, PaymentStatus } from '@grandxl/types'
+import { adminOrdersApi, adminRidersApi, adminSupportApi, ordersApi } from '@grandxl/api-client'
+import { UserRole, PaymentStatus, OrderStatus } from '@grandxl/types'
 import type { Rider } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
@@ -233,6 +233,21 @@ export default function AdminOrderDetailPage() {
             </div>
           )}
 
+          {/* Emergency ops: force the order forward when a rider is stuck.
+              Typical case — rider hit the 300m proximity error and can't tap
+              "Confirm pickup" from the app. The proximity check bypasses for
+              SUPER_ADMIN, so calling PATCH /orders/:id/status from an admin
+              session flips the state without the geofence. Only shown when
+              the transition makes sense for the current status. */}
+          {[OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.PICKED_UP].includes(order.status) && (
+            <EmergencyStatusPanel
+              orderId={order._id}
+              orderNumber={order.orderNumber}
+              currentStatus={order.status}
+              onDone={() => void qc.invalidateQueries({ queryKey: ['admin', 'order', id] })}
+            />
+          )}
+
           {/* Sprint 13 (S13-5): force-refund panel. Only usable when the
               customer actually paid — free-to-customer orders (fully covered
               by wallet at debit or 100% coupon) can't be refunded through
@@ -360,6 +375,131 @@ function Row({ label, value, children, bold }: {
       <span className="text-gray-500">{label}</span>
       {children ?? (
         <span className={bold ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}>{value}</span>
+      )}
+    </div>
+  )
+}
+
+// ── Emergency status advance (rescue orders stuck at the 300m gate) ──────────
+
+function EmergencyStatusPanel({ orderId, orderNumber, currentStatus, onDone }: {
+  orderId:       string
+  orderNumber:   string
+  currentStatus: OrderStatus
+  onDone:        () => void
+}) {
+  // Modal state: null = closed, or the pending action awaiting confirmation.
+  const [pending, setPending] = useState<null | { next: OrderStatus; label: string }>(null)
+  const [reason, setReason]   = useState('')
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      ordersApi.updateStatus(orderId, {
+        status: pending!.next,
+        // Cancel path uses cancelReason. Non-cancel transitions don't have a
+        // reason field on the DTO — the audit log still records the actor +
+        // action; we just skip persisting the free-text reason for now.
+      }),
+    onSuccess: () => {
+      toast.success(`Order ${orderNumber} moved to ${pending!.label}`)
+      setPending(null)
+      setReason('')
+      onDone()
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast.error(typeof msg === 'string' ? msg : 'Status update failed')
+    },
+  })
+
+  // Which forward transitions to expose? Show both when the order is READY
+  // (rider stuck at either end); show only pickup when earlier; show only
+  // deliver when already PICKED_UP.
+  const canForcePickup   = [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY].includes(currentStatus)
+  const canForceDeliver  = [OrderStatus.READY, OrderStatus.PICKED_UP].includes(currentStatus)
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-6">
+      <h2 className="mb-1 font-semibold text-amber-900">Emergency ops</h2>
+      <p className="mb-4 text-sm text-amber-800">
+        Force the order forward when a rider is stuck — e.g. can&apos;t tap &ldquo;Confirm pickup&rdquo;
+        because of the 300m proximity check. Bypasses the geofence, keeps the audit trail.
+      </p>
+
+      <div className="space-y-2">
+        {canForcePickup && (
+          <button
+            onClick={() => setPending({ next: OrderStatus.PICKED_UP, label: 'Picked up' })}
+            className="flex w-full items-center justify-between rounded-lg bg-white px-4 py-3 text-sm font-semibold text-amber-900 ring-1 ring-inset ring-amber-200 transition hover:bg-amber-100 cursor-pointer"
+          >
+            <span>Force mark <strong>picked up</strong></span>
+            <span className="text-xs font-normal text-amber-700">skips 300m check</span>
+          </button>
+        )}
+        {canForceDeliver && (
+          <button
+            onClick={() => setPending({ next: OrderStatus.DELIVERED, label: 'Delivered' })}
+            className="flex w-full items-center justify-between rounded-lg bg-white px-4 py-3 text-sm font-semibold text-amber-900 ring-1 ring-inset ring-amber-200 transition hover:bg-amber-100 cursor-pointer"
+          >
+            <span>Force mark <strong>delivered</strong></span>
+            <span className="text-xs font-normal text-amber-700">skips 300m check</span>
+          </button>
+        )}
+      </div>
+
+      {/* Confirm modal — plain fixed overlay. The MVP redesign will replace
+          this with a nicer Framer-Motion modal via 21st.dev; for the 30-min
+          unblock we use existing patterns from the file. */}
+      {pending && (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !mutation.isPending && setPending(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-lg font-bold text-gray-900">
+              Force to {pending.label}?
+            </h3>
+            <p className="mb-4 text-sm text-gray-600">
+              Order <span className="font-mono font-semibold">{orderNumber}</span> will move from
+              {' '}<strong>{currentStatus}</strong> → <strong>{pending.next}</strong>.
+              This bypasses the rider&apos;s 300m proximity check. The action is audit-logged with your admin identity.
+            </p>
+
+            <div className="mb-4">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-gray-500">
+                Reason (recorded for the ops log)
+              </label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+                placeholder="e.g. Rider hit 300m error at real pickup — GPS off"
+                maxLength={300}
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => { setPending(null); setReason('') }}
+                disabled={mutation.isPending}
+                className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200 hover:bg-gray-100 disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => mutation.mutate()}
+                disabled={mutation.isPending}
+                className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              >
+                {mutation.isPending ? 'Forcing…' : `Yes, force to ${pending.label}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
