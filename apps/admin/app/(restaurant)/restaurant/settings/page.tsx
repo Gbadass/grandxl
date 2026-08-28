@@ -13,6 +13,13 @@ import {
   Plus, X, Check, Loader2, AlertCircle, ChevronRight, Copy,
   Images, ArrowLeft, ArrowRight,
 } from 'lucide-react'
+import dynamic from 'next/dynamic'
+// S-URGENT-2: leaflet reads `window` at import time — dynamic-import with
+// ssr:false prevents Next.js prerender from breaking.
+const MapPicker = dynamic(
+  () => import('../../../../src/components/MapPicker').then((m) => m.MapPicker),
+  { ssr: false, loading: () => <div className="h-[360px] animate-pulse rounded-2xl bg-gray-100" /> },
+)
 import '../../../../src/lib/axios'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -900,7 +907,7 @@ export default function RestaurantSettingsPage() {
                 </Field>
               </div>
 
-              {/* Geocode button */}
+              {/* Geocode button — seeds the map pin from the typed address */}
               <button
                 type="button"
                 onClick={handleGeocode}
@@ -910,35 +917,9 @@ export default function RestaurantSettingsPage() {
                 {geocodeStatus === 'loading' ? (
                   <><Spinner size={14} /> Finding location…</>
                 ) : (
-                  <><MapPin size={14} /> Confirm on map</>
+                  <><MapPin size={14} /> Center map on this address</>
                 )}
               </button>
-
-              {/* Geocode result */}
-              {geocodeStatus === 'found' && address.lat !== null && (
-                <div className="rounded-2xl border border-green-200 bg-green-50 p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 rounded-full bg-green-600 flex items-center justify-center shrink-0">
-                      <Check size={13} className="text-white" />
-                    </div>
-                    <p className="text-sm font-bold text-green-800">Location confirmed</p>
-                  </div>
-                  <p className="text-xs text-green-700 pl-8">{geocodedLabel}</p>
-                  <div className="flex items-center gap-2 pl-8">
-                    <p className="font-mono text-xs text-green-600">{address.lat?.toFixed(6)}, {address.lng?.toFixed(6)}</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(`${address.lat?.toFixed(6)}, ${address.lng?.toFixed(6)}`)
-                        toast.success('Coordinates copied')
-                      }}
-                      className="text-green-400 hover:text-green-600 transition-colors cursor-pointer"
-                    >
-                      <Copy size={11} />
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {geocodeStatus === 'error' && (
                 <div className="flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-4">
@@ -949,14 +930,54 @@ export default function RestaurantSettingsPage() {
                 </div>
               )}
 
-              {!address.geocoded && address.lat !== null && geocodeStatus !== 'found' && (
-                <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
-                  <AlertCircle size={14} className="text-amber-500 mt-0.5 shrink-0" />
-                  <p className="text-xs text-amber-700">
-                    Address changed — click "Confirm on map" to update coordinates before saving.
-                  </p>
+              {/* S-URGENT-2: interactive map picker — this is the authoritative
+                  source of coordinates. Autocomplete + "Center map" above are
+                  just starting points; final lat/lng comes from wherever the
+                  user drags the pin. Prevents "Google returned a nearby salon"
+                  class of bugs by requiring visual confirmation. */}
+              <div className="rounded-2xl border border-orange-200 bg-orange-50/40 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <MapPin size={16} className="mt-0.5 shrink-0 text-orange-600" />
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">Pin your exact location</p>
+                    <p className="mt-0.5 text-xs text-gray-600">
+                      Riders use this pin to navigate and to confirm they&apos;re at your restaurant.
+                      Drag the map so the pin sits <strong>on your building&apos;s roof</strong> — switch
+                      to Satellite for accuracy.
+                    </p>
+                  </div>
                 </div>
-              )}
+                <MapPicker
+                  initialLat={address.lat}
+                  initialLng={address.lng}
+                  onChange={({ lat, lng, address: addrLabel }) => {
+                    setAddress((a) => ({ ...a, lat, lng, geocoded: true }))
+                    if (addrLabel) setGeocodedLabel(addrLabel)
+                    setGeocodeStatus('found')
+                    markDirty()
+                  }}
+                />
+                {address.lat !== null && address.lng !== null && (
+                  <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Check size={13} className="shrink-0 text-green-600" />
+                      <p className="truncate text-xs font-semibold text-green-800">
+                        Coordinates ready to save
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(`${address.lat?.toFixed(6)}, ${address.lng?.toFixed(6)}`)
+                        toast.success('Coordinates copied')
+                      }}
+                      className="text-green-500 hover:text-green-700 cursor-pointer"
+                    >
+                      <Copy size={11} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

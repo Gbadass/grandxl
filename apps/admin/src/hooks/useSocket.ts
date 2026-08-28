@@ -120,9 +120,13 @@ export function useSocket(): void {
           stopLoopAlarm()
           setPendingOrder(null)
         }
-        toast.success('Rider accepted — on the way to pick up!', {
+        // S-URGENT (Nigerian ack flow): rider took it before restaurant tapped
+        // Accept. Restaurant may not even be watching — the modal (if open) is
+        // dismissed above. This toast is the persistent record so any restaurant
+        // staff who returns to the screen sees what happened.
+        toast.success('Rider accepted this order — go start prep!', {
           id: `rider-accepted-${orderId}`,
-          duration: 5000,
+          duration: 6000,
         })
       }
     }

@@ -9,11 +9,13 @@ import { OrderTimeoutProcessor } from './processors/order-timeout.processor'
 import { RiderDispatchProcessor } from './processors/rider-dispatch.processor'
 import { ScheduledOrderProcessor } from './processors/scheduled-order.processor'
 import { SettlementProcessor } from './processors/settlement.processor'
+import { DispatchEscalationProcessor } from './processors/dispatch-escalation.processor'
 import {
   ORDER_TIMEOUT_QUEUE,
   RIDER_DISPATCH_QUEUE,
   SCHEDULED_ORDER_QUEUE,
   SETTLEMENT_QUEUE,
+  DISPATCH_ESCALATION_QUEUE,
   RIDER_DISPATCH_BACKOFF_BASE_MS,
   RIDER_DISPATCH_MAX_ATTEMPTS,
 } from './constants/queue.constants'
@@ -52,6 +54,15 @@ import {
           removeOnFail: 50,
         },
       },
+      {
+        // S-URGENT (Nigerian ack flow): T+90s dispatch fallback
+        name: DISPATCH_ESCALATION_QUEUE,
+        defaultJobOptions: {
+          attempts: 1, // idempotent by design (guard on restaurantAckedAt) — no retry needed
+          removeOnComplete: true,
+          removeOnFail: 50,
+        },
+      },
     ),
     OrdersModule,
     RidersModule,
@@ -59,6 +70,6 @@ import {
     TrackingModule,
     NotificationsModule,
   ],
-  providers: [OrderTimeoutProcessor, RiderDispatchProcessor, ScheduledOrderProcessor, SettlementProcessor],
+  providers: [OrderTimeoutProcessor, RiderDispatchProcessor, ScheduledOrderProcessor, SettlementProcessor, DispatchEscalationProcessor],
 })
 export class JobsModule {}

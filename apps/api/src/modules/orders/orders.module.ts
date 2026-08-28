@@ -15,7 +15,7 @@ import { TrackingModule } from '../tracking/tracking.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { PlatformConfigModule } from '../platform-config/platform-config.module'
 import { PaymentsModule } from '../payments/payments.module'
-import { ORDER_TIMEOUT_QUEUE, RIDER_DISPATCH_QUEUE, SCHEDULED_ORDER_QUEUE } from '../jobs/constants/queue.constants'
+import { ORDER_TIMEOUT_QUEUE, RIDER_DISPATCH_QUEUE, SCHEDULED_ORDER_QUEUE, DISPATCH_ESCALATION_QUEUE } from '../jobs/constants/queue.constants'
 
 @Module({
   imports: [
@@ -27,6 +27,7 @@ import { ORDER_TIMEOUT_QUEUE, RIDER_DISPATCH_QUEUE, SCHEDULED_ORDER_QUEUE } from
       { name: ORDER_TIMEOUT_QUEUE },
       { name: RIDER_DISPATCH_QUEUE },
       { name: SCHEDULED_ORDER_QUEUE },
+      { name: DISPATCH_ESCALATION_QUEUE },
     ),
     forwardRef(() => RidersModule),
     forwardRef(() => PaymentsModule),

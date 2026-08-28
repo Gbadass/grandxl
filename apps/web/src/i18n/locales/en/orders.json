@@ -82,6 +82,8 @@
   "statusPendingDesc": "The restaurant is reviewing your order",
   "statusConfirmedLabel": "Order confirmed!",
   "statusConfirmedDesc": "The restaurant accepted your order",
+  "statusRiderInboundLabel": "Rider on the way to restaurant",
+  "statusRiderInboundDesc": "Your rider is heading to the restaurant to pick up your order",
   "statusPreparingLabel": "Preparing your food",
   "statusPreparingDesc": "The kitchen is cooking your meal",
   "statusReadyLabel": "Ready for pickup",

@@ -95,6 +95,14 @@ export interface Order {
   deliveryDistanceKm?: number | null
   // Sprint 12 (S12-11): true when customer accepted an out-of-normal-range delivery
   isFarDelivery?: boolean
+  // S-URGENT (Nigerian ack flow): set when the restaurant first interacts with the
+  // order (Accept, Mark Ready, Reject). Distinct from restaurantConfirmedAt which
+  // is Accept-only for engagement metrics.
+  restaurantAckedAt?: Date | null
+  // S-URGENT: true when the 90s escalation timer fired dispatch before the
+  // restaurant engaged. Stays true even after later interaction so ops can
+  // identify restaurants that consistently miss their alert.
+  dispatchedWithoutRestaurantAck?: boolean
   country: string
   currency: string
   createdAt: Date

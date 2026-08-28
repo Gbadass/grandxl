@@ -36,6 +36,8 @@ import {
   ORDER_TIMEOUT_QUEUE,
   RIDER_DISPATCH_QUEUE,
   SCHEDULED_ORDER_QUEUE,
+  DISPATCH_ESCALATION_QUEUE,
+  DISPATCH_ESCALATION_DELAY_MS,
   ORDER_TIMEOUT_DELAY_MS,
   SCHEDULED_ORDER_PREP_BUFFER_MIN,
 } from '../jobs/constants/queue.constants'
@@ -89,7 +91,67 @@ export class OrdersService {
     @InjectQueue(ORDER_TIMEOUT_QUEUE) private readonly orderTimeoutQueue: Queue,
     @InjectQueue(RIDER_DISPATCH_QUEUE) private readonly riderDispatchQueue: Queue,
     @InjectQueue(SCHEDULED_ORDER_QUEUE) private readonly scheduledOrderQueue: Queue,
+    // S-URGENT (Nigerian ack flow): 90s dispatch escalation timer
+    @InjectQueue(DISPATCH_ESCALATION_QUEUE) private readonly dispatchEscalationQueue: Queue,
   ) {}
+
+  // ── S-URGENT: dispatch trigger helpers ────────────────────────────
+  //
+  // The Nigerian flow needs two separate dispatch triggers:
+  //   1. Restaurant tapped Accept  → fire immediate dispatch, cancel escalation.
+  //      This is the fast path — kitchen knows, rider goes.
+  //   2. Restaurant didn't tap after 90s → escalation timer fires, marks
+  //      `dispatchedWithoutRestaurantAck: true`, fires dispatch anyway.
+  //      Prevents customer orders from stalling on a snoozing restaurant.
+  //
+  // Both share these two helpers so all four dispatch trigger sites in this
+  // file route through the same code path — no drift.
+
+  private async scheduleDispatchEscalation(orderId: string, lat: number, lng: number): Promise<void> {
+    // jobId keyed on orderId so restaurant Accept can remove it via
+    // queue.remove(jobId) — no more escalation once the restaurant engages.
+    // Idempotent: enqueuing twice returns the existing job unchanged.
+    await this.dispatchEscalationQueue
+      .add('escalate', { orderId, lat, lng }, {
+        jobId: `escalation-${orderId}`,
+        delay: DISPATCH_ESCALATION_DELAY_MS,
+      })
+      .catch((err) => this.logger.warn(`Could not schedule dispatch escalation for order ${orderId}: ${String(err)}`))
+  }
+
+  private async cancelDispatchEscalation(orderId: string): Promise<void> {
+    await this.dispatchEscalationQueue.remove(`escalation-${orderId}`).catch(() => undefined)
+  }
+
+  private async fireDispatchNow(orderId: string, lat: number, lng: number): Promise<void> {
+    await this.riderDispatchQueue
+      .add('dispatch', { orderId, lat, lng }, { jobId: `dispatch-${orderId}` })
+      .catch((err) => this.logger.error(`Failed to enqueue dispatch for order ${orderId}: ${String(err)}`))
+  }
+
+  // Called by the 90s escalation processor. Idempotent guards ensure we only
+  // fire dispatch (and stamp the flag) if the restaurant genuinely never
+  // engaged and there's no rider yet.
+  async escalateDispatchIfNeeded(orderId: string, lat: number, lng: number): Promise<void> {
+    const order = await this.orderModel.findById(orderId, {
+      status: 1, riderId: 1, restaurantAckedAt: 1, dispatchedWithoutRestaurantAck: 1,
+    }).lean() as unknown as {
+      status: OrderStatus; riderId: Types.ObjectId | null
+      restaurantAckedAt: Date | null; dispatchedWithoutRestaurantAck: boolean
+    } | null
+    if (!order) return
+    if (order.status !== OrderStatus.CONFIRMED) return  // already moved past — skip
+    if (order.riderId)                          return  // rider already accepted — skip
+    if (order.restaurantAckedAt)                return  // restaurant engaged inside the window — skip
+    if (order.dispatchedWithoutRestaurantAck)   return  // already fired — dedupe
+
+    await this.orderModel.updateOne(
+      { _id: new Types.ObjectId(orderId), restaurantAckedAt: null, riderId: null },
+      { $set: { dispatchedWithoutRestaurantAck: true } },
+    )
+    this.logger.warn(`Order ${orderId} — restaurant didn't engage in 90s, dispatching anyway (rider will drive it)`)
+    await this.fireDispatchNow(orderId, lat, lng)
+  }
 
   // ── Atomic order number (GXL-YYYYMMDD-XXXX) ──────────────────────
 
@@ -612,7 +674,11 @@ export class OrdersService {
     const ownerId = restaurant.ownerId.toString()
     const orderId = order._id.toString()
 
-    // Cash on delivery: skip payment gate — confirm and dispatch rider immediately
+    // Cash on delivery: skip payment gate — confirm the order and NOTIFY the
+    // restaurant. Dispatch is NOT fired here anymore (S-URGENT / Nigerian ack
+    // flow); it fires when the restaurant taps Accept, OR when the 90s
+    // escalation timer runs — whichever happens first. This prevents riders
+    // committing to pick up food from a restaurant that hasn't been told.
     if (dto.paymentMethod === PaymentMethod.CASH) {
       const confirmed = await this.orderModel.findByIdAndUpdate(
         order._id,
@@ -629,11 +695,11 @@ export class OrdersService {
       Promise.all([
         this.notificationsService.onOrderPlaced(customerId, ownerId, confirmed.orderNumber, orderId),
         this.trackingService.notifyNewOrder(ownerId, confirmed),
-        this.riderDispatchQueue.add('dispatch', {
+        this.scheduleDispatchEscalation(
           orderId,
-          lng: dto.deliveryAddress.coordinates.lng,
-          lat: dto.deliveryAddress.coordinates.lat,
-        }, { jobId: `dispatch-${orderId}` }),
+          dto.deliveryAddress.coordinates.lat,
+          dto.deliveryAddress.coordinates.lng,
+        ),
       ]).catch(() => undefined)
 
       return confirmed
@@ -827,6 +893,13 @@ export class OrdersService {
     if (isRestaurantAction && dto.status === OrderStatus.READY && !order.restaurantReadyAt) {
       updates.restaurantReadyAt = new Date()
     }
+    // S-URGENT (Nigerian ack flow): any restaurant-driven status change acks
+    // the order. Broader than restaurantConfirmedAt (which is Accept-only for
+    // engagement metrics). Used as the dispatch-escalation gate and to unlock
+    // assignRider's auto-advance CONFIRMED→PREPARING.
+    if (isRestaurantAction && !order.restaurantAckedAt) {
+      updates.restaurantAckedAt = new Date()
+    }
 
     // Use the current status as a filter so two concurrent transitions cannot both
     // silently succeed — only the first writer wins; the second gets a 409.
@@ -919,16 +992,32 @@ export class OrdersService {
         dto.status,
         updated.estimatedTime ?? undefined,
       ),
-      // Dispatch on CONFIRMED (initial), and re-dispatch on READY if still no rider
-      // (covers the case where the restaurant marks food ready before a rider accepted)
-      dto.status === OrderStatus.CONFIRMED ||
-      (dto.status === OrderStatus.READY && !updated.riderId)
-        ? this.riderDispatchQueue.add('dispatch', {
-            orderId: orderIdStr,
-            lng: updated.deliveryAddress.coordinates.coordinates[0],
-            lat: updated.deliveryAddress.coordinates.coordinates[1],
-          }, { jobId: `dispatch-${orderIdStr}` })
-        : Promise.resolve(),
+      // S-URGENT (Nigerian ack flow): dispatch triggers.
+      //
+      // Only two cases fire immediate dispatch through this path:
+      //  a) The restaurant ACKED the order via any status transition — cancel
+      //     the 90s escalation and dispatch NOW. Kitchen knows, rider goes.
+      //  b) READY status on an order with no rider yet — restaurant marked
+      //     ready and there's still no rider (rare). Fire dispatch to salvage.
+      //
+      // Payment-webhook-driven CONFIRMED transitions no longer fire dispatch
+      // here — they schedule the escalation via markPaymentComplete instead.
+      isRestaurantAction && !order.restaurantAckedAt
+        ? Promise.all([
+            this.cancelDispatchEscalation(orderIdStr),
+            this.fireDispatchNow(
+              orderIdStr,
+              updated.deliveryAddress.coordinates.coordinates[1],
+              updated.deliveryAddress.coordinates.coordinates[0],
+            ),
+          ])
+        : (dto.status === OrderStatus.READY && !updated.riderId
+            ? this.fireDispatchNow(
+                orderIdStr,
+                updated.deliveryAddress.coordinates.coordinates[1],
+                updated.deliveryAddress.coordinates.coordinates[0],
+              )
+            : Promise.resolve()),
       // On delivery: free up the rider and credit earnings
       dto.status === OrderStatus.DELIVERED && updated.riderId
         ? this.ridersService.onDeliveryComplete(
@@ -1161,15 +1250,17 @@ export class OrdersService {
           && existing.status === OrderStatus.CONFIRMED
           && !existing.riderId
           && (existing.dispatchRounds ?? 0) === 0) {
+        // S-URGENT (Nigerian ack flow): recovery path also schedules the 90s
+        // escalation — same reasoning as the happy path. If the restaurant
+        // has already acked in the meantime, fire dispatch now instead.
         this.logger.warn(`markPaymentComplete: order ${orderId} is CONFIRMED with no rider and no dispatch rounds — recovering lost dispatch`)
         const lng = existing.deliveryAddress.coordinates.coordinates[0]
         const lat = existing.deliveryAddress.coordinates.coordinates[1]
-        await this.sideEffects.tryOrEnqueue(
-          SideEffectType.DISPATCH_ORDER,
-          `dispatch:${orderId}`,
-          { orderId, lat, lng },
-          () => this.riderDispatchQueue.add('dispatch', { orderId, lat, lng }, { jobId: `dispatch-${orderId}` }),
-        )
+        if (existing.restaurantAckedAt) {
+          await this.fireDispatchNow(orderId, lat, lng)
+        } else {
+          await this.scheduleDispatchEscalation(orderId, lat, lng)
+        }
         return existing
       }
       this.logger.warn(`markPaymentComplete: order ${orderId} is not PENDING — ignoring late webhook (ref=${reference})`)
@@ -1255,24 +1346,21 @@ export class OrdersService {
       return null
     }
 
-    // Payment confirmed — NOW notify the restaurant and dispatch a rider.
-    // This is the correct trigger point: Paystack webhook → charge.success → here.
+    // Payment confirmed — NOW notify the restaurant and schedule the 90s
+    // dispatch escalation. S-URGENT (Nigerian ack flow): dispatch no longer
+    // fires immediately on payment. It fires when the restaurant taps Accept
+    // OR at T+90s if they never engage. Prevents riders from picking up food
+    // the kitchen doesn't know about.
     const ownerId = restaurant.ownerId.toString()
 
     // Notify restaurant (best-effort — socket delivery, has fallback in the app)
     void Promise.resolve(this.trackingService.notifyNewOrder(ownerId, order)).catch(() => undefined)
 
-    // CRITICAL — dispatch must not silently drop. Try inline; on failure (Redis outage)
-    // the SideEffects sweeper picks it up from Mongo and retries with backoff.
-    // Customer's money is already taken; a dropped dispatch = stranded order.
+    // Schedule the 90s fallback dispatch. If the restaurant taps Accept before
+    // it fires, cancelDispatchEscalation() in updateStatus removes this job.
     const lng = order.deliveryAddress.coordinates.coordinates[0]
     const lat = order.deliveryAddress.coordinates.coordinates[1]
-    await this.sideEffects.tryOrEnqueue(
-      SideEffectType.DISPATCH_ORDER,
-      `dispatch:${orderId}`,
-      { orderId, lat, lng },
-      () => this.riderDispatchQueue.add('dispatch', { orderId, lat, lng }, { jobId: `dispatch-${orderId}` }),
-    )
+    await this.scheduleDispatchEscalation(orderId, lat, lng)
 
     return order
   }
@@ -1400,14 +1488,21 @@ export class OrdersService {
     const restaurant = await this.restaurantsService.findByIdRaw(order.restaurantId.toString())
     const ownerId = restaurant.ownerId.toString()
 
-    // Auto-advance to PREPARING so the customer sees "Restaurant is preparing your order"
-    // immediately — no need for restaurant staff to be watching their screen.
-    // Only advance if still CONFIRMED (guard against double-fire on concurrent calls).
-    const preparing = await this.orderModel.findOneAndUpdate(
-      { _id: order._id, status: OrderStatus.CONFIRMED },
-      { $set: { status: OrderStatus.PREPARING } },
-      { new: true },
-    )
+    // S-URGENT (Nigerian ack flow): only auto-advance to PREPARING when the
+    // restaurant has actually engaged with the order. Otherwise stay at
+    // CONFIRMED — the customer tracker will show "Rider on the way to
+    // restaurant" instead of the misleading "Restaurant is preparing your
+    // order" (which claims the kitchen is cooking when it hasn't been told
+    // yet). When the restaurant later engages via updateStatus, that call
+    // stamps restaurantAckedAt and moves the order forward naturally.
+    // The atomic filter still guards against double-fire on concurrent calls.
+    const preparing = order.restaurantAckedAt
+      ? await this.orderModel.findOneAndUpdate(
+          { _id: order._id, status: OrderStatus.CONFIRMED },
+          { $set: { status: OrderStatus.PREPARING } },
+          { new: true },
+        )
+      : null
     const liveOrder = preparing ?? order
 
     // riderAssignedAt already stamped atomically in the findOneAndUpdate above.

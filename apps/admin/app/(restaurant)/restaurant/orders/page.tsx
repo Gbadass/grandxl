@@ -334,8 +334,8 @@ export default function RestaurantOrdersPage() {
                             <span className="text-sm font-bold text-gray-900">{formatMoney(order.pricing.total, order.currency)}</span>
                           </div>
 
-                          {/* Sprint 12 (S12-11): distance + far-delivery signalling */}
-                          {(order.deliveryDistanceKm != null || order.isFarDelivery) && (
+                          {/* Sprint 12 (S12-11) + S-URGENT: distance / far-delivery / rider-drove-this */}
+                          {(order.deliveryDistanceKm != null || order.isFarDelivery || order.dispatchedWithoutRestaurantAck) && (
                             <div className="mb-2 flex flex-wrap items-center gap-1.5">
                               {order.deliveryDistanceKm != null && (
                                 <span className="inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 tabular-nums">
@@ -345,6 +345,14 @@ export default function RestaurantOrdersPage() {
                               {order.isFarDelivery && (
                                 <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-800 ring-1 ring-inset ring-amber-300">
                                   ★ Far delivery
+                                </span>
+                              )}
+                              {/* S-URGENT: rider drove this — restaurant didn't tap Accept
+                                  before the 90s escalation. Ops signal so restaurants
+                                  see when they're consistently missing the alert. */}
+                              {order.dispatchedWithoutRestaurantAck && (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-800 ring-1 ring-inset ring-indigo-300">
+                                  ⚡ Rider drove this
                                 </span>
                               )}
                             </div>

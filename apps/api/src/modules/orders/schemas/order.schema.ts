@@ -238,6 +238,27 @@ export class OrderDocument extends Document {
   @Prop({ type: Date, default: null })
   restaurantReadyAt!: Date | null
 
+  // ── S-URGENT (Nigerian ack flow): dispatch gate ──────────────────
+  // Broader than restaurantConfirmedAt — any restaurant-driven state transition
+  // (Accept, Mark Ready, Reject) stamps this. Used as the "restaurant has
+  // engaged with this order" gate for two things:
+  //   1. assignRider's auto-advance CONFIRMED → PREPARING only fires if set.
+  //      Otherwise a rider-accept keeps the order at CONFIRMED so the customer
+  //      tracker doesn't claim "preparing" when kitchen doesn't know.
+  //   2. The 90s dispatch-escalation timer sets dispatchedWithoutRestaurantAck
+  //      when it fires without this being set.
+  // Distinct from restaurantConfirmedAt so the engagement analytics (Sprint 4.5)
+  // isn't polluted — that's still "restaurant clicked Accept" specifically.
+  @Prop({ type: Date, default: null, index: true })
+  restaurantAckedAt!: Date | null
+
+  // True when the T+90s escalation timer had to fire dispatch because the
+  // restaurant hadn't engaged. Stays true even after the restaurant later
+  // interacts — a permanent "rider drove this order" flag for ops to spot
+  // repeatedly-absent restaurants.
+  @Prop({ type: Boolean, default: false, index: true })
+  dispatchedWithoutRestaurantAck!: boolean
+
   // Stamped when status transitions to PICKED_UP. Used with riderAssignedAt to
   // compute rider dwell time at the restaurant.
   @Prop({ type: Date, default: null })

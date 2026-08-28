@@ -3,8 +3,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import dynamic from 'next/dynamic'
 import { adminRestaurantsApi, adminUsersApi, foodCategoriesApi } from '@grandxl/api-client'
 import type { User } from '@grandxl/types'
+
+// S-URGENT-2: dynamic import — leaflet touches `window` at load.
+const MapPicker = dynamic(
+  () => import('../MapPicker').then((m) => m.MapPicker),
+  { ssr: false, loading: () => <div className="h-[280px] animate-pulse rounded-2xl bg-gray-100" /> },
+)
 
 // ── Address autocomplete (same logic as self-onboarding Step3Form) ─────────────
 
@@ -13,7 +20,10 @@ type ACSuggestion = { description: string; place_id: string }
 function AddressAutocomplete({
   onFill,
 }: {
-  onFill: (data: { street: string; city: string; state: string }) => void
+  // S-URGENT-2: also passes lat/lng (from Google Places geometry.location) so
+  // the MapPicker can seed its pin — the admin still verifies visually before
+  // saving, but the starting point is close.
+  onFill: (data: { street: string; city: string; state: string; lat?: number; lng?: number }) => void
 }) {
   const [query, setQuery]         = useState('')
   const [suggestions, setSug]     = useState<ACSuggestion[]>([])
@@ -66,7 +76,10 @@ function AddressAutocomplete({
     try {
       const res  = await fetch(`/api/places/details?placeId=${encodeURIComponent(s.place_id)}`)
       const data = await res.json() as {
-        result?: { address_components?: Array<{ long_name: string; types: string[] }> }
+        result?: {
+          address_components?: Array<{ long_name: string; types: string[] }>
+          geometry?: { location?: { lat: number; lng: number } }
+        }
       }
       const comps = data.result?.address_components ?? []
       let num = '', road = '', sub = '', city = '', state = ''
@@ -79,7 +92,8 @@ function AddressAutocomplete({
         if (c.types.includes('administrative_area_level_1')) state = c.long_name
       }
       const street = [num, road].filter(Boolean).join(' ') || sub || s.description.split(',')[0]?.trim() || ''
-      onFill({ street, city, state })
+      const loc = data.result?.geometry?.location
+      onFill({ street, city, state, lat: loc?.lat, lng: loc?.lng })
     } catch {
       const parts = s.description.split(',')
       onFill({ street: parts[0]?.trim() ?? '', city: parts[1]?.trim() ?? '', state: parts[2]?.trim() ?? '' })
@@ -663,12 +677,15 @@ export function OnboardSlideOver({ open, onClose }: Props) {
             <Section label="Address" icon="location">
               <Field label="Search Address">
                 <AddressAutocomplete
-                  onFill={({ street, city, state }) => {
+                  onFill={({ street, city, state, lat, lng }) => {
                     setForm(f => ({
                       ...f,
                       street: street || f.street,
                       city: city || f.city,
                       state: state || f.state,
+                      // S-URGENT-2: seed the map picker with Google's coords
+                      // as a starting point — admin still confirms visually.
+                      ...(lat != null && lng != null ? { lat: String(lat), lng: String(lng) } : {}),
                     }))
                     setErrors(e => ({ ...e, street: '', city: '', state: '' }))
                   }}
@@ -706,29 +723,27 @@ export function OnboardSlideOver({ open, onClose }: Props) {
                 </Field>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Latitude">
-                  <input
-                    type="number"
-                    step="any"
-                    value={form.lat}
-                    onChange={e => set('lat', e.target.value)}
-                    placeholder="6.5244"
-                    className={input('')}
-                  />
-                </Field>
-                <Field label="Longitude">
-                  <input
-                    type="number"
-                    step="any"
-                    value={form.lng}
-                    onChange={e => set('lng', e.target.value)}
-                    placeholder="3.3792"
-                    className={input('')}
-                  />
-                </Field>
+              {/* S-URGENT-2: interactive map picker — authoritative source of
+                  coordinates. Autocomplete above seeds the pin; final lat/lng
+                  come from wherever the admin drops it. Prevents the "Google
+                  autocomplete returned a nearby unrelated business" bug. */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-700">
+                  Pin the exact restaurant location
+                </p>
+                <p className="text-xs text-gray-500 -mt-1">
+                  Drag the map so the pin sits on the restaurant&apos;s building. Switch to Satellite
+                  for rooftop precision. Riders navigate to this pin — accuracy matters.
+                </p>
+                <MapPicker
+                  initialLat={form.lat ? parseFloat(form.lat) : null}
+                  initialLng={form.lng ? parseFloat(form.lng) : null}
+                  onChange={({ lat, lng }) => {
+                    setForm((f) => ({ ...f, lat: String(lat), lng: String(lng) }))
+                  }}
+                  heightPx={280}
+                />
               </div>
-              <p className="text-xs text-gray-400 -mt-1">Optional — look up on Google Maps for accurate delivery radius. Defaults to Lagos if blank.</p>
             </Section>
             )}
 

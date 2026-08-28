@@ -164,7 +164,18 @@ function TrackingSkeleton() {
 
 function StatusHero({ order }: { order: Order }) {
   const { t } = useTranslation('orders')
-  const cfg = STATUS_CONFIG[order.status as OrderStatus]
+  // S-URGENT (Nigerian ack flow): CONFIRMED with a rider assigned but the
+  // restaurant hasn't acked = rider is en route to pick up. Show a distinct
+  // hero so the customer isn't told "The restaurant accepted your order" when
+  // in fact the kitchen hasn't been told and the rider is driving in.
+  const baseCfg = STATUS_CONFIG[order.status as OrderStatus]
+  const cfg = baseCfg && order.status === OrderStatus.CONFIRMED && order.riderId && !order.restaurantAckedAt
+    ? {
+        ...baseCfg,
+        labelKey:       'statusRiderInboundLabel',
+        descriptionKey: 'statusRiderInboundDesc',
+      }
+    : baseCfg
   const isCancelled = order.status === OrderStatus.CANCELLED
 
   if (isCancelled) {

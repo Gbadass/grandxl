@@ -264,8 +264,8 @@ export default function RestaurantOrderDetailPage() {
           <div className="rounded-xl border border-gray-200 bg-white p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-semibold text-gray-900">Delivery Address</h2>
-              {/* Sprint 12 (S12-11): distance + far-delivery chip */}
-              <div className="flex items-center gap-1.5">
+              {/* Sprint 12 (S12-11) + S-URGENT: distance / far-delivery / rider-drove-this */}
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {order.deliveryDistanceKm != null && (
                   <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 tabular-nums">
                     {order.deliveryDistanceKm} km away
@@ -274,6 +274,11 @@ export default function RestaurantOrderDetailPage() {
                 {order.isFarDelivery && (
                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-800 ring-1 ring-inset ring-amber-300">
                     ★ Far delivery
+                  </span>
+                )}
+                {order.dispatchedWithoutRestaurantAck && (
+                  <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-800 ring-1 ring-inset ring-indigo-300">
+                    ⚡ Rider drove this
                   </span>
                 )}
               </div>
