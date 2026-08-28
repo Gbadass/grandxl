@@ -1,8 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion, AnimatePresence } from 'framer-motion'
+import toast from 'react-hot-toast'
+import { Check, Loader2, X } from 'lucide-react'
 import { UserRole } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
@@ -11,6 +14,7 @@ import type { PayoutRequest, PayoutRequestForAdmin, PayoutEntityType } from '@gr
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { StatsCard } from '../../../src/components/ui/StatsCard'
 import { DataTable, type Column } from '../../../src/components/ui/DataTable'
+import { ConfirmDialog } from '../../../src/components/ui/ConfirmDialog'
 import '../../../src/lib/axios'
 
 type TabStatus = 'all' | 'pending' | 'approved' | 'paid' | 'rejected'
@@ -57,6 +61,9 @@ export default function PayoutsPage() {
   const [page, setPage] = useState(1)
   const [rejectId,   setRejectId]   = useState<string | null>(null)
   const [rejectNote, setRejectNote] = useState('')
+  // Sprint 13 (S13-9): multi-select for batch approve. Set for O(1) hit-tests.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false)
 
   useEffect(() => {
     if (isInitializing) return
@@ -131,7 +138,105 @@ export default function PayoutsPage() {
     },
   })
 
+  // Sprint 13 (S13-9): batch-approve. Server iterates via the single-approve
+  // logic so all invariants apply. Response returns per-id failure so we can
+  // patch succeeded rows in-cache immediately and leave failed rows pending.
+  const batchApproveMutation = useMutation({
+    mutationFn: (ids: string[]) => adminPayoutsApi.batchApprove(ids, 'Batch approval'),
+    onSuccess: (res, ids) => {
+      const { succeeded, failed, failures } = res.data.data
+      // Patch every ID that isn't in the failures list — we don't get the
+      // list of succeeded IDs directly, but failures[].payoutId tells us
+      // which ones DIDN'T flip.
+      const failedIds = new Set(failures.map((f) => f.payoutId))
+      for (const id of ids) {
+        if (!failedIds.has(id)) {
+          patchRowStatus(id, 'approved', { decisionNote: 'Approved — Paystack transfer initiated' })
+        }
+      }
+      setSelectedIds(new Set())
+      setBatchConfirmOpen(false)
+      if (failed === 0) {
+        toast.success(`${succeeded} payout${succeeded === 1 ? '' : 's'} approved`)
+      } else {
+        toast.error(`${succeeded} approved, ${failed} failed — ${failures[0]?.message ?? 'see console for details'}`)
+        console.warn('[batch-approve] failures:', failures)
+      }
+      void queryClient.invalidateQueries({ queryKey: ['admin-payouts'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast.error(typeof msg === 'string' ? msg : 'Batch approve failed')
+      setBatchConfirmOpen(false)
+    },
+  })
+
+  // Selectable = pending only (approved / paid / rejected rows have no
+  // "approve" action, so no point selecting them).
+  const selectablePending = useMemo(
+    () => items.filter((p) => p.status === 'pending'),
+    [items],
+  )
+  const allPendingSelected = selectablePending.length > 0
+    && selectablePending.every((p) => selectedIds.has(p._id))
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleSelectAllPending() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allPendingSelected) selectablePending.forEach((p) => next.delete(p._id))
+      else                    selectablePending.forEach((p) => next.add(p._id))
+      return next
+    })
+  }
+  // Sum of selected amounts — shown in the sticky bar so admin sees the total.
+  const selectedPendingKobo = useMemo(() => {
+    return items
+      .filter((p) => selectedIds.has(p._id) && p.status === 'pending')
+      .reduce((s, p) => s + p.amountKobo, 0)
+  }, [items, selectedIds])
+
   const columns: Column<PayoutRequestForAdmin>[] = [
+    // Sprint 13 (S13-9): select-all + per-row checkboxes for batch approve.
+    // Non-pending rows show a dash — approve only works on pending.
+    {
+      key: 'select',
+      header: (
+        <button
+          onClick={toggleSelectAllPending}
+          disabled={selectablePending.length === 0}
+          aria-label={allPendingSelected ? 'Deselect all pending' : 'Select all pending'}
+          className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+            allPendingSelected
+              ? 'bg-orange-600 border-orange-600 text-white'
+              : 'border-gray-300 bg-white hover:border-orange-400'
+          } disabled:opacity-40 disabled:cursor-not-allowed`}
+        >
+          {allPendingSelected && <Check size={11} strokeWidth={3} />}
+        </button>
+      ),
+      render: (p) => {
+        if (p.status !== 'pending') return <span className="text-xs text-gray-300">—</span>
+        const on = selectedIds.has(p._id)
+        return (
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleSelect(p._id) }}
+            aria-label={on ? 'Deselect' : 'Select'}
+            className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+              on ? 'bg-orange-600 border-orange-600 text-white' : 'border-gray-300 bg-white hover:border-orange-400'
+            }`}
+          >
+            {on && <Check size={11} strokeWidth={3} />}
+          </button>
+        )
+      },
+    },
     {
       key: 'entity',
       header: 'Type',
@@ -364,6 +469,54 @@ export default function PayoutsPage() {
           </div>
         </div>
       )}
+
+      {/* Sprint 13 (S13-9): sticky batch-approve bar */}
+      <AnimatePresence>
+        {selectedIds.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{    opacity: 0, y: 40 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            className="fixed inset-x-0 bottom-6 z-40 mx-auto flex max-w-xl items-center gap-3 rounded-2xl border border-gray-800 bg-gray-900 px-4 py-3 text-white shadow-2xl"
+          >
+            <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold tabular-nums">
+              {selectedIds.size} selected
+            </span>
+            <span className="text-xs text-gray-400">
+              Total: <span className="font-semibold tabular-nums text-white">{formatMoney(selectedPendingKobo, 'NGN')}</span>
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={() => setBatchConfirmOpen(true)}
+              disabled={batchApproveMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700 disabled:opacity-50 cursor-pointer"
+            >
+              {batchApproveMutation.isPending && <Loader2 size={12} className="animate-spin" />}
+              <Check size={12} /> Approve {selectedIds.size}
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              aria-label="Clear selection"
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-white/10 hover:text-white cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Sprint 13 (S13-9): confirm dialog for batch approve — high-value irreversible action */}
+      <ConfirmDialog
+        open={batchConfirmOpen}
+        title={`Approve ${selectedIds.size} payout${selectedIds.size === 1 ? '' : 's'}?`}
+        description={`Total: ${formatMoney(selectedPendingKobo, 'NGN')}. Paystack transfers will be initiated for each. Failures are reported per-payout — the batch continues on individual errors.`}
+        confirmLabel={`Approve ${selectedIds.size}`}
+        confirmVariant="primary"
+        loading={batchApproveMutation.isPending}
+        onConfirm={() => batchApproveMutation.mutate(Array.from(selectedIds))}
+        onCancel={() => setBatchConfirmOpen(false)}
+      />
     </div>
   )
 }

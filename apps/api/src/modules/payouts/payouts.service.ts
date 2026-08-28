@@ -535,6 +535,39 @@ export class PayoutsService {
     return payout
   }
 
+  // Sprint 13 (S13-9): batch-approve. Iterates via the single-call approve()
+  // so all its invariants apply (atomic isAvailable claim → recipient cache →
+  // Paystack transfer → status flip). Uses Promise.allSettled so a Paystack
+  // balance error on one payout doesn't block the other 19; the response
+  // returns per-id success/failure so admin can retry only the failed ones.
+  async batchApprove(adminId: string, payoutIds: string[], note?: string): Promise<{
+    succeeded: number
+    failed:    number
+    failures:  Array<{ payoutId: string; message: string }>
+  }> {
+    const results = await Promise.allSettled(
+      payoutIds.map((id) => this.approve(adminId, id, note)),
+    )
+    let succeeded = 0
+    const failures: Array<{ payoutId: string; message: string }> = []
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i]!
+      const id = payoutIds[i]!
+      if (r.status === 'fulfilled') {
+        succeeded++
+      } else {
+        const err = r.reason as { message?: string; response?: { message?: string | string[] } }
+        const msg = err?.response?.message
+        failures.push({
+          payoutId: id,
+          message: Array.isArray(msg) ? (msg[0] ?? 'Unknown error') : (typeof msg === 'string' ? msg : (err?.message ?? 'Unknown error')),
+        })
+      }
+    }
+    this.logger.log(`Batch approve: ${succeeded} succeeded, ${failures.length} failed (admin=${adminId})`)
+    return { succeeded, failed: failures.length, failures }
+  }
+
   // Called manually by admin if needed, or automatically by Paystack webhook on transfer.success.
   // Both the payout status update and the rider earnings decrement run inside a MongoDB
   // transaction so a server crash between the two writes cannot leave them inconsistent.

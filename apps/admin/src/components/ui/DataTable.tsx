@@ -2,7 +2,9 @@ import { type ReactNode } from 'react'
 
 export interface Column<T> {
   key: string
-  header: string
+  // Sprint 13 (S13-9): accept ReactNode so headers can carry controls
+  // (e.g. a select-all checkbox for batch operations). Plain strings still work.
+  header: ReactNode
   render: (row: T) => ReactNode
   width?: string
 }

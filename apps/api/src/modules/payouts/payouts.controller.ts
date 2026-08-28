@@ -21,6 +21,7 @@ import {
   DecidePayoutDto,
   UpdateBankAccountDto,
   VerifyAccountDto,
+  BatchApprovePayoutsDto,
 } from './dto/payout.dto'
 import { PayoutStatus, type PayoutEntityType } from './schemas/payout-request.schema'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
@@ -214,6 +215,39 @@ export class AdminPayoutsController {
       return result
     }
     throw new BadRequestException('Unknown decision')
+  }
+
+  // Sprint 13 (S13-9): approve N pending payouts in one call. Failures on
+  // individual payouts don't fail the whole batch — response returns per-id
+  // failure so admin can retry only the ones that broke (usually a specific
+  // Paystack recipient or balance issue).
+  @Post('batch-approve')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Batch-approve multiple pending payouts (partial-success semantics)' })
+  async batchApprove(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: BatchApprovePayoutsDto,
+    @Req() req: Request,
+  ) {
+    const meta = {
+      actorId:   user.sub,
+      ipAddress: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip,
+      userAgent: req.headers['user-agent'],
+    }
+    const result = await this.payouts.batchApprove(user.sub, dto.payoutIds, dto.note)
+    void this.audit.log({
+      ...meta,
+      action:     'payout.batch_approve',
+      targetType: 'payout_batch',
+      targetId:   dto.payoutIds.join(','),
+      metadata:   {
+        requested: dto.payoutIds.length,
+        succeeded: result.succeeded,
+        failed:    result.failed,
+        note:      dto.note ?? null,
+      },
+    })
+    return result
   }
 }
 

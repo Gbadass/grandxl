@@ -154,4 +154,19 @@ export const adminPayoutsApi = {
 
   decide: (id: string, dto: DecidePayoutDto) =>
     getClient().patch<ApiResponse<PayoutRequest>>(`/admin/payouts/${id}/decide`, dto),
+
+  // Sprint 13 (S13-9): batch-approve. Server iterates via the single-approve
+  // logic; failures on individual payouts are returned per-id so the client
+  // can toast partial results and highlight which rows still need attention.
+  batchApprove: (payoutIds: string[], note?: string) =>
+    getClient().post<ApiResponse<BatchApproveResult>>('/admin/payouts/batch-approve', {
+      payoutIds,
+      note,
+    }),
+}
+
+export interface BatchApproveResult {
+  succeeded: number
+  failed:    number
+  failures:  Array<{ payoutId: string; message: string }>
 }

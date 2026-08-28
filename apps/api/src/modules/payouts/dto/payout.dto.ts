@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator'
+import { IsInt, IsOptional, IsString, MaxLength, Min, IsArray, ArrayMinSize, ArrayMaxSize } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 
 export class UpdateBankAccountDto {
@@ -58,4 +58,23 @@ export class VerifyAccountDto {
   @IsString()
   @MaxLength(10)
   bankCode!: string
+}
+
+// Sprint 13 (S13-9): batch-approve N pending payouts in one call. Failures on
+// individual payouts don't block the rest — the response surfaces per-id success
+// so admin can retry only the ones that failed (typically Paystack balance or
+// missing bank details on a specific counterparty).
+export class BatchApprovePayoutsDto {
+  @ApiProperty({ type: [String], description: 'Payout IDs to approve (max 50 per batch)' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  payoutIds!: string[]
+
+  @ApiPropertyOptional({ example: 'Batch approval — Friday payout run', maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string
 }
