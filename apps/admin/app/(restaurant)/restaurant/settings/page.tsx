@@ -20,6 +20,7 @@ const MapPicker = dynamic(
   () => import('../../../../src/components/MapPicker').then((m) => m.MapPicker),
   { ssr: false, loading: () => <div className="h-[360px] animate-pulse rounded-2xl bg-gray-100" /> },
 )
+import { AddressAutocomplete } from '../../../../src/components/AddressAutocomplete'
 import '../../../../src/lib/axios'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -878,6 +879,29 @@ export default function RestaurantSettingsPage() {
           {activeTab === 'location' && (
             <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-6 space-y-5">
               <SectionHeader icon={<MapPin size={18} />} title="Restaurant location" desc="Where riders navigate for pickups — must be precise" />
+
+              {/* S-URGENT-2 UX: autocomplete-first entry. Type an address or
+                  landmark → pick from suggestions → street/city/state auto-fill
+                  AND the MapPicker jumps to the picked point. Then drag the map
+                  to nudge the pin onto your actual roof. Manual text-edit is
+                  still available below for corrections. */}
+              <Field label="Search for your address" hint="Start typing an address or landmark, then pick from the list">
+                <AddressAutocomplete
+                  placeholder="e.g. Adeola Odeku, Victoria Island"
+                  onFill={({ street, city, state, lat, lng }) => {
+                    setAddress((a) => ({
+                      ...a,
+                      street: street || a.street,
+                      city:   city   || a.city,
+                      state:  state  || a.state,
+                      lat:    lat ?? a.lat,
+                      lng:    lng ?? a.lng,
+                      geocoded: true,
+                    }))
+                    markDirty()
+                  }}
+                />
+              </Field>
 
               <Field label="Street address *" hint="Include building number and street name">
                 <input

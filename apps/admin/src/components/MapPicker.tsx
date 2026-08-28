@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Loader2, Map as MapIcon, Satellite } from 'lucide-react'
+import { Loader2, Map as MapIcon, Satellite, Maximize2, Check, X } from 'lucide-react'
 import { useAuthStore } from '../store/auth.store'
 
 // Fix Leaflet's default icon paths (same fix as DispatchMap)
@@ -75,6 +75,11 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
   const [address, setAddress] = useState<string | null>(null)
   const [geocoding, setGeocoding] = useState(false)
   const [basemap, setBasemap] = useState<'street' | 'satellite'>('street')
+  // Fullscreen mode. Small embedded map is fine for a quick verify, but if the
+  // user needs to reposition precisely — especially on a phone — they need a
+  // full-viewport map to see landmarks and drag with one finger. Bolt/Uber use
+  // the same expand-to-fullscreen pattern for the same reason.
+  const [fullscreen, setFullscreen] = useState(false)
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFired = useRef<string>('') // dedupe: "lat,lng" — reverse-geocode only if changed
 
@@ -124,77 +129,136 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
     }
   }, [initialLat, initialLng])
 
+  // Lock page scroll while fullscreen is open — otherwise touch drags on the
+  // map could bleed into scrolling the underlying settings form on iOS.
+  useEffect(() => {
+    if (!fullscreen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [fullscreen])
+
+  // Escape closes fullscreen — standard modal behavior for keyboard users.
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
+  // Shared map body — rendered inline OR inside the fullscreen overlay. Same
+  // MapContainer instance rebuilds on remount, which is fine: coords survive
+  // because currentLat/currentLng live in the outer component.
+  function renderMap() {
+    return (
+      <MapContainer
+        // Use the live coords as center so remounting into fullscreen mode
+        // opens where the pin currently sits, not at the original start.
+        center={[currentLat, currentLng]}
+        zoom={initialLat != null && initialLng != null ? 17 : startZoom}
+        scrollWheelZoom
+        className="h-full w-full"
+      >
+        {basemap === 'street' ? (
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+        ) : (
+          <TileLayer
+            attribution='&copy; <a href="https://www.esri.com/">Esri</a> World Imagery'
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={19}
+          />
+        )}
+        {initialLat != null && initialLng != null && (
+          <RecenterOnPropChange lat={initialLat} lng={initialLng} />
+        )}
+        <CenterTracker onMove={handleMove} />
+      </MapContainer>
+    )
+  }
+
+  function renderPin() {
+    return (
+      <div
+        className="pointer-events-none absolute inset-0 flex items-center justify-center"
+        aria-hidden
+      >
+        <div className="flex flex-col items-center -translate-y-3">
+          <div
+            className="h-10 w-10 rounded-full border-4 border-white bg-orange-600 shadow-[0_4px_16px_rgba(0,0,0,0.35)]"
+            style={{ borderRadius: '50% 50% 50% 0', transform: 'rotate(-45deg)' }}
+          />
+          <div className="mt-1 h-2 w-2 rounded-full bg-black/40" />
+        </div>
+      </div>
+    )
+  }
+
+  function renderBasemapToggle() {
+    return (
+      <div className="flex overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-black/5">
+        <button
+          type="button"
+          onClick={() => setBasemap('street')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${
+            basemap === 'street' ? 'bg-orange-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <MapIcon size={12} /> Street
+        </button>
+        <button
+          type="button"
+          onClick={() => setBasemap('satellite')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${
+            basemap === 'satellite' ? 'bg-orange-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <Satellite size={12} /> Satellite
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-2">
       <div
         className="relative overflow-hidden rounded-2xl border border-gray-200 bg-gray-100"
         style={{ height: heightPx }}
       >
-        <MapContainer
-          center={[startLat, startLng]}
-          zoom={startZoom}
-          scrollWheelZoom
-          className="h-full w-full"
-        >
-          {basemap === 'street' ? (
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-          ) : (
-            <TileLayer
-              attribution='&copy; <a href="https://www.esri.com/">Esri</a> World Imagery'
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={19}
-            />
-          )}
-          {initialLat != null && initialLng != null && (
-            <RecenterOnPropChange lat={initialLat} lng={initialLng} />
-          )}
-          <CenterTracker onMove={handleMove} />
-        </MapContainer>
+        {/* Inline map hides while fullscreen is open — the overlay owns the
+            single active MapContainer instance to avoid two live maps racing
+            each other's moveend events. */}
+        {!fullscreen && renderMap()}
+        {!fullscreen && renderPin()}
 
-        {/* Fixed centre pin — stays put while the map drags underneath. */}
-        <div
-          className="pointer-events-none absolute inset-0 flex items-center justify-center"
-          aria-hidden
-        >
-          <div className="flex flex-col items-center -translate-y-3">
-            <div
-              className="h-10 w-10 rounded-full border-4 border-white bg-orange-600 shadow-[0_4px_16px_rgba(0,0,0,0.35)]"
-              style={{ borderRadius: '50% 50% 50% 0', transform: 'rotate(-45deg)' }}
-            />
-            <div className="mt-1 h-2 w-2 rounded-full bg-black/40" />
+        {/* Top-right controls: basemap toggle + expand button */}
+        {!fullscreen && (
+          <div className="absolute top-3 right-3 z-[1000] flex items-center gap-2">
+            {renderBasemapToggle()}
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-lg ring-1 ring-black/5 hover:bg-gray-50"
+              aria-label="Expand map to fullscreen"
+            >
+              <Maximize2 size={12} /> Expand
+            </button>
           </div>
-        </div>
+        )}
 
-        {/* Basemap toggle */}
-        <div className="absolute top-3 right-3 z-[1000] flex overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-black/5">
+        {/* Big "Tap to adjust" affordance on mobile — the small embedded map is
+            fiddly to drag with a thumb, so give a giant tap target that opens
+            fullscreen. Only shown when no address yet (first-time usage). */}
+        {!fullscreen && !address && !geocoding && (
           <button
             type="button"
-            onClick={() => setBasemap('street')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${
-              basemap === 'street' ? 'bg-orange-600 text-white' : 'text-gray-700 hover:bg-gray-50'
-            }`}
+            onClick={() => setFullscreen(true)}
+            className="absolute bottom-3 left-3 right-3 z-[1000] rounded-lg bg-black/70 px-3 py-2.5 text-xs text-white backdrop-blur-sm transition hover:bg-black/80 sm:right-16"
           >
-            <MapIcon size={12} /> Street
+            Tap to open full map and place the pin on your restaurant
           </button>
-          <button
-            type="button"
-            onClick={() => setBasemap('satellite')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${
-              basemap === 'satellite' ? 'bg-orange-600 text-white' : 'text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <Satellite size={12} /> Satellite
-          </button>
-        </div>
-
-        {/* Instructions overlay — only on first interaction (no address yet) */}
-        {!address && !geocoding && (
-          <div className="pointer-events-none absolute bottom-3 left-3 right-16 z-[1000] rounded-lg bg-black/70 px-3 py-2 text-xs text-white backdrop-blur-sm">
-            Drag the map to place the pin exactly on your restaurant. Switch to satellite for rooftop-precision.
-          </div>
         )}
       </div>
 
@@ -220,6 +284,71 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
           {currentLat.toFixed(5)}, {currentLng.toFixed(5)}
         </span>
       </div>
+
+      {/* Fullscreen overlay. `fixed inset-0` covers the viewport regardless of
+          scroll position on the underlying page. z-[9999] keeps it above any
+          drawers/nav. On mobile it becomes the whole screen; on desktop it
+          becomes a giant central overlay — either way there's enough real
+          estate to drag the pin precisely. */}
+      {fullscreen && (
+        <div className="fixed inset-0 z-[9999] flex flex-col bg-black">
+          {/* Map fills all available space */}
+          <div className="relative flex-1">
+            {renderMap()}
+            {renderPin()}
+
+            {/* Top bar: close + basemap toggle */}
+            <div className="absolute top-3 left-3 right-3 z-[1000] flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setFullscreen(false)}
+                className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-lg ring-1 ring-black/5 hover:bg-gray-50"
+                aria-label="Close fullscreen map"
+              >
+                <X size={14} /> Close
+              </button>
+              {renderBasemapToggle()}
+            </div>
+
+            {/* Instructions banner */}
+            <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 z-[1000] rounded-full bg-black/75 px-4 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur-sm">
+              Drag the map — pin stays centred on your building
+            </div>
+          </div>
+
+          {/* Bottom sheet: address + coords + big Done button */}
+          <div className="border-t border-gray-200 bg-white p-4 space-y-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <div className="flex items-center gap-2 text-sm">
+              {geocoding ? (
+                <>
+                  <Loader2 size={14} className="animate-spin text-gray-400" />
+                  <span className="text-gray-500">Looking up address…</span>
+                </>
+              ) : address ? (
+                <>
+                  <MapIcon size={14} className="shrink-0 text-orange-600" />
+                  <span className="truncate text-gray-800"><strong>Pin location:</strong> {address}</span>
+                </>
+              ) : (
+                <>
+                  <MapIcon size={14} className="shrink-0 text-gray-400" />
+                  <span className="text-gray-500">Drop a pin to see the address</span>
+                </>
+              )}
+              <span className="ml-auto shrink-0 font-mono text-[10px] text-gray-400 tabular-nums">
+                {currentLat.toFixed(5)}, {currentLng.toFixed(5)}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFullscreen(false)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-orange-700 active:bg-orange-800 transition-colors"
+            >
+              <Check size={16} /> Confirm this location
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
