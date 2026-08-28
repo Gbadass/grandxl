@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { rateLimitByIp } from '../../../src/lib/apiAuth'
 
+// Places autocomplete proxy. Public — the /auth/register page uses this before
+// the user has a session, so we can't require auth. Rate-limit by IP instead
+// to prevent script-hammering that would burn our Google Places budget.
+// The limit is intentionally generous: legitimate typing hits this at every
+// keystroke, so 120/min per IP still leaves plenty of headroom.
 export async function GET(request: NextRequest) {
+  const limited = rateLimitByIp(request, 'places-autocomplete', 120, 60_000)
+  if (limited) return limited
+
   const q = request.nextUrl.searchParams.get('q')?.trim()
   if (!q || q.length < 2) return NextResponse.json({ suggestions: [] })
 

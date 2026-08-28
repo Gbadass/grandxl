@@ -18,6 +18,7 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Loader2, Map as MapIcon, Satellite } from 'lucide-react'
+import { useAuthStore } from '../store/auth.store'
 
 // Fix Leaflet's default icon paths (same fix as DispatchMap)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -92,7 +93,13 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
     geocodeTimer.current = setTimeout(async () => {
       setGeocoding(true)
       try {
-        const res  = await fetch(`/api/geocode/reverse?lat=${lat}&lng=${lng}`)
+        // Attach Bearer token — /api/geocode/reverse now requires an admin
+        // session (Google-billing protection). Zustand store is the source of
+        // truth for the in-memory access token.
+        const token = useAuthStore.getState().accessToken
+        const res  = await fetch(`/api/geocode/reverse?lat=${lat}&lng=${lng}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        })
         const data = await res.json() as { result?: { formatted_address?: string } | null }
         const formatted = data.result?.formatted_address ?? null
         setAddress(formatted)

@@ -33,10 +33,13 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host:     ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key:      ${{ secrets.VPS_SSH_KEY }}
-          timeout:  10m
+          host:            ${{ secrets.VPS_HOST }}
+          username:        ${{ secrets.VPS_USER }}
+          key:             ${{ secrets.VPS_SSH_KEY }}
+          # Full clean rebuild of all four images can push past the 10m default.
+          # `timeout` is the SSH connection timeout (default 30s); the one we
+          # actually need is `command_timeout`, which caps the remote script.
+          command_timeout: 30m
           script: |
             set -e
             cd /root/grandxl
@@ -58,8 +61,8 @@ jobs:
             sleep 10
             docker compose -f docker-compose.prod.yml ps
 
-            echo "==> Reloading nginx config"
-            docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload || true
+            # No manual nginx reload: `up -d` recreated the nginx container
+            # above with the current config, so a reload would be a no-op.
 
             echo "==> Cleaning up unused images"
             docker image prune -f

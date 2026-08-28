@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { rateLimitByIp } from '../../../../src/lib/apiAuth'
 
+// Place-details proxy. Public for the same reason as /api/places — the
+// register page uses it pre-session. IP rate-limited to prevent abuse of our
+// Google billing.
 export async function GET(request: NextRequest) {
+  const limited = rateLimitByIp(request, 'places-details', 60, 60_000)
+  if (limited) return limited
+
   const placeId = request.nextUrl.searchParams.get('placeId')?.trim()
   if (!placeId) return NextResponse.json({ result: null })
 

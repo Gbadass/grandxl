@@ -124,9 +124,19 @@ export class OrdersService {
   }
 
   private async fireDispatchNow(orderId: string, lat: number, lng: number): Promise<void> {
-    await this.riderDispatchQueue
-      .add('dispatch', { orderId, lat, lng }, { jobId: `dispatch-${orderId}` })
-      .catch((err) => this.logger.error(`Failed to enqueue dispatch for order ${orderId}: ${String(err)}`))
+    // Route through SideEffects: if Redis is momentarily unavailable, the primary
+    // enqueue fails, the intent is persisted, and the SideEffects sweeper retries
+    // on backoff with a DLQ after MAX_ATTEMPTS. Silent fire-and-forget would leave
+    // a paid, restaurant-acked order with no rider ever dispatched.
+    // BullMQ jobId `dispatch-${orderId}` still dedupes primary + retry paths.
+    await this.sideEffects.tryOrEnqueue(
+      SideEffectType.DISPATCH_ORDER,
+      `dispatch:${orderId}`,
+      { orderId, lat, lng },
+      () => this.riderDispatchQueue
+        .add('dispatch', { orderId, lat, lng }, { jobId: `dispatch-${orderId}` })
+        .then(() => undefined),
+    )
   }
 
   // Called by the 90s escalation processor. Idempotent guards ensure we only
@@ -674,12 +684,18 @@ export class OrdersService {
     const ownerId = restaurant.ownerId.toString()
     const orderId = order._id.toString()
 
-    // Cash on delivery: skip payment gate — confirm the order and NOTIFY the
-    // restaurant. Dispatch is NOT fired here anymore (S-URGENT / Nigerian ack
-    // flow); it fires when the restaurant taps Accept, OR when the 90s
-    // escalation timer runs — whichever happens first. This prevents riders
-    // committing to pick up food from a restaurant that hasn't been told.
-    if (dto.paymentMethod === PaymentMethod.CASH) {
+    // No-payment-gate confirm path. Two cases skip the payment webhook:
+    //   1. Cash on delivery — payment happens at handover, not now.
+    //   2. Wallet fully covered — walletApplied >= total means the order is
+    //      already paid in full at create time; no Paystack round-trip needed.
+    //      Without this branch, wallet-only orders sat at PENDING forever
+    //      because markPaymentComplete (which handles the CONFIRMED transition
+    //      and escalation) is only called by the Paystack webhook.
+    // Dispatch is NOT fired here (S-URGENT / Nigerian ack flow) — it fires when
+    // the restaurant taps Accept OR when the 90s escalation runs. Prevents
+    // rider commit to food the kitchen hasn't been told about.
+    const paidAtCreate = dto.paymentMethod === PaymentMethod.CASH || walletApplied >= total
+    if (paidAtCreate) {
       const confirmed = await this.orderModel.findByIdAndUpdate(
         order._id,
         {
@@ -692,14 +708,21 @@ export class OrdersService {
         { new: true },
       ) ?? order
 
+      // Scheduled orders defer escalation to releaseScheduledOrder — firing at
+      // create time would kick a rider hours before scheduledFor.
+      const escalationTask: Promise<unknown> = scheduledFor
+        ? Promise.resolve()
+        : this.scheduleDispatchEscalation(
+            orderId,
+            dto.deliveryAddress.coordinates.lat,
+            dto.deliveryAddress.coordinates.lng,
+          )
+
       Promise.all([
         this.notificationsService.onOrderPlaced(customerId, ownerId, confirmed.orderNumber, orderId),
-        this.trackingService.notifyNewOrder(ownerId, confirmed),
-        this.scheduleDispatchEscalation(
-          orderId,
-          dto.deliveryAddress.coordinates.lat,
-          dto.deliveryAddress.coordinates.lng,
-        ),
+        // Scheduled orders shouldn't buzz the restaurant now — release will do it.
+        scheduledFor ? Promise.resolve() : this.trackingService.notifyNewOrder(ownerId, confirmed),
+        escalationTask,
       ]).catch(() => undefined)
 
       return confirmed
@@ -944,6 +967,12 @@ export class OrdersService {
     // Restock items when the order is cancelled — items that auto-disabled at 0
     // stock stay disabled until the restaurant re-enables (handled in MenuItemsService).
     if (dto.status === OrderStatus.CANCELLED) {
+      // S-URGENT: kill the 90s escalation timer so it doesn't fire dispatch
+      // against a cancelled order. Without this, a rider could be dispatched
+      // to pick up food that no longer exists — customer already refunded,
+      // restaurant already informed, rider driven in vain.
+      void this.cancelDispatchEscalation(orderId)
+
       for (const it of order.items) {
         this.menuItemsService
           .restock(it.menuItemId.toString(), it.quantity)
@@ -1258,7 +1287,9 @@ export class OrdersService {
         const lat = existing.deliveryAddress.coordinates.coordinates[1]
         if (existing.restaurantAckedAt) {
           await this.fireDispatchNow(orderId, lat, lng)
-        } else {
+        } else if (!existing.scheduledFor) {
+          // Scheduled orders defer escalation to releaseScheduledOrder — don't
+          // pre-schedule it here or the timer fires hours before pickup.
           await this.scheduleDispatchEscalation(orderId, lat, lng)
         }
         return existing
@@ -1352,6 +1383,12 @@ export class OrdersService {
     // OR at T+90s if they never engage. Prevents riders from picking up food
     // the kitchen doesn't know about.
     const ownerId = restaurant.ownerId.toString()
+
+    // Scheduled orders defer both restaurant notification and escalation to
+    // releaseScheduledOrder — the restaurant shouldn't see the order in their
+    // live queue hours before scheduledFor, and the 90s escalation would fire
+    // just as pointlessly early.
+    if (order.scheduledFor) return order
 
     // Notify restaurant (best-effort — socket delivery, has fallback in the app)
     void Promise.resolve(this.trackingService.notifyNewOrder(ownerId, order)).catch(() => undefined)
@@ -1891,11 +1928,19 @@ export class OrdersService {
   // Fired by the scheduled-order worker `prep buffer` minutes before scheduledFor.
   // Notifies the restaurant so the order enters their live queue. Idempotent —
   // if the order was cancelled in the meantime we silently no-op.
+  //
+  // S-URGENT: also schedules the 90s dispatch escalation. Without this, scheduled
+  // orders would sit at CONFIRMED indefinitely with no dispatch trigger — the
+  // create/pay-time escalation was deliberately skipped for scheduled orders
+  // (see markPaymentComplete + createOrder paidAtCreate branch).
   async releaseScheduledOrder(orderId: string): Promise<void> {
     if (!Types.ObjectId.isValid(orderId)) return
     const order = await this.orderModel.findById(orderId).exec()
     if (!order) return
-    if (order.status !== OrderStatus.PENDING) return
+    // Accept PENDING (card path — awaiting payment) or CONFIRMED (paid-at-create
+    // via cash / wallet-full). Both need release-time restaurant notification
+    // and escalation scheduling.
+    if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.CONFIRMED) return
     if (!order.scheduledFor) return
 
     const restaurant = await this.restaurantsService.findByIdRaw(order.restaurantId.toString())
@@ -1912,11 +1957,21 @@ export class OrdersService {
 
     // Notify customer their scheduled order is now being sent to the restaurant
     this.notificationsService
-      .onOrderStatusChanged(customerId, order.orderNumber, orderId, OrderStatus.PENDING)
+      .onOrderStatusChanged(customerId, order.orderNumber, orderId, order.status)
       .catch(() => undefined)
     this.trackingService.notifyOrderStatusUpdate(
-      orderId, customerId, ownerId, OrderStatus.PENDING, order.estimatedTime ?? undefined,
+      orderId, customerId, ownerId, order.status, order.estimatedTime ?? undefined,
     )
+
+    // Kick the 90s escalation ONLY for orders already CONFIRMED (paid). PENDING
+    // scheduled orders still need the customer's payment webhook to land — that
+    // path schedules escalation via markPaymentComplete's post-release branch.
+    // Guard against double-schedule via BullMQ jobId dedup regardless.
+    if (order.status === OrderStatus.CONFIRMED) {
+      const lng = order.deliveryAddress.coordinates.coordinates[0]
+      const lat = order.deliveryAddress.coordinates.coordinates[1]
+      await this.scheduleDispatchEscalation(orderId, lat, lng)
+    }
   }
 
   async cancelIfTimedOut(orderId: string): Promise<void> {
@@ -1940,6 +1995,12 @@ export class OrdersService {
       { new: false },
     )
     if (!order) return // Already confirmed, paid, or cancelled — nothing to do
+
+    // S-URGENT: kill the 90s escalation timer if one was scheduled — a wallet-full
+    // order that hits this timeout path had its escalation queued at create time
+    // (via the paidAtCreate branch in createOrder). Without cancel, escalation
+    // fires against an already-cancelled order.
+    void this.cancelDispatchEscalation(orderId)
 
     // Remove the scheduled release job so the restaurant never receives a ghost notification
     if (order.scheduledReleaseJobId) {
