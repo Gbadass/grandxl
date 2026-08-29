@@ -3,11 +3,14 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { MapPin, Navigation, Search, X, Check, Loader } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
+import { mapsApi } from '@grandxl/api-client'
 import { useLocationStore } from '../../store/location.store'
 import { reverseGeocode } from '../../hooks/useDetectLocation'
 
-const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY as string
-
+// PlacePrediction here keeps `structured_formatting` (for the two-line UI)
+// but the API-client only returns `description` + `place_id`. We synthesise
+// the split from `description` on the client since the API's Google response
+// isn't projected — cheap and avoids expanding the backend contract.
 interface PlacePrediction {
   place_id: string
   description: string
@@ -21,29 +24,34 @@ interface Props {
 
 async function fetchPredictions(input: string): Promise<PlacePrediction[]> {
   if (!input.trim()) return []
-  const params = new URLSearchParams({
-    input,
-    components: 'country:ng',
-    types: 'geocode',
-    language: 'en',
-    key: GOOGLE_KEY,
-  })
-  const res = await fetch(
-    `https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`,
-  )
-  const data = await res.json() as { predictions: PlacePrediction[]; status: string }
-  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') return []
-  return data.predictions ?? []
+  try {
+    const res         = await mapsApi.placesAutocomplete(input)
+    const suggestions = res.data.data.suggestions ?? []
+    return suggestions.map((s) => {
+      // Split on the first comma into main + secondary — matches Google's
+      // native structured_formatting behaviour for autocomplete predictions.
+      const [main, ...rest] = s.description.split(',')
+      return {
+        place_id:   s.place_id,
+        description: s.description,
+        structured_formatting: {
+          main_text:      (main ?? s.description).trim(),
+          secondary_text: rest.join(',').trim(),
+        },
+      }
+    })
+  } catch {
+    return []
+  }
 }
 
 async function placeDetails(placeId: string): Promise<{ lat: number; lng: number } | null> {
-  const res = await fetch(
-    `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry&key=${GOOGLE_KEY}`,
-  )
-  const data = await res.json() as {
-    result?: { geometry?: { location?: { lat: number; lng: number } } }
+  try {
+    const res = await mapsApi.placeDetails(placeId)
+    return res.data.data.result?.geometry?.location ?? null
+  } catch {
+    return null
   }
-  return data.result?.geometry?.location ?? null
 }
 
 export function LocationPickerSheet({ isOpen, onClose }: Props) {

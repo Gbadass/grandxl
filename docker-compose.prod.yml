@@ -66,7 +66,7 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL}
         VITE_SENTRY_DSN_WEB: ${VITE_SENTRY_DSN_WEB}
-        VITE_GOOGLE_MAPS_KEY: ${VITE_GOOGLE_MAPS_KEY}
+        # VITE_GOOGLE_MAPS_KEY dropped — maps now proxy through the API.
     container_name: grandxl-web
     restart: always
     networks:
@@ -78,7 +78,7 @@ services:
       dockerfile: apps/admin/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        NEXT_PUBLIC_GOOGLE_MAPS_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_KEY}
+        # NEXT_PUBLIC_GOOGLE_MAPS_KEY dropped — maps proxy through the API.
     container_name: grandxl-admin
     restart: always
     networks:

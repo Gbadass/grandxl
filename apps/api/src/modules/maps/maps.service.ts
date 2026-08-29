@@ -85,6 +85,32 @@ export class MapsService {
     }))
   }
 
+  // Forward-geocode a free-text address to a lat/lng. Called from the
+  // restaurant signup flow to pin the new restaurant on the map without
+  // shipping the Google API key to the client.
+  async geocode(address: string): Promise<GeocodeResult | null> {
+    const url =
+      `https://maps.googleapis.com/maps/api/geocode/json` +
+      `?address=${encodeURIComponent(address)}` +
+      `&region=ng` +
+      `&language=en` +
+      `&key=${this.key()}`
+
+    const res  = await fetch(url)
+    const data = await res.json() as {
+      status: string
+      results?: GeocodeResult[]
+      error_message?: string
+    }
+    if (data.status !== 'OK' || !data.results?.length) {
+      if (data.status !== 'ZERO_RESULTS') {
+        this.logger.warn(`Google forward-geocode ${data.status}: ${data.error_message ?? ''}`)
+      }
+      return null
+    }
+    return data.results[0]!
+  }
+
   async placeDetails(placeId: string): Promise<GeocodeResult | null> {
     // geometry/location included so the map picker can drop its initial pin
     // exactly where Google places the address, without an extra geocode call.

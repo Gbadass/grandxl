@@ -1,34 +1,30 @@
 import { useEffect } from 'react'
+import { mapsApi } from '@grandxl/api-client'
 import { useLocationStore } from '../store/location.store'
 
-const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY as string
-
-type GeoComponent = { long_name: string; types: string[] }
-type GeocodeResult = {
-  status: string
-  results: Array<{ formatted_address: string; address_components: GeoComponent[] }>
-}
-
+// Reverse-geocode via the shared /maps proxy — the Google API key stays on
+// the server. Returns city/state/display broken down for the location store.
 async function reverseGeocode(lat: number, lng: number) {
-  const res = await fetch(
-    `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_KEY}`,
-  )
-  const data = (await res.json()) as GeocodeResult
-  if (data.status !== 'OK' || !data.results.length) return null
+  try {
+    const res    = await mapsApi.reverse(lat, lng)
+    const parts  = res.data.data.result?.address_components ?? []
+    if (parts.length === 0) return null
 
-  const parts = data.results[0].address_components
-  const get = (type: string) => parts.find((c) => c.types.includes(type))?.long_name ?? ''
+    const get = (type: string) => parts.find((c) => c.types.includes(type))?.long_name ?? ''
 
-  const city =
-    get('locality') ||
-    get('sublocality_level_1') ||
-    get('administrative_area_level_2') ||
-    'Your location'
-  const state = get('administrative_area_level_1') || 'Benue'
-  const area = get('sublocality') || get('neighborhood') || get('route') || ''
-  const display = area ? `${area}, ${city}` : city
+    const city =
+      get('locality') ||
+      get('sublocality_level_1') ||
+      get('administrative_area_level_2') ||
+      'Your location'
+    const state = get('administrative_area_level_1') || 'Benue'
+    const area  = get('sublocality') || get('neighborhood') || get('route') || ''
+    const display = area ? `${area}, ${city}` : city
 
-  return { city, state, display }
+    return { city, state, display }
+  } catch {
+    return null
+  }
 }
 
 export function useDetectLocation() {

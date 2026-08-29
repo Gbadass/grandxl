@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { myRestaurantApi, uploadsApi, type UpdateRestaurantDto } from '@grandxl/api-client'
+import { myRestaurantApi, uploadsApi, mapsApi, type UpdateRestaurantDto } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import type { OpeningHours, BankDetails } from '@grandxl/types'
 import { parseApiError } from '@grandxl/utils'
@@ -80,17 +80,16 @@ interface AddressState {
 }
 
 async function geocodeAddress(street: string, city: string, state: string) {
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY
-  if (!key) return null
-  const q = encodeURIComponent(`${street}, ${city}, ${state}, Nigeria`)
-  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${q}&key=${key}`)
-  const data = await res.json() as {
-    status: string
-    results: { geometry: { location: { lat: number; lng: number } }; formatted_address: string }[]
+  // Server-side proxy — the Google API key never lands in the browser.
+  try {
+    const res    = await mapsApi.geocode(`${street}, ${city}, ${state}, Nigeria`)
+    const result = res.data.data.result
+    const loc    = result?.geometry?.location
+    if (loc?.lat == null || loc?.lng == null) return null
+    return { lat: loc.lat, lng: loc.lng, formatted: result?.formatted_address ?? '' }
+  } catch {
+    return null
   }
-  if (data.status !== 'OK' || !data.results[0]) return null
-  const { lat, lng } = data.results[0].geometry.location
-  return { lat, lng, formatted: data.results[0].formatted_address }
 }
 
 // ── Helper components ─────────────────────────────────────────────────────────

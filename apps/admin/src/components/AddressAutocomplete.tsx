@@ -13,6 +13,7 @@
 // focus, debounce, and outside-click behavior.
 
 import { useEffect, useRef, useState } from 'react'
+import { mapsApi } from '@grandxl/api-client'
 
 export interface AddressFill {
   street: string
@@ -48,15 +49,10 @@ export function AddressAutocomplete({ onFill, placeholder, className }: Props) {
       setSearching(true)
       setSearchErr('')
       try {
-        const res  = await fetch(`/api/places?q=${encodeURIComponent(q)}`)
-        const data = await res.json() as { suggestions?: ACSuggestion[]; status?: string }
-        if (data.status && data.status !== 'OK') {
-          setSearchErr(`Maps: ${data.status}`)
-          setSug([]); setOpen(false)
-        } else {
-          setSug(data.suggestions ?? [])
-          setOpen((data.suggestions?.length ?? 0) > 0)
-        }
+        const res         = await mapsApi.placesAutocomplete(q)
+        const suggestions = res.data.data.suggestions ?? []
+        setSug(suggestions)
+        setOpen(suggestions.length > 0)
       } catch {
         setSearchErr('Search failed — check connection')
         setSug([]); setOpen(false)
@@ -80,14 +76,9 @@ export function AddressAutocomplete({ onFill, placeholder, className }: Props) {
     setQuery(s.description.split(',').slice(0, 2).join(',').trim())
     setSug([]); setOpen(false)
     try {
-      const res  = await fetch(`/api/places/details?placeId=${encodeURIComponent(s.place_id)}`)
-      const data = await res.json() as {
-        result?: {
-          address_components?: Array<{ long_name: string; types: string[] }>
-          geometry?: { location?: { lat: number; lng: number } }
-        }
-      }
-      const comps = data.result?.address_components ?? []
+      const res    = await mapsApi.placeDetails(s.place_id)
+      const result = res.data.data.result
+      const comps  = result?.address_components ?? []
       let num = '', road = '', sub = '', city = '', state = ''
       for (const c of comps) {
         if (c.types.includes('street_number'))               num   = c.long_name
@@ -98,7 +89,7 @@ export function AddressAutocomplete({ onFill, placeholder, className }: Props) {
         if (c.types.includes('administrative_area_level_1')) state = c.long_name
       }
       const street = [num, road].filter(Boolean).join(' ') || sub || s.description.split(',')[0]?.trim() || ''
-      const loc = data.result?.geometry?.location
+      const loc = result?.geometry?.location
       onFill({ street, city, state, lat: loc?.lat, lng: loc?.lng })
     } catch {
       // Details lookup failed — fall back to splitting the raw description so

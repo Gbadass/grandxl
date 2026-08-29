@@ -8,6 +8,7 @@ import { parseApiError } from '@grandxl/utils'
 import { useAddresses, useAddAddress, useDeleteAddress } from '../hooks/useAddresses'
 import { useLocationStore } from '../../../store/location.store'
 import { reverseGeocode } from '../../../hooks/useDetectLocation'
+import { MapPicker } from '../../../components/MapPicker'
 
 interface Props {
   isOpen: boolean
@@ -106,6 +107,11 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
   const [gpsLoading, setGpsLoading] = useState(false)
   const [gpsDetected, setGpsDetected] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The final coords saved with the address come from the map pin (which the
+  // user can drag to their exact door). GPS only seeds where the pin starts.
+  // Never save GPS-only coords: cell-tower GPS in Nigeria can be 100–500m off
+  // and would cause "You're not close enough" errors on rider handoff.
+  const [pinCoords, setPinCoords] = useState<{ lat: number; lng: number } | null>(null)
 
   function set(key: keyof AddFormState, value: string) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -151,6 +157,9 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
 
   function submit() {
     if (!form.street.trim()) { setError(t('streetRequired')); return }
+    // Prefer the map pin — it's the authoritative location. GPS is only a
+    // starting point; without dragging, the pin sits at the GPS coord anyway.
+    const finalCoords = pinCoords ?? gpsCoords
 
     addAddress(
       {
@@ -159,7 +168,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
         city: form.city.trim(),
         state: form.state.trim(),
         country: 'NG',
-        ...(gpsCoords ? { coordinates: gpsCoords } : {}),
+        ...(finalCoords ? { coordinates: finalCoords } : {}),
       },
       {
         onSuccess: (res) => {
@@ -238,6 +247,23 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           {gpsGeo?.city ? t('enterStreetNow') : t('enterAddressNow')}
         </p>
       )}
+
+      {/* Interactive map pin — the authoritative source of coordinates.
+          GPS gives us a rough starting point; the customer drags the pin to
+          their actual building so the rider can find the door. Reverse-geocoded
+          address text also fills the street field if the user hasn't already. */}
+      <MapPicker
+        initialLat={gpsCoords?.lat ?? null}
+        initialLng={gpsCoords?.lng ?? null}
+        heightPx={240}
+        onChange={({ lat, lng, address }) => {
+          setPinCoords({ lat, lng })
+          if (address && !form.street.trim()) {
+            setForm((f) => ({ ...f, street: address }))
+            setError(null)
+          }
+        }}
+      />
 
       {/* Fields */}
       <div>

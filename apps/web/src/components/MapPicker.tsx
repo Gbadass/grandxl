@@ -1,17 +1,16 @@
-'use client'
-
-// S-URGENT-2: reusable map picker for restaurant / rider location capture.
+// Reusable map picker for customer delivery-address capture.
 //
-// Design: fixed centre pin, map pans underneath. Same pattern Bolt/Uber/Glovo
-// use — one-hand friendly on mobile, gives the user visual confirmation that
-// the pin is on their actual building. Solves the "Google autocomplete returned
-// coordinates for a nearby salon instead of the restaurant" class of bugs by
-// requiring an explicit visual placement step.
+// Same component as apps/admin/src/components/MapPicker.tsx — copied per
+// CLAUDE.md rule ("packages/ui shares tokens only — NOT component code").
+// Both use the same shared /maps backend (via @grandxl/api-client) so the
+// Google API key stays server-side.
 //
-// Bounces reverse-geocode calls at 500ms so a fast drag doesn't hammer the
-// Google API. Basemap toggles between street (OSM, free) and satellite (Esri,
-// free, permissive attribution) — satellite is essential for rooftop precision
-// in dense urban areas.
+// Design: fixed centre pin, map pans underneath — Bolt/Uber/Glovo pattern.
+// One-hand friendly on mobile, gives the user visual confirmation that the
+// pin is on their actual building. Debounces reverse-geocode at 500ms so a
+// fast drag doesn't hammer the API. Basemap toggles between street (OSM)
+// and satellite (Esri) — satellite is essential for rooftop precision in
+// dense urban areas.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
@@ -20,7 +19,7 @@ import 'leaflet/dist/leaflet.css'
 import { Loader2, Map as MapIcon, Satellite, Maximize2, Check, X } from 'lucide-react'
 import { mapsApi } from '@grandxl/api-client'
 
-// Fix Leaflet's default icon paths (same fix as DispatchMap)
+// Fix Leaflet's default icon paths — bundler swaps its internal image URLs.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 delete (L.Icon.Default.prototype as any)._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -37,21 +36,13 @@ interface Props {
   heightPx?: number
 }
 
-// Fallback center: rough centroid of Nigeria — used only when caller has no
-// prior coords AND no address to geocode from. In practice most callers pass
-// initial coords (existing restaurant) or a geocoded starting point (address
-// typed in autocomplete).
 const NIGERIA_CENTER = { lat: 9.082, lng: 8.6753 }
 
-// Programmatic recenter — called when the caller passes new initial coords
-// (e.g., autocomplete just selected a new address; move the pin there).
-//
-// Feedback-loop guard: after every drag, handleMove emits onChange({lat,lng})
-// which the parent typically writes back into its state and passes back down
-// as initialLat/initialLng. Without the guard below, that echo triggers
-// setView, which cancels the user's in-progress zoom/pan gesture — the map
-// visibly "bounces back". `lastEmittedRef` records the coords we just emitted;
-// if the incoming prop matches (within ~1m tolerance), we skip the recenter.
+// Programmatic recenter when the caller passes new initial coords (e.g. an
+// autocomplete pick). Feedback-loop guard: after every drag, handleMove emits
+// onChange({lat,lng}) which the parent typically writes back and passes down
+// as initialLat/initialLng. Without the guard, that echo triggers setView,
+// which cancels the user's in-progress gesture — the map visibly bounces back.
 function RecenterOnPropChange({
   lat, lng, lastEmittedRef,
 }: {
@@ -62,8 +53,8 @@ function RecenterOnPropChange({
   const map = useMap()
   useEffect(() => {
     const last = lastEmittedRef.current
-    // ~1e-5 degrees ≈ 1.1 meters at the equator — well below drag precision,
-    // safely above float-round noise from Leaflet's getCenter() → setView() cycle.
+    // ~1e-5 degrees ≈ 1.1 meters — safely above float-round noise from the
+    // getCenter → setView cycle, well below drag precision.
     if (last && Math.abs(last.lat - lat) < 1e-5 && Math.abs(last.lng - lng) < 1e-5) {
       return
     }
@@ -73,8 +64,8 @@ function RecenterOnPropChange({
   return null
 }
 
-// Fires the onMove callback whenever the map pans/zooms — the center pin is
-// stationary so the map center IS the pin's lat/lng.
+// Fires onMove whenever the map pans/zooms — the center pin is stationary
+// so the map center IS the pin's lat/lng.
 function CenterTracker({ onMove }: { onMove: (lat: number, lng: number) => void }) {
   useMapEvents({
     moveend: (e) => {
@@ -85,7 +76,7 @@ function CenterTracker({ onMove }: { onMove: (lat: number, lng: number) => void 
   return null
 }
 
-export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: Props) {
+export function MapPicker({ initialLat, initialLng, onChange, heightPx = 320 }: Props) {
   const startLat = initialLat ?? NIGERIA_CENTER.lat
   const startLng = initialLng ?? NIGERIA_CENTER.lng
   const startZoom = initialLat != null && initialLng != null ? 17 : 6
@@ -95,20 +86,14 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
   const [address, setAddress] = useState<string | null>(null)
   const [geocoding, setGeocoding] = useState(false)
   const [basemap, setBasemap] = useState<'street' | 'satellite'>('street')
-  // Fullscreen mode. Small embedded map is fine for a quick verify, but if the
-  // user needs to reposition precisely — especially on a phone — they need a
-  // full-viewport map to see landmarks and drag with one finger. Bolt/Uber use
-  // the same expand-to-fullscreen pattern for the same reason.
+  // Fullscreen mode. Small embedded map is fine for a quick verify, but if
+  // the user needs to reposition precisely — especially on a phone — they
+  // need a full-viewport map to see landmarks and drag with one finger.
   const [fullscreen, setFullscreen] = useState(false)
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastFired = useRef<string>('') // dedupe: "lat,lng" — reverse-geocode only if changed
-  // Tracks the coords we last emitted upward via onChange. RecenterOnPropChange
-  // reads this to skip the setView when the parent is just echoing back what
-  // we sent — otherwise every user gesture gets cancelled by our own recenter.
+  const lastFired = useRef<string>('')
   const lastEmittedRef = useRef<{ lat: number; lng: number } | null>(null)
 
-  // Fire onChange on every map move (real-time coord capture) + start a
-  // debounced reverse-geocode so the address label lags cleanly behind.
   const handleMove = useCallback((lat: number, lng: number) => {
     setCurrentLat(lat)
     setCurrentLng(lng)
@@ -123,15 +108,9 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
     geocodeTimer.current = setTimeout(async () => {
       setGeocoding(true)
       try {
-        // Goes through the shared axios instance, which auto-attaches the
-        // Bearer token (server-side /maps/reverse requires auth to protect
-        // our Google API key from anonymous scraping).
         const res       = await mapsApi.reverse(lat, lng)
         const formatted = res.data.data.result?.formatted_address ?? null
         setAddress(formatted)
-        // Second onChange with the resolved address so the caller can persist
-        // or display it. The lat/lng is unchanged from the initial fire — no
-        // need to update lastEmittedRef.
         onChange({ lat, lng, address: formatted })
       } catch {
         setAddress(null)
@@ -141,9 +120,6 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
     }, 500)
   }, [onChange])
 
-  // Sync internal state if caller updates initial coords (e.g., autocomplete
-  // pick after mount). The RecenterOnPropChange component below moves the map;
-  // this keeps our display state in sync.
   useEffect(() => {
     if (initialLat != null && initialLng != null) {
       setCurrentLat(initialLat)
@@ -151,8 +127,8 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
     }
   }, [initialLat, initialLng])
 
-  // Lock page scroll while fullscreen is open — otherwise touch drags on the
-  // map could bleed into scrolling the underlying settings form on iOS.
+  // Lock page scroll while fullscreen — otherwise touch drags on the map
+  // bleed into scrolling the underlying page on iOS.
   useEffect(() => {
     if (!fullscreen) return
     const prev = document.body.style.overflow
@@ -160,7 +136,6 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
     return () => { document.body.style.overflow = prev }
   }, [fullscreen])
 
-  // Escape closes fullscreen — standard modal behavior for keyboard users.
   useEffect(() => {
     if (!fullscreen) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false) }
@@ -168,14 +143,9 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
     return () => window.removeEventListener('keydown', onKey)
   }, [fullscreen])
 
-  // Shared map body — rendered inline OR inside the fullscreen overlay. Same
-  // MapContainer instance rebuilds on remount, which is fine: coords survive
-  // because currentLat/currentLng live in the outer component.
   function renderMap() {
     return (
       <MapContainer
-        // Use the live coords as center so remounting into fullscreen mode
-        // opens where the pin currently sits, not at the original start.
         center={[currentLat, currentLng]}
         zoom={initialLat != null && initialLng != null ? 17 : startZoom}
         scrollWheelZoom
@@ -202,10 +172,6 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
   }
 
   function renderPin() {
-    // z-[1000]: sit above Leaflet's internal panes (tiles 200, overlay 400,
-    // markers 600, tooltips 650, popups 700, controls 800) so the pin doesn't
-    // get hidden behind the tile layer once the map loads. `pointer-events-none`
-    // keeps drag gestures flowing through to the underlying map.
     return (
       <div
         className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center"
@@ -253,13 +219,9 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
         className="relative overflow-hidden rounded-2xl border border-gray-200 bg-gray-100"
         style={{ height: heightPx }}
       >
-        {/* Inline map hides while fullscreen is open — the overlay owns the
-            single active MapContainer instance to avoid two live maps racing
-            each other's moveend events. */}
         {!fullscreen && renderMap()}
         {!fullscreen && renderPin()}
 
-        {/* Top-right controls: basemap toggle + expand button */}
         {!fullscreen && (
           <div className="absolute top-3 right-3 z-[1000] flex items-center gap-2">
             {renderBasemapToggle()}
@@ -274,21 +236,17 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
           </div>
         )}
 
-        {/* Big "Tap to adjust" affordance on mobile — the small embedded map is
-            fiddly to drag with a thumb, so give a giant tap target that opens
-            fullscreen. Only shown when no address yet (first-time usage). */}
         {!fullscreen && !address && !geocoding && (
           <button
             type="button"
             onClick={() => setFullscreen(true)}
             className="absolute bottom-3 left-3 right-3 z-[1000] rounded-lg bg-black/70 px-3 py-2.5 text-xs text-white backdrop-blur-sm transition hover:bg-black/80 sm:right-16"
           >
-            Tap to open full map and place the pin on your restaurant
+            Tap to open full map and place the pin on your building
           </button>
         )}
       </div>
 
-      {/* Address strip — shows the reverse-geocoded label as the pin moves */}
       <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
         {geocoding ? (
           <>
@@ -311,19 +269,12 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
         </span>
       </div>
 
-      {/* Fullscreen overlay. `fixed inset-0` covers the viewport regardless of
-          scroll position on the underlying page. z-[9999] keeps it above any
-          drawers/nav. On mobile it becomes the whole screen; on desktop it
-          becomes a giant central overlay — either way there's enough real
-          estate to drag the pin precisely. */}
       {fullscreen && (
         <div className="fixed inset-0 z-[9999] flex flex-col bg-black">
-          {/* Map fills all available space */}
           <div className="relative flex-1">
             {renderMap()}
             {renderPin()}
 
-            {/* Top bar: close + basemap toggle */}
             <div className="absolute top-3 left-3 right-3 z-[1000] flex items-center justify-between gap-2">
               <button
                 type="button"
@@ -336,13 +287,11 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
               {renderBasemapToggle()}
             </div>
 
-            {/* Instructions banner */}
             <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 z-[1000] rounded-full bg-black/75 px-4 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur-sm">
               Drag the map — pin stays centred on your building
             </div>
           </div>
 
-          {/* Bottom sheet: address + coords + big Done button */}
           <div className="border-t border-gray-200 bg-white p-4 space-y-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <div className="flex items-center gap-2 text-sm">
               {geocoding ? (

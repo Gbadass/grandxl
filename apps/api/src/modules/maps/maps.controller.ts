@@ -74,4 +74,21 @@ export class MapsController {
     const result = await this.maps.placeDetails(placeId.trim())
     return { result }
   }
+
+  // Forward-geocode free-text address → coordinates. Used by the restaurant
+  // signup wizard to pin the new business without exposing the Google API
+  // key to the browser. Public because signup runs pre-session.
+  @Get('geocode')
+  @Public()
+  @Throttle({ medium: { limit: 30, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Forward-geocode an address to a lat/lng (public)' })
+  @ApiQuery({ name: 'address', required: true, type: String })
+  @ApiOkResponse({ description: 'Google geocode result or null' })
+  async geocode(
+    @Query('address') address?: string,
+  ): Promise<{ result: unknown | null }> {
+    if (!address?.trim()) return { result: null }
+    const result = await this.maps.geocode(address.trim())
+    return { result }
+  }
 }

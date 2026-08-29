@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AxiosError } from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
-import { authApi, myRestaurantApi, foodCategoriesApi } from '@grandxl/api-client'
+import { authApi, myRestaurantApi, foodCategoriesApi, mapsApi } from '@grandxl/api-client'
 import type { ApiError, FoodCategory, User } from '@grandxl/types'
 import { UserRole } from '@grandxl/types'
 import { useAuthStore } from '../../../src/store/auth.store'
@@ -30,21 +30,13 @@ async function geocodeAddress(
   city: string,
   state: string,
 ): Promise<{ lat: number; lng: number }> {
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? ''
-  if (!key) return NIGERIA_CENTER
   try {
-    const q = encodeURIComponent(`${street}, ${city}, ${state}, Nigeria`)
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${q}&key=${key}`,
-    )
-    const data = await res.json() as {
-      status: string
-      results: Array<{ geometry: { location: { lat: number; lng: number } } }>
-    }
-    if (data.status === 'OK' && data.results.length) {
-      return data.results[0].geometry.location
-    }
+    const res = await mapsApi.geocode(`${street}, ${city}, ${state}, Nigeria`)
+    const loc = res.data.data.result?.geometry?.location
+    if (loc?.lat != null && loc?.lng != null) return { lat: loc.lat, lng: loc.lng }
   } catch { /* fall through */ }
+  // Fallback: rough Nigeria centroid — server-side geocoding on restaurant
+  // create will refine this if it fails here.
   return NIGERIA_CENTER
 }
 
@@ -445,16 +437,11 @@ function Step3Form({
       setSearching(true)
       setSearchErr('')
       try {
-        const res  = await fetch(`/api/places?q=${encodeURIComponent(q)}`)
-        const data = await res.json() as { suggestions?: ACSuggestion[]; status?: string }
-        if (data.status && data.status !== 'OK') {
-          setSearchErr(`Google returned: ${data.status}`)
-          setSug([]); setOpen(false)
-        } else {
-          setSug(data.suggestions ?? [])
-          setOpen((data.suggestions?.length ?? 0) > 0)
-        }
-      } catch (e) {
+        const res         = await mapsApi.placesAutocomplete(q)
+        const suggestions = res.data.data.suggestions ?? []
+        setSug(suggestions)
+        setOpen(suggestions.length > 0)
+      } catch {
         setSearchErr('Search failed — check your connection')
         setSug([]); setOpen(false)
       } finally {
@@ -479,11 +466,8 @@ function Step3Form({
     setSug([]); setOpen(false)
 
     try {
-      const res  = await fetch(`/api/places/details?placeId=${encodeURIComponent(s.place_id)}`)
-      const data = await res.json() as {
-        result?: { formatted_address?: string; address_components?: Array<{ long_name: string; types: string[] }> }
-      }
-      const comps = data.result?.address_components ?? []
+      const res    = await mapsApi.placeDetails(s.place_id)
+      const comps  = res.data.data.result?.address_components ?? []
       let num = '', road = '', sub = '', city = '', state = ''
       for (const c of comps) {
         if (c.types.includes('street_number'))               num   = c.long_name
