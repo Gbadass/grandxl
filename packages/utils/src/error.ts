@@ -54,5 +54,16 @@ export function parseApiError(error: unknown, fallback?: string): string {
     }
   }
 
+  // Plain JS Error thrown from a `mutationFn` (client-side validation like
+  // `throw new Error('Please verify your account first')`). The message IS
+  // the intended user-facing text — surface it directly.
+  //
+  // Guarded by `!err.response`: we only trust `.message` when the error is
+  // NOT an axios failure. Axios errors carry noisy default messages like
+  // "Request failed with status code 500" that we don't want reaching users.
+  if (error instanceof Error && error.message && !err.response) {
+    return error.message
+  }
+
   return generic
 }

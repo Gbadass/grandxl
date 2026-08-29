@@ -164,7 +164,7 @@ export function OnboardRiderSlideOver({
       void qc.invalidateQueries({ queryKey: ['admin', 'riders'] })
       onClose()
     },
-    onError: (e: unknown) => toast.error(parseApiError(e, e instanceof Error && e.message ? e.message : 'Failed to onboard rider')),
+    onError: (e: unknown) => toast.error(parseApiError(e, 'Failed to onboard rider')),
   })
 
   const canSubmit =
