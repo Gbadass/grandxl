@@ -15,6 +15,15 @@ interface Props {
   onClose: () => void
   selected: Address | null
   onSelect: (address: Address) => void
+  // 'pick' (default) — this sheet is choosing an address for a downstream
+  //   action like checkout. The GPS suggestion "Deliver here / Use this" is
+  //   meaningful because onSelect receives it and uses it immediately.
+  // 'manage' — /profile/addresses context. onSelect just closes the sheet;
+  //   there's no downstream action, so the ephemeral GPS suggestion has no
+  //   effect and confuses users ("I clicked Use this, nothing happened").
+  //   The banner is hidden in this mode; the user's expected flow is
+  //   "Add new address" → drop pin → save.
+  intent?: 'pick' | 'manage'
 }
 
 const LABEL_ICONS: Record<string, React.ReactNode> = {
@@ -322,7 +331,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
   )
 }
 
-export function AddressPickerSheet({ isOpen, onClose, selected, onSelect }: Props) {
+export function AddressPickerSheet({ isOpen, onClose, selected, onSelect, intent = 'pick' }: Props) {
   const { addresses, defaultAddressId } = useAddresses()
   const { mutate: deleteAddress } = useDeleteAddress()
   const { t } = useTranslation('addresses')
@@ -344,8 +353,10 @@ export function AddressPickerSheet({ isOpen, onClose, selected, onSelect }: Prop
       }
     : null
 
-  // Only show the suggestion if it isn't already selected
-  const showSuggestion = locationSuggestion !== null && selected?._id !== '__gps__'
+  // Only show the suggestion in 'pick' mode — see intent prop docs. In
+  // 'manage' mode there's no meaningful action for the ephemeral GPS pick.
+  const showSuggestion =
+    intent === 'pick' && locationSuggestion !== null && selected?._id !== '__gps__'
 
   function handleDelete(id: string) {
     deleteAddress(id)

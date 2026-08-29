@@ -209,6 +209,9 @@ export default function AddressesPage() {
         onClose={() => setAddSheetOpen(false)}
         selected={null}
         onSelect={() => setAddSheetOpen(false)}
+        // 'manage' — hides the ephemeral GPS "Deliver here / Use this" banner
+        // that has no persistent action on this page.
+        intent="manage"
       />
     </>
   )

@@ -198,9 +198,14 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
         className="h-full w-full"
       >
         {basemap === 'street' ? (
+          // Carto's Fastly-backed CDN — global POPs including Africa. OSM's
+          // own tile.openstreetmap.org routes through EU servers that time
+          // out from Nigerian networks. Same OSM DATA, better delivery.
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png"
+            subdomains={['a', 'b', 'c', 'd']}
+            maxZoom={20}
           />
         ) : (
           <TileLayer
