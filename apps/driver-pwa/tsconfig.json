@@ -10,7 +10,15 @@
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] },
     "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "noUnusedParameters": false,
+    // Vite handles compilation; tsc is used ONLY for type-checking here.
+    // Without this, a stray `tsc` (as opposed to `tsc --noEmit`) emits
+    // `.js` twins into `src/` that shadow the real `.tsx` sources because
+    // Vite prefers `.js` in module resolution. That happened previously
+    // and caused the login page to serve stale code that never picked up
+    // the parseApiError refactor — users saw "Something went wrong"
+    // instead of "Please wait 51 seconds…".
+    "noEmit": true
   },
   "include": ["src"],
   "exclude": ["src/sw.ts"],

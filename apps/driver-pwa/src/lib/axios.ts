@@ -37,28 +37,35 @@ instance.interceptors.response.use(
   },
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+    const status   = error.response?.status
+    const errMessage = (error.response?.data as { message?: string } | undefined)?.message
 
-    // Treat 401 (expired) and 403 (wrong-account token after cookie-clobber) the same way:
-    // try to silently refresh using the localStorage-stored rider refresh token first.
-    const isAuthError =
-      (error.response?.status === 401 || error.response?.status === 403) && !original._retry
+    // ACCOUNT_DELETED comes back with any status — check it BEFORE the auth
+    // branch so we never try to refresh a token for an account that's gone.
+    if (errMessage === 'ACCOUNT_DELETED') {
+      clearRiderToken()
+      useAuthStore.getState().clearAuth()
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error('This account has been removed. Contact support if you believe this is a mistake.', {
+          id: 'account-deleted',
+          duration: 6000,
+        })
+        setTimeout(() => { window.location.href = '/login' }, 1500)
+      }).catch(() => { window.location.href = '/login' })
+      return Promise.reject(error)
+    }
+
+    // Only 401 means "expired token — try refresh". 403 means "authenticated
+    // but not authorized for this specific resource" (e.g. the rider is NOT
+    // this order's assigned rider). Refreshing wouldn't change permissions;
+    // retrying just doubles the traffic and — with concurrent 403s — trips
+    // the short-window throttler on /auth/refresh, which then 429s and
+    // force-logs-the-rider-out. The 403 should be surfaced to the caller so
+    // the page can react (e.g. redirect to home with a "not your delivery"
+    // toast) instead of thrashing the auth flow.
+    const isAuthError = status === 401 && !original._retry
 
     if (isAuthError) {
-      // Account was permanently deleted — skip refresh entirely
-      const errMessage = (error.response?.data as { message?: string } | undefined)?.message
-      if (errMessage === 'ACCOUNT_DELETED') {
-        clearRiderToken()
-        useAuthStore.getState().clearAuth()
-        import('react-hot-toast').then(({ default: toast }) => {
-          toast.error('This account has been removed. Contact support if you believe this is a mistake.', {
-            id: 'account-deleted',
-            duration: 6000,
-          })
-          setTimeout(() => { window.location.href = '/login' }, 1500)
-        }).catch(() => { window.location.href = '/login' })
-        return Promise.reject(error)
-      }
-
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({

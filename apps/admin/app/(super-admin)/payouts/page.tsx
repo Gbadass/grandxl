@@ -418,10 +418,11 @@ export default function PayoutsPage() {
         ))}
       </div>
 
-      {/* Approve error */}
+      {/* Approve error — inline banner because rejection reasons are actionable
+          (Paystack balance, invalid account) and shouldn't disappear like a toast. */}
       {approveMutation.isError && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          Approval failed: {(approveMutation.error as Error).message}. Check your Paystack balance and try again.
+          Approval failed: {parseApiError(approveMutation.error, 'Unknown error')}. Check your Paystack balance and try again.
         </div>
       )}
 

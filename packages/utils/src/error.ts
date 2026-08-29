@@ -36,8 +36,13 @@ export function parseApiError(error: unknown, fallback?: string): string {
     return 'No internet connection. Please check your network.'
   }
 
-  // Timeout
-  if (err.code === 'ETIMEDOUT' || err.message?.includes('timeout')) {
+  // Timeout — axios also uses ECONNABORTED for timeouts (caught by the
+  // network check above); ETIMEDOUT is the Node-level equivalent. We used
+  // to also match any error whose message contained "timeout", but that
+  // false-positived on caller-thrown messages like `throw new Error('Payment
+  // timeout — please retry')` — those should surface via the plain-Error
+  // branch further down, not get replaced with our generic timeout string.
+  if (err.code === 'ETIMEDOUT') {
     return 'Request timed out. Please try again.'
   }
 

@@ -132,6 +132,14 @@ function ChatSection({ orderId, currentUserId, onFullChat }: { orderId: string; 
       setUnreadCount(data.unreadCount)
       return data
     },
+    // Don't retry client-permission errors — 403/404 mean this rider isn't
+    // authorised for this order's chat (already-reassigned, cancelled). Retrying
+    // just wastes requests and can trip the short-window throttler.
+    retry: (failureCount, err) => {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 403 || status === 404) return false
+      return failureCount < 3
+    },
   })
 
   // Mark read immediately when panel opens
@@ -349,21 +357,40 @@ export default function ActiveDeliveryPage() {
 
   const order = activeOrder?._id === orderId ? activeOrder : null
 
+  // Helper — a delivery this rider is no longer assigned to. Clears the stale
+  // local activeOrder and bounces to home with a message. Called from any
+  // fetch that comes back 403 on this order (the server's way of saying
+  // "you're not on this delivery anymore").
+  const handleUnassigned = useCallback(() => {
+    setActiveOrder(null)
+    toast.error(t('deliveryReassigned', 'This delivery is no longer assigned to you.'), {
+      id: `unassigned-${orderId}`,
+    })
+    navigate('/home', { replace: true })
+  }, [orderId, setActiveOrder, navigate, t])
+
   // Bootstrap: restore activeOrder from server on hard-refresh (Zustand resets on page load)
   useEffect(() => {
     if (order) return
     ridersApi.getActiveJob()
-      .then((res) => { if (res.data.data) setActiveOrder(res.data.data) })
+      .then((res) => {
+        if (res.data.data) setActiveOrder(res.data.data)
+      })
       .catch(() => undefined)
   }, [orderId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch customer contact so the call button works
+  // Fetch customer contact so the call button works. 403 here means the
+  // rider isn't (or is no longer) assigned to this order — surface via the
+  // unassigned handler instead of leaving the page silently unusable.
   useEffect(() => {
     if (!order) return
     ordersApi.getCustomerContact(order._id)
       .then((res) => setCustomerContact(res.data.data))
-      .catch(() => undefined)
-  }, [order?._id])
+      .catch((err: unknown) => {
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status === 403) handleUnassigned()
+      })
+  }, [order?._id, handleUnassigned])
 
   const isPendingPickup = order
     ? [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY].includes(order.status as OrderStatus)
@@ -462,6 +489,19 @@ export default function ActiveDeliveryPage() {
       sentinel?.release()
     }
   }, [order?._id])
+
+  // Map memos MUST be defined before any early return — Rules of Hooks. The
+  // previous layout had them after the `if (!order) return` below, so when
+  // `order` flipped null mid-lifecycle (forced logout, unassignment) React
+  // saw fewer hooks than the previous render and threw error #300.
+  const mapPoints = useMemo<[number, number][]>(() => [
+    ...(riderPos ? [riderPos] : []),
+    ...(destination ? [[destination.lat, destination.lng] as [number, number]] : []),
+  ], [riderPos, destination])
+  const mapCenter = useMemo<[number, number]>(
+    () => destination ? [destination.lat, destination.lng] : [9.0765, 7.3986],
+    [destination],
+  )
 
   if (!order) {
     return (
@@ -585,15 +625,6 @@ export default function ActiveDeliveryPage() {
       setActing(false)
     }
   }
-
-  const mapPoints = useMemo<[number, number][]>(() => [
-    ...(riderPos ? [riderPos] : []),
-    ...(destination ? [[destination.lat, destination.lng] as [number, number]] : []),
-  ], [riderPos, destination])
-  const mapCenter = useMemo<[number, number]>(
-    () => destination ? [destination.lat, destination.lng] : [9.0765, 7.3986],
-    [destination],
-  )
 
   return (
     <div className="min-h-full pb-6">
