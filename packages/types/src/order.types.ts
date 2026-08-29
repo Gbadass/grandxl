@@ -103,6 +103,16 @@ export interface Order {
   // restaurant engaged. Stays true even after later interaction so ops can
   // identify restaurants that consistently miss their alert.
   dispatchedWithoutRestaurantAck?: boolean
+  // Engagement stamps — restaurant clicked Accept (Confirmed) or Mark Ready.
+  // Used by the admin timeline to reconstruct what the restaurant did and when.
+  restaurantConfirmedAt?: Date | null
+  restaurantReadyAt?:     Date | null
+  // Dispatch stamps — surfaced on the admin ops timeline / rider tracking.
+  firstDispatchAt?:        Date | null
+  riderAssignedAt?:        Date | null
+  pickedUpAt?:             Date | null
+  dispatchRounds?:         number
+  dispatchBroadcastCount?: number
   country: string
   currency: string
   createdAt: Date

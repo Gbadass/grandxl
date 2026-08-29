@@ -4,6 +4,7 @@ import { Star, X, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { reviewsApi } from '@grandxl/api-client'
+import { parseApiError } from '@grandxl/utils'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -131,8 +132,8 @@ export function ReviewSheet({ orderId, riderId, isOpen, onClose }: ReviewSheetPr
         setRestaurantError(false)
         setComment('')
       }, 1800)
-    } catch {
-      toast.error(t('review.submitError'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('review.submitError')))
     } finally {
       setIsPending(false)
     }

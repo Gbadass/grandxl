@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { adminRidersApi } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import type { RiderUser } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { PageHeader } from '../../../../src/components/ui/PageHeader'
 import { StatusBadge } from '../../../../src/components/ui/StatusBadge'
@@ -59,7 +59,7 @@ export default function RiderDetailPage() {
       setAction(null)
       setReason('')
     },
-    onError: () => toast.error('Action failed — please try again'),
+    onError: (e) => toast.error(parseApiError(e, 'Action failed — please try again')),
   })
 
   if (isInitializing || isLoading) {

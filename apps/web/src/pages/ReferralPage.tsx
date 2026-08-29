@@ -5,8 +5,7 @@ import { Copy, Check, Share2, Users, Gift, ChevronRight, Ticket } from 'lucide-r
 import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
 import { referralsApi } from '@grandxl/api-client'
-import { formatMoney } from '@grandxl/utils'
-import { getApiErrorMessage } from '../lib/apiError'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -81,8 +80,8 @@ export default function ReferralPage() {
       setApplyInput('')
       void qc.invalidateQueries({ queryKey: ['referral-info'] })
     },
-    onError: (err) => {
-      toast.error(getApiErrorMessage(err, t('referral.applyError', 'Could not apply code — check and try again')))
+    onError: (err: unknown) => {
+      toast.error(parseApiError(err, t('referral.applyError', 'Could not apply code — check and try again')))
     },
   })
 

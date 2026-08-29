@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { adminReviewsApi } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import type { Review } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { DataTable, type Column } from '../../../src/components/ui/DataTable'
@@ -36,7 +37,7 @@ export default function ReviewsModerationPage() {
       toast.success(vars.isVisible ? 'Review restored' : 'Review hidden')
       void qc.invalidateQueries({ queryKey: ['admin', 'reviews', 'flagged'] })
     },
-    onError: () => toast.error('Failed to update review'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to update review')),
   })
 
   const columns: Column<Review>[] = [

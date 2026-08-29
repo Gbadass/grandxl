@@ -6,7 +6,7 @@ import { ChevronLeft, MapPin, Package, Clock, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ridersApi } from '@grandxl/api-client'
 import { useRiderStore } from '../store/rider.store'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { ROUTES } from '../router/routes'
 
 export default function JobDetailPage() {
@@ -49,8 +49,7 @@ export default function JobDetailPage() {
       setActiveOrder(order!)
       void navigate(`/delivery/${order!._id}`, { replace: true })
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg ?? t('job_accept_error'))
+      toast.error(parseApiError(err, t('job_accept_error')))
       setLoading(null)
     }
   }

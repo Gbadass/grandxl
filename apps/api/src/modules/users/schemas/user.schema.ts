@@ -158,3 +158,8 @@ UserSchema.index({ phone: 1 }, { unique: true, sparse: true })
 UserSchema.index({ roles: 1 })
 UserSchema.index({ isActive: 1 })
 UserSchema.index({ referralCode: 1 }, { unique: true, sparse: true })
+// Support admin order-ops search: aggregation $lookup joins users onto orders
+// then regex-matches customer.firstName / lastName. Without these, a common
+// name search scans the entire users collection per query.
+UserSchema.index({ firstName: 1 })
+UserSchema.index({ lastName: 1 })

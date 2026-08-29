@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
-import { adminOrdersApi } from '@grandxl/api-client'
-import { OrderStatus, UserRole } from '@grandxl/types'
-import type { Order } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { adminOrdersApi, type AdminOrderRow } from '@grandxl/api-client'
+import { OrderStatus, PaymentStatus, UserRole } from '@grandxl/types'
+import { formatMoney, parseApiError } from '@grandxl/utils'
+import { Search, X, Filter, Trash2, TriangleAlert, User as UserIcon, Store, Bike } from 'lucide-react'
 import { useAuthStore } from '../../../src/store/auth.store'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { DataTable, type Column } from '../../../src/components/ui/DataTable'
@@ -15,22 +16,51 @@ import { StatusBadge } from '../../../src/components/ui/StatusBadge'
 import '../../../src/lib/axios'
 
 const STATUS_TABS: { label: string; value: OrderStatus | undefined }[] = [
-  { label: 'All', value: undefined },
-  { label: 'Pending', value: OrderStatus.PENDING },
-  { label: 'Confirmed', value: OrderStatus.CONFIRMED },
-  { label: 'Preparing', value: OrderStatus.PREPARING },
-  { label: 'Picked up', value: OrderStatus.PICKED_UP },
-  { label: 'Delivered', value: OrderStatus.DELIVERED },
-  { label: 'Cancelled', value: OrderStatus.CANCELLED },
+  { label: 'All',        value: undefined },
+  { label: 'Pending',    value: OrderStatus.PENDING },
+  { label: 'Confirmed',  value: OrderStatus.CONFIRMED },
+  { label: 'Preparing',  value: OrderStatus.PREPARING },
+  { label: 'Ready',      value: OrderStatus.READY },
+  { label: 'Picked up',  value: OrderStatus.PICKED_UP },
+  { label: 'Delivered',  value: OrderStatus.DELIVERED },
+  { label: 'Cancelled',  value: OrderStatus.CANCELLED },
 ]
+
+const PAYMENT_FILTERS: { label: string; value: PaymentStatus | undefined }[] = [
+  { label: 'All payments', value: undefined },
+  { label: 'Completed',    value: PaymentStatus.COMPLETED },
+  { label: 'Pending',      value: PaymentStatus.PENDING },
+  { label: 'Failed',       value: PaymentStatus.FAILED },
+  { label: 'Refunded',     value: PaymentStatus.REFUNDED },
+]
+
+// Small debounce hook — coalesces search input keystrokes so we hit the API
+// ~250ms after the user stops typing. Prevents a query per keystroke while
+// still feeling live.
+function useDebounced<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(t)
+  }, [value, delayMs])
+  return debounced
+}
 
 export default function SuperAdminOrdersPage() {
   const router = useRouter()
   const { isAuthenticated, isInitializing, user } = useAuthStore()
   const qc = useQueryClient()
-  const [status, setStatus] = useState<OrderStatus | undefined>(undefined)
-  const [page, setPage] = useState(1)
-  const [confirmClear, setConfirmClear] = useState(false)
+
+  const [status, setStatus]                 = useState<OrderStatus   | undefined>(undefined)
+  const [paymentStatus, setPaymentStatus]   = useState<PaymentStatus | undefined>(undefined)
+  const [searchInput, setSearchInput]       = useState('')
+  const [page, setPage]                     = useState(1)
+  const [confirmClear, setConfirmClear]     = useState(false)
+  const search = useDebounced(searchInput.trim(), 250)
+
+  // Reset to page 1 whenever a filter or the search term changes — otherwise
+  // paginating away then refining a filter can land us on page 4 of 0 results.
+  useEffect(() => { setPage(1) }, [status, paymentStatus, search])
 
   const clearMutation = useMutation({
     mutationFn: () => adminOrdersApi.clearAll(),
@@ -40,7 +70,7 @@ export default function SuperAdminOrdersPage() {
       setConfirmClear(false)
       void qc.invalidateQueries({ queryKey: ['admin', 'orders'] })
     },
-    onError: () => toast.error('Failed to clear orders'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to clear orders')),
   })
 
   useEffect(() => {
@@ -48,112 +78,216 @@ export default function SuperAdminOrdersPage() {
     if (!isAuthenticated || !user?.roles?.includes(UserRole.SUPER_ADMIN)) router.replace('/auth/login')
   }, [isAuthenticated, isInitializing, user, router])
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'orders', status, page],
-    queryFn: () => adminOrdersApi.list({ status, page, limit: 20 }),
-    enabled: isAuthenticated,
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['admin', 'orders', { status, paymentStatus, search, page }],
+    queryFn:  () => adminOrdersApi.list({ status, paymentStatus, search: search || undefined, page, limit: 20 }),
+    enabled:  isAuthenticated,
   })
 
-  const columns: Column<Order>[] = [
+  const rows: AdminOrderRow[] = (data?.data?.data?.data ?? []) as AdminOrderRow[]
+  const total = data?.data?.data?.meta?.total ?? 0
+
+  const columns: Column<AdminOrderRow>[] = useMemo(() => [
     {
-      key: 'number',
-      header: 'Order #',
+      key:    'number',
+      header: 'Order',
       render: (o) => (
-        <span className="font-mono text-xs font-semibold text-gray-900">{o.orderNumber}</span>
+        <div className="flex flex-col">
+          <span className="font-mono text-xs font-semibold text-gray-900">{o.orderNumber}</span>
+          <span className="text-[10px] text-gray-400">{fmtRelative(o.createdAt)}</span>
+        </div>
       ),
     },
     {
-      key: 'status',
-      header: 'Status',
-      render: (o) => <StatusBadge label={o.status} orderStatus={o.status} />,
+      key:    'customer',
+      header: 'Customer',
+      render: (o) => (
+        <div className="flex items-start gap-2">
+          <UserIcon size={12} className="mt-1 shrink-0 text-gray-400" />
+          <div className="min-w-0 flex-col">
+            <span className="block truncate text-xs font-medium text-gray-800">
+              {o.customer ? `${o.customer.firstName} ${o.customer.lastName}` : '—'}
+            </span>
+            <span className="block truncate text-[10px] text-gray-400 tabular-nums">
+              {o.customer?.phone ?? ''}
+            </span>
+          </div>
+        </div>
+      ),
     },
     {
-      key: 'payment',
+      key:    'restaurant',
+      header: 'Restaurant',
+      render: (o) => (
+        <div className="flex items-center gap-2">
+          <Store size={12} className="shrink-0 text-gray-400" />
+          <span className="truncate text-xs font-medium text-gray-800">{o.restaurant?.name ?? '—'}</span>
+        </div>
+      ),
+    },
+    {
+      key:    'status',
+      header: 'Status',
+      render: (o) => (
+        <div className="flex flex-col items-start gap-0.5">
+          <StatusBadge label={o.status} orderStatus={o.status} />
+          {o.dispatchedWithoutRestaurantAck && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700">
+              ⚡ rider drove this
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key:    'payment',
       header: 'Payment',
       render: (o) => (
-        <StatusBadge label={o.payment.status} paymentStatus={o.payment.status} />
+        <div className="flex flex-col items-start gap-0.5">
+          <StatusBadge label={o.payment.status} paymentStatus={o.payment.status} />
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">{o.payment.method}</span>
+        </div>
       ),
     },
     {
-      key: 'total',
+      key:    'rider',
+      header: 'Rider',
+      render: (o) => (
+        <div className="flex items-center gap-2">
+          <Bike size={12} className="shrink-0 text-gray-400" />
+          <span className="truncate text-xs font-medium text-gray-800">
+            {o.rider
+              ? `${o.rider.firstName} ${o.rider.lastName}`
+              : o.status === OrderStatus.CANCELLED
+                ? <span className="text-gray-400">—</span>
+                : <span className="text-amber-600">Unassigned</span>}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key:    'total',
       header: 'Total',
       render: (o) => (
-        <span className="font-semibold">{formatMoney(o.pricing.total, o.currency)}</span>
+        <span className="font-semibold tabular-nums text-gray-900">{formatMoney(o.pricing.total, o.currency)}</span>
       ),
     },
-    {
-      key: 'items',
-      header: 'Items',
-      render: (o) => <span className="text-gray-500">{o.items.length} item(s)</span>,
-    },
-    {
-      key: 'date',
-      header: 'Date',
-      render: (o) => (
-        <span className="text-xs text-gray-400">
-          {new Date(o.createdAt).toLocaleDateString('en-NG', {
-            day: 'numeric',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </span>
-      ),
-    },
-  ]
+  ], [])
 
   if (isInitializing) return null
 
   return (
     <div>
+      {/* Header + destructive control */}
       <div className="flex items-start justify-between gap-4">
-        <PageHeader title="Orders" subtitle="All platform orders" />
+        <PageHeader title="Orders" subtitle="Search, drill in, and take action on any order across the platform" />
         <button
           onClick={() => setConfirmClear(true)}
-          className="mt-1 flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 hover:border-red-300"
+          className="mt-1 flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 hover:border-red-300 cursor-pointer"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-          </svg>
-          Clear All Orders
+          <Trash2 size={14} /> Clear all orders
         </button>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-2 border-b border-gray-200">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab.label}
-            onClick={() => { setStatus(tab.value); setPage(1) }}
-            className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-              status === tab.value
-                ? 'border-orange-600 text-orange-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+      {/* Search + filters row */}
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search order #, customer name / phone, or restaurant…"
+            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-9 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput('')}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="relative">
+          <Filter size={12} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <select
+            value={paymentStatus ?? ''}
+            onChange={(e) => setPaymentStatus((e.target.value || undefined) as PaymentStatus | undefined)}
+            className="rounded-xl border border-gray-200 bg-white py-2.5 pl-8 pr-8 text-sm font-medium text-gray-700 outline-none transition-colors focus:border-orange-400 focus:ring-2 focus:ring-orange-100 cursor-pointer"
           >
-            {tab.label}
-          </button>
-        ))}
+            {PAYMENT_FILTERS.map((f) => (
+              <option key={f.label} value={f.value ?? ''}>{f.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={(data?.data?.data?.data ?? []) as Order[]}
-        loading={isLoading}
-        total={data?.data?.data?.meta?.total}
-        page={page}
-        limit={20}
-        onPageChange={setPage}
-        onRowClick={(o) => router.push(`/orders/${o._id}`)}
-        emptyMessage="No orders found"
-      />
+      {/* Status tabs — quick lateral movement between order states. */}
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-gray-200">
+        {STATUS_TABS.map((tab) => {
+          const active = status === tab.value
+          return (
+            <button
+              key={tab.label}
+              onClick={() => setStatus(tab.value)}
+              className={`relative border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                active
+                  ? 'border-orange-600 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+              {active && (
+                <motion.span
+                  layoutId="active-tab-underline"
+                  className="absolute inset-x-0 -bottom-[2px] h-[2px] bg-orange-600"
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              )}
+            </button>
+          )
+        })}
 
+        {/* Result count on the right of tabs — tiny status line for ops. */}
+        <div className="ml-auto flex items-center py-2 text-xs tabular-nums text-gray-400">
+          {isFetching && !isLoading ? 'Updating…' : `${total.toLocaleString()} order${total === 1 ? '' : 's'}`}
+        </div>
+      </div>
+
+      <motion.div
+        key={`${status ?? 'all'}-${paymentStatus ?? 'all'}-${search}`}
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+      >
+        <DataTable
+          columns={columns}
+          data={rows}
+          loading={isLoading}
+          total={total}
+          page={page}
+          limit={20}
+          onPageChange={setPage}
+          onRowClick={(o) => router.push(`/orders/${o._id}`)}
+          emptyMessage={search ? `No orders match "${search}"` : 'No orders found'}
+        />
+      </motion.div>
+
+      {/* Destructive confirm — kept as-is, small polish. */}
       {confirmClear && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.15 }}
+            className="mx-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+          >
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-              <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-              </svg>
+              <TriangleAlert className="h-6 w-6 text-red-600" />
             </div>
             <h3 className="mb-1 text-lg font-semibold text-gray-900">Clear all system orders?</h3>
             <p className="mb-2 text-sm text-gray-500">
@@ -178,9 +312,23 @@ export default function SuperAdminOrdersPage() {
                 Cancel
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
     </div>
   )
+}
+
+// Compact relative time — "5m ago", "3h ago", "2d ago", or the locale date if older.
+function fmtRelative(iso: string | Date): string {
+  const ts   = typeof iso === 'string' ? new Date(iso).getTime() : iso.getTime()
+  const diff = Date.now() - ts
+  const min  = Math.floor(diff / 60_000)
+  if (min < 1)    return 'just now'
+  if (min < 60)   return `${min}m ago`
+  const hrs = Math.floor(min / 60)
+  if (hrs < 24)   return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 7)   return `${days}d ago`
+  return new Date(ts).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
 }

@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { platformConfigApi } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import '../../../src/lib/axios'
@@ -78,7 +78,7 @@ export default function PlatformSettingsPage() {
       toast.success('Platform settings saved')
       void qc.invalidateQueries({ queryKey: ['platform', 'config'] })
     },
-    onError: () => toast.error('Failed to save settings'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to save settings')),
   })
 
   const servicesMutation = useMutation({
@@ -88,7 +88,7 @@ export default function PlatformSettingsPage() {
       toast.success('Services updated')
       void qc.invalidateQueries({ queryKey: ['platform', 'config'] })
     },
-    onError: () => toast.error('Failed to update services'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to update services')),
   })
 
   function toggleService(id: keyof typeof services) {

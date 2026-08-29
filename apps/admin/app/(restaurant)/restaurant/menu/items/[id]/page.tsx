@@ -9,6 +9,7 @@ import { myRestaurantApi, menuApi, menuManagementApi, uploadsApi } from '@grandx
 import type { CreateMenuItemVariant, CreateMenuItemAddOn } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import type { MenuCategory } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../../../src/store/auth.store'
 import { PageHeader } from '../../../../../../src/components/ui/PageHeader'
 import '../../../../../../src/lib/axios'
@@ -204,8 +205,8 @@ export default function EditMenuItemPage() {
     try {
       const res = await uploadsApi.uploadMenuItemPhoto(file)
       setImageUrl(res.data.data.url)
-    } catch {
-      toast.error('Image upload failed')
+    } catch (e) {
+      toast.error(parseApiError(e, 'Image upload failed'))
     } finally {
       setImageUploading(false)
       e.target.value = ''
@@ -237,7 +238,7 @@ export default function EditMenuItemPage() {
       void qc.invalidateQueries({ queryKey: ['menu-items', restaurantId] })
       router.push('/restaurant/menu')
     },
-    onError: () => toast.error('Update failed'),
+    onError: (e) => toast.error(parseApiError(e, 'Update failed')),
   })
 
   function handleSubmit(e: React.FormEvent) {

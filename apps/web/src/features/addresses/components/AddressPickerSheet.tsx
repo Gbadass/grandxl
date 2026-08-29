@@ -4,6 +4,7 @@ import { MapPin, Home, Briefcase, Plus, Navigation, Trash2, Check, X, AlertCircl
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { Address } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAddresses, useAddAddress, useDeleteAddress } from '../hooks/useAddresses'
 import { useLocationStore } from '../../../store/location.store'
 import { reverseGeocode } from '../../../hooks/useDetectLocation'
@@ -165,7 +166,7 @@ function AddAddressForm({ onSaved, onCancel }: { onSaved: (addr: Address) => voi
           toast.success(t('addressSaved'))
           onSaved(res.data.data as Address)
         },
-        onError: () => toast.error(t('addressSaveError')),
+        onError: (err: unknown) => toast.error(parseApiError(err, t('addressSaveError'))),
       },
     )
   }

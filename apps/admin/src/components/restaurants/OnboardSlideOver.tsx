@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import dynamic from 'next/dynamic'
 import { adminRestaurantsApi, adminUsersApi, foodCategoriesApi } from '@grandxl/api-client'
 import type { User } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { AddressAutocomplete } from '../AddressAutocomplete'
 
 // S-URGENT-2: dynamic import — leaflet touches `window` at load.
@@ -168,10 +169,7 @@ export function OnboardSlideOver({ open, onClose }: Props) {
       void qc.invalidateQueries({ queryKey: ['admin', 'restaurants'] })
       onClose()
     },
-    onError: (err: { response?: { data?: { message?: string } } }) => {
-      const msg = err?.response?.data?.message
-      toast.error(Array.isArray(msg) ? msg[0] : (msg ?? 'Onboard failed'))
-    },
+    onError: (err: unknown) => toast.error(parseApiError(err, 'Onboard failed')),
   })
 
   // Sprint 13 (S13-6): per-step validators. Each returns the subset of errors

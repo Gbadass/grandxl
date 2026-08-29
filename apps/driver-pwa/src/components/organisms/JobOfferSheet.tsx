@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRiderStore } from '../../store/rider.store'
 import { ridersApi } from '@grandxl/api-client'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { startJobAlertLoop, stopJobAlertLoop } from '../../lib/alertSound'
 import type { Order } from '@grandxl/types'
 
@@ -69,7 +69,7 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
       const is409 = message.includes('409') || message.includes('conflict') || message.includes('already been accepted')
 
       if (!is409) {
-        toast.error(t('job_accept_error'))
+        toast.error(parseApiError(err, t('job_accept_error')))
         dismiss()
         return
       }
@@ -95,9 +95,9 @@ function Sheet({ order, onDismiss }: { order: Order; onDismiss: () => void }) {
         // an informative toast so rider doesn't think their tap did nothing.
         toast(t('job_taken_by_other', 'Another rider took this job.'), { icon: '🏁' })
         dismiss()
-      } catch {
+      } catch (fallbackErr) {
         // Couldn't reach the server to disambiguate — assume lost, tell the rider.
-        toast.error(t('job_accept_error'))
+        toast.error(parseApiError(fallbackErr, t('job_accept_error')))
         dismiss()
       }
     },

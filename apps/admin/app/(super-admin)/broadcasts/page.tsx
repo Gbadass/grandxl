@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Megaphone, Users, Send, Loader2, AlertTriangle, Link as LinkIcon } from 'lucide-react'
 import { adminBroadcastsApi, type BroadcastHistoryRow } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import '../../../src/lib/axios'
@@ -72,8 +73,7 @@ export default function BroadcastsPage() {
       void qc.invalidateQueries({ queryKey: ['admin', 'broadcasts'] })
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(typeof msg === 'string' ? msg : 'Broadcast failed')
+      toast.error(parseApiError(e, 'Broadcast failed'))
       setConfirmOpen(false)
     },
   })

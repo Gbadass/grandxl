@@ -7,7 +7,7 @@ import { ChevronLeft, Building2, Pencil, X, CheckCircle2, Search, Loader2 } from
 import toast from 'react-hot-toast'
 import { riderPayoutsApi } from '@grandxl/api-client'
 import type { BankAccount, NigerianBank, PayoutRequest } from '@grandxl/api-client'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
 
 // ─── Animation variants ──────────────────────────────────────────────────────
@@ -128,8 +128,8 @@ function BankAccountForm({ initial, onSaved, onCancel }: BankFormProps) {
       await queryClient.invalidateQueries({ queryKey: ['rider-bank-account'] })
       toast.success(t('bank_account_saved'))
       onSaved()
-    } catch {
-      toast.error(t('bank_account_save_error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('bank_account_save_error')))
     } finally {
       setSaving(false)
     }
@@ -395,8 +395,8 @@ export default function PayoutsPage() {
       setHistoryPage(1)
       toast.success(t('payout_submitted'))
       setShowConfirmSheet(false)
-    } catch {
-      toast.error(t('payout_submit_error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('payout_submit_error')))
     } finally {
       setRequesting(false)
     }

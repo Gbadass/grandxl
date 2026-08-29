@@ -1223,19 +1223,85 @@ export class OrdersService {
 
   async getAdminOrders(
     query: QueryOrdersDto,
-  ): Promise<{ data: OrderDocument[]; meta: { total: number; page: number; limit: number; totalPages: number } }> {
-    const filter: Record<string, unknown> = { systemClearedAt: null }
-    if (query.status) filter.status = query.status
-
+  ): Promise<{ data: unknown[]; meta: { total: number; page: number; limit: number; totalPages: number } }> {
     const page = query.page ?? 1
     const limit = query.limit ?? 20
     const skip = (page - 1) * limit
 
-    const [data, total] = await Promise.all([
-      this.orderModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      this.orderModel.countDocuments(filter),
-    ])
-    return { data: data as unknown as OrderDocument[], meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+    // Base filter — applied BEFORE $lookup for query efficiency; join collections
+    // are only searched over rows that already passed status / payment filters.
+    const baseMatch: Record<string, unknown> = { systemClearedAt: null }
+    if (query.status)                            baseMatch.status           = query.status
+    if (query.paymentStatus)                     baseMatch['payment.status'] = query.paymentStatus
+
+    // Post-join search filter. Regex-escape the user input so a stray `.` or `*`
+    // doesn't blow up query cost or accidentally match everything.
+    const escapedSearch = query.search?.trim()
+      ? query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      : null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pipeline: any[] = [
+      { $match: baseMatch },
+      // Enrich with customer, restaurant, rider (rider is a User doc, not Rider).
+      { $lookup: { from: 'users',       localField: 'customerId',   foreignField: '_id', as: 'customer'   } },
+      { $lookup: { from: 'restaurants', localField: 'restaurantId', foreignField: '_id', as: 'restaurant' } },
+      { $lookup: { from: 'users',       localField: 'riderId',      foreignField: '_id', as: 'rider'      } },
+      { $unwind: { path: '$customer',   preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$restaurant', preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$rider',      preserveNullAndEmptyArrays: true } },
+    ]
+
+    if (escapedSearch) {
+      pipeline.push({
+        $match: {
+          $or: [
+            { orderNumber:            { $regex: escapedSearch, $options: 'i' } },
+            { 'customer.phone':       { $regex: escapedSearch, $options: 'i' } },
+            { 'customer.firstName':   { $regex: escapedSearch, $options: 'i' } },
+            { 'customer.lastName':    { $regex: escapedSearch, $options: 'i' } },
+            { 'restaurant.name':      { $regex: escapedSearch, $options: 'i' } },
+          ],
+        },
+      })
+    }
+
+    // Trim populated docs to just what the admin list card needs. Keeps payload
+    // small when the customer/restaurant/rider have big embedded arrays.
+    pipeline.push({
+      $project: {
+        orderNumber: 1, status: 1, createdAt: 1, updatedAt: 1,
+        items: 1, pricing: 1, payment: 1,
+        deliveryAddress: 1, restaurantPickupAddress: 1,
+        restaurantAckedAt: 1, dispatchedWithoutRestaurantAck: 1,
+        riderAssignedAt: 1, pickedUpAt: 1, actualDeliveryAt: 1,
+        cancelReason: 1, cancelledBy: 1,
+        // Data-minimization: list rows don't render email — keep the payload
+        // small AND avoid needlessly shipping PII across the wire. Detail
+        // projection below DOES include email since the participant card renders it.
+        customer:   { _id: 1, firstName: 1, lastName: 1, phone: 1 },
+        restaurant: { _id: 1, name: 1, ownerId: 1 },
+        rider:      { _id: 1, firstName: 1, lastName: 1, phone: 1 },
+      },
+    })
+
+    // $facet — one round-trip gets both the page and the total.
+    pipeline.push({
+      $facet: {
+        data: [
+          { $sort: { createdAt: -1 } },
+          { $skip: skip },
+          { $limit: limit },
+        ],
+        totalArr: [{ $count: 'value' }],
+      },
+    })
+
+    const [result] = await this.orderModel.aggregate(pipeline)
+    const data     = (result?.data ?? []) as unknown[]
+    const total    = (result?.totalArr?.[0]?.value ?? 0) as number
+
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
   }
 
   async getOrderById(orderId: string): Promise<OrderDocument> {
@@ -1243,6 +1309,44 @@ export class OrdersService {
     const order = await this.orderModel.findById(orderId).lean()
     if (!order) throw new NotFoundException('Order not found')
     return order as unknown as OrderDocument
+  }
+
+  // Enriched projection for the admin detail page. Same shape as the list
+  // rows produced by getAdminOrders — customer/restaurant/rider joined,
+  // populated fields trimmed. Saves the admin console from three follow-up
+  // fetches per detail view.
+  async getAdminOrderById(orderId: string): Promise<unknown> {
+    if (!Types.ObjectId.isValid(orderId)) throw new NotFoundException('Order not found')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pipeline: any[] = [
+      { $match: { _id: new Types.ObjectId(orderId), systemClearedAt: null } },
+      { $lookup: { from: 'users',       localField: 'customerId',   foreignField: '_id', as: 'customer'   } },
+      { $lookup: { from: 'restaurants', localField: 'restaurantId', foreignField: '_id', as: 'restaurant' } },
+      { $lookup: { from: 'users',       localField: 'riderId',      foreignField: '_id', as: 'rider'      } },
+      { $unwind: { path: '$customer',   preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$restaurant', preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$rider',      preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          orderNumber: 1, status: 1, createdAt: 1, updatedAt: 1,
+          items: 1, pricing: 1, payment: 1,
+          deliveryAddress: 1, restaurantPickupAddress: 1,
+          deliveryInstructions: 1, customerNote: 1,
+          restaurantAckedAt: 1, restaurantConfirmedAt: 1, restaurantReadyAt: 1,
+          firstDispatchAt: 1, riderAssignedAt: 1, pickedUpAt: 1, actualDeliveryAt: 1,
+          dispatchedWithoutRestaurantAck: 1, dispatchRounds: 1, dispatchBroadcastCount: 1,
+          cancelReason: 1, cancelledBy: 1, scheduledFor: 1,
+          currency: 1, country: 1, estimatedTime: 1, isFarDelivery: 1, deliveryDistanceKm: 1,
+          coupon: 1, ratedAt: 1,
+          customer:   { _id: 1, firstName: 1, lastName: 1, phone: 1, email: 1 },
+          restaurant: { _id: 1, name: 1, ownerId: 1, address: 1 },
+          rider:      { _id: 1, firstName: 1, lastName: 1, phone: 1 },
+        },
+      },
+    ]
+    const [order] = await this.orderModel.aggregate(pipeline)
+    if (!order) throw new NotFoundException('Order not found')
+    return order
   }
 
   async getOrderByIdForOwner(orderId: string, requester: JwtPayload): Promise<OrderDocument> {

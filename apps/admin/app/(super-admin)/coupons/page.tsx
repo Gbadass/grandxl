@@ -8,7 +8,7 @@ import { platformConfigApi } from '@grandxl/api-client'
 import type { CreateCouponDto } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import type { Coupon } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { StatusBadge } from '../../../src/components/ui/StatusBadge'
@@ -62,7 +62,7 @@ export default function CouponsPage() {
       setForm(EMPTY_FORM)
       setShowForm(false)
     },
-    onError: () => toast.error('Failed to create coupon'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to create coupon')),
   })
 
   const deactivateMutation = useMutation({
@@ -72,7 +72,7 @@ export default function CouponsPage() {
       void qc.invalidateQueries({ queryKey: ['platform', 'coupons'] })
       setDeactivateId(null)
     },
-    onError: () => toast.error('Failed to deactivate'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to deactivate')),
   })
 
   const columns: Column<Coupon>[] = [

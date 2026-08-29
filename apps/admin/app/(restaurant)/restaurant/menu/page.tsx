@@ -13,7 +13,7 @@ import {
 import { myRestaurantApi, menuApi, menuManagementApi } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import type { MenuCategory, MenuItem } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { ConfirmDialog } from '../../../../src/components/ui/ConfirmDialog'
 import '../../../../src/lib/axios'
@@ -293,7 +293,7 @@ export default function RestaurantMenuPage() {
       setShowAddCategory(false)
       setNewCategoryName('')
     },
-    onError: () => toast.error('Failed to add category'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to add category')),
   })
 
   const renameMutation = useMutation({
@@ -304,7 +304,7 @@ export default function RestaurantMenuPage() {
       void qc.invalidateQueries({ queryKey: ['menu-categories', restaurantId] })
       setRenamingCategory(null)
     },
-    onError: () => toast.error('Rename failed'),
+    onError: (e) => toast.error(parseApiError(e, 'Rename failed')),
   })
 
   const deleteMutation = useMutation({
@@ -320,7 +320,7 @@ export default function RestaurantMenuPage() {
       void qc.invalidateQueries({ queryKey: ['menu-items', restaurantId] })
       setDeleteItem(null)
     },
-    onError: () => toast.error('Delete failed'),
+    onError: (e) => toast.error(parseApiError(e, 'Delete failed')),
   })
 
   const toggleAvailability = useMutation({
@@ -330,7 +330,7 @@ export default function RestaurantMenuPage() {
     },
     onSettled: () => setTogglingItemId(null),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['menu-items', restaurantId] }),
-    onError: () => toast.error('Failed to update availability'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to update availability')),
   })
 
   // ── Sprint 12 (S12-7): bulk mutations ──────────────────────────────────────
@@ -341,13 +341,6 @@ export default function RestaurantMenuPage() {
 
   function invalidateItems() { void qc.invalidateQueries({ queryKey: ['menu-items', restaurantId] }) }
 
-  function serverMsg(e: unknown, fallback: string): string {
-    const msg = (e as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
-    if (Array.isArray(msg)) return msg[0] ?? fallback
-    if (typeof msg === 'string') return msg
-    return fallback
-  }
-
   const bulkAvailabilityMutation = useMutation({
     mutationFn: ({ isAvailable }: { isAvailable: boolean }) =>
       menuManagementApi.bulkSetAvailability(restaurantId!, Array.from(selectedIds), isAvailable),
@@ -357,7 +350,7 @@ export default function RestaurantMenuPage() {
       setSelectedIds(new Set())
       invalidateItems()
     },
-    onError: (e) => toast.error(serverMsg(e, 'Bulk update failed')),
+    onError: (e) => toast.error(parseApiError(e, 'Bulk update failed')),
   })
 
   // Sprint 12 (S12-8): bulk feature/unfeature
@@ -370,7 +363,7 @@ export default function RestaurantMenuPage() {
       setSelectedIds(new Set())
       invalidateItems()
     },
-    onError: (e) => toast.error(serverMsg(e, 'Bulk feature update failed')),
+    onError: (e) => toast.error(parseApiError(e, 'Bulk feature update failed')),
   })
 
   const bulkCategoryMutation = useMutation({
@@ -383,7 +376,7 @@ export default function RestaurantMenuPage() {
       setBulkAction(null)
       invalidateItems()
     },
-    onError: (e) => toast.error(serverMsg(e, 'Bulk move failed')),
+    onError: (e) => toast.error(parseApiError(e, 'Bulk move failed')),
   })
 
   const bulkPriceMutation = useMutation({
@@ -396,7 +389,7 @@ export default function RestaurantMenuPage() {
       setBulkAction(null)
       invalidateItems()
     },
-    onError: (e) => toast.error(serverMsg(e, 'Bulk price update failed')),
+    onError: (e) => toast.error(parseApiError(e, 'Bulk price update failed')),
   })
 
   const bulkDeleteMutation = useMutation({
@@ -409,7 +402,7 @@ export default function RestaurantMenuPage() {
       setBulkAction(null)
       invalidateItems()
     },
-    onError: (e) => toast.error(serverMsg(e, 'Bulk delete failed')),
+    onError: (e) => toast.error(parseApiError(e, 'Bulk delete failed')),
   })
 
   function toggleSelection(itemId: string) {

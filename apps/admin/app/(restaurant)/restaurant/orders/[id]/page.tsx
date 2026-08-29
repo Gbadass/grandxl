@@ -9,7 +9,7 @@ import { OrderStatus, UserRole } from '@grandxl/types'
 import type { CancelReasonCode } from '@grandxl/types'
 import { CANCEL_REASON_OPTIONS, labelForCode } from '../../../../../src/lib/cancelReasons'
 import { printOrderTicket } from '../../../../../src/lib/orderTicket'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../../src/store/auth.store'
 import { PageHeader } from '../../../../../src/components/ui/PageHeader'
 import { StatusBadge } from '../../../../../src/components/ui/StatusBadge'
@@ -74,7 +74,7 @@ export default function RestaurantOrderDetailPage() {
       toast.success('Order status updated')
       void qc.invalidateQueries({ queryKey: ['order', id] })
     },
-    onError: () => toast.error('Failed to update status'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to update status')),
   })
 
   const cancelMutation = useMutation({
@@ -94,7 +94,7 @@ export default function RestaurantOrderDetailPage() {
       setCancelNote('')
       void qc.invalidateQueries({ queryKey: ['order', id] })
     },
-    onError: () => toast.error('Failed to cancel order'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to cancel order')),
   })
 
   // Auto-refresh this order on status change OR rider assignment

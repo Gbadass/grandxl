@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { restaurantCouponsApi } from '@grandxl/api-client'
 import type { Coupon } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { ConfirmDialog } from '../../../../src/components/ui/ConfirmDialog'
 import '../../../../src/lib/axios'
 
@@ -255,11 +256,7 @@ export default function PromotionsPage() {
       setErrors({})
       void qc.invalidateQueries({ queryKey: ['restaurant', 'coupons'] })
     },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-        ?? 'Could not create promotion'
-      toast.error(msg)
-    },
+    onError: (err: unknown) => toast.error(parseApiError(err, 'Could not create promotion')),
   })
 
   const deactivateMutation = useMutation({
@@ -269,7 +266,7 @@ export default function PromotionsPage() {
       setConfirmingId(null)
       void qc.invalidateQueries({ queryKey: ['restaurant', 'coupons'] })
     },
-    onError: () => toast.error('Could not deactivate'),
+    onError: (e) => toast.error(parseApiError(e, 'Could not deactivate')),
   })
 
   // ── Validation ─────────────────────────────────────────────────────────────

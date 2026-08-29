@@ -6,6 +6,7 @@ import { Bike, Car, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { authApi, ridersApi } from '@grandxl/api-client'
 import { VehicleType } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
 import { useAuthStore } from '../store/auth.store'
 import { saveRiderToken } from '../lib/riderAuth'
@@ -97,10 +98,8 @@ export default function RegisterDriverPage() {
       if (msg?.includes('expired')) {
         toast.error(t('expired_error'))
         void navigate(ROUTES.LOGIN, { replace: true })
-      } else if (msg) {
-        toast.error(msg)
       } else {
-        toast.error(t('submit_error'))
+        toast.error(parseApiError(err, t('submit_error')))
       }
     } finally {
       setLoading(false)

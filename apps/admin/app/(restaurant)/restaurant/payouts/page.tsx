@@ -16,19 +16,10 @@ import {
 } from '@grandxl/api-client'
 import { OrderStatus, UserRole } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { PageHeader } from '../../../../src/components/ui/PageHeader'
 import '../../../../src/lib/axios'
-
-// Small inline helper — pulls the server's error message out of an axios error
-// with a fallback. Matches the shape returned by the api's global exception filter.
-function apiErr(e: unknown, fallback: string): string {
-  const msg = (e as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message
-  if (Array.isArray(msg)) return msg[0] ?? fallback
-  if (typeof msg === 'string') return msg
-  return fallback
-}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -473,7 +464,7 @@ function BankAccountModal({ currency, initial, onClose, onSaved }: {
       toast.success('Bank account saved')
       onSaved()
     },
-    onError: (e: unknown) => toast.error(apiErr(e, 'Could not save bank account')),
+    onError: (e: unknown) => toast.error(parseApiError(e, 'Could not save bank account')),
   })
 
   return (
@@ -589,7 +580,7 @@ function RequestPayoutModal({ currency, availableKobo, onClose, onDone }: {
       toast.success('Payout requested — awaiting admin approval')
       onDone()
     },
-    onError: (e: unknown) => toast.error(apiErr(e, 'Could not request payout')),
+    onError: (e: unknown) => toast.error(parseApiError(e, 'Could not request payout')),
   })
 
   return (

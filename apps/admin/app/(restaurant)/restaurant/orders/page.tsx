@@ -9,7 +9,7 @@ import { OrderStatus, UserRole } from '@grandxl/types'
 import type { CancelReasonCode, Order } from '@grandxl/types'
 import { CANCEL_REASON_OPTIONS, labelForCode } from '../../../../src/lib/cancelReasons'
 import { printOrderTicket } from '../../../../src/lib/orderTicket'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { PageHeader } from '../../../../src/components/ui/PageHeader'
 import { DataTable, type Column } from '../../../../src/components/ui/DataTable'
@@ -124,7 +124,7 @@ export default function RestaurantOrdersPage() {
       toast.success('Order accepted')
       void qc.invalidateQueries({ queryKey: ['my-orders-live', restaurantId] })
     },
-    onError: () => toast.error('Failed to accept order'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to accept order')),
   })
 
   const clearMutation = useMutation({
@@ -135,7 +135,7 @@ export default function RestaurantOrdersPage() {
       setConfirmClear(false)
       void qc.invalidateQueries({ queryKey: ['my-orders'] })
     },
-    onError: () => toast.error('Failed to clear history'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to clear history')),
   })
 
   const rejectMutation = useMutation({
@@ -157,7 +157,7 @@ export default function RestaurantOrdersPage() {
       setRejectNote((prev) => ({ ...prev, [orderId]: '' }))
       void qc.invalidateQueries({ queryKey: ['my-orders-live', restaurantId] })
     },
-    onError: () => toast.error('Failed to reject order'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to reject order')),
   })
 
   const columns: Column<Order>[] = [

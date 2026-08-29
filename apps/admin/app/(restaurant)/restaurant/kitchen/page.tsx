@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { myRestaurantApi, ordersApi } from '@grandxl/api-client'
 import { OrderStatus, UserRole } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { socket } from '../../../../src/lib/socket'
 import { printOrderTicket } from '../../../../src/lib/orderTicket'
@@ -129,7 +130,7 @@ export default function KitchenDisplayPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['my-orders-live', restaurantId] })
     },
-    onError: () => toast.error('Could not advance order'),
+    onError: (e) => toast.error(parseApiError(e, 'Could not advance order')),
   })
 
   // ── Grouping ─────────────────────────────────────────────────────────

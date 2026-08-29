@@ -23,7 +23,7 @@ import L from 'leaflet'
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import { OrderStatus } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useOrder } from '../features/orders/hooks/useOrders'
 import { socket } from '../lib/socket'
 import { ReviewSheet } from '../features/reviews/components/ReviewSheet'
@@ -965,8 +965,8 @@ export default function OrderTrackingPage() {
       await ordersApi.cancel(order!._id, 'Cancelled by customer')
       await queryClient.invalidateQueries({ queryKey: ['order', id] })
       toast.success(t('cancelSuccess'))
-    } catch {
-      toast.error(t('cancelError'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('cancelError')))
     } finally {
       setCancelling(false)
     }
@@ -987,8 +987,8 @@ export default function OrderTrackingPage() {
       toast.success(t('refundSuccess'))
       setRefundSheetOpen(false)
       setRefundReason('')
-    } catch {
-      toast.error(t('refundError'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('refundError')))
     } finally {
       setRefunding(false)
     }

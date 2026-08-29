@@ -25,6 +25,7 @@ import { useLogout } from '../features/auth/hooks/useLogout'
 import { useThemeStore } from '../store/theme.store'
 import { ROUTES } from '../router/routes'
 import { usersApi } from '@grandxl/api-client'
+import { parseApiError } from '@grandxl/utils'
 import { notify } from '../utils/toast'
 import i18n from '../i18n'
 
@@ -226,8 +227,8 @@ function EditProfileSheet({ open, onClose }: EditProfileSheetProps) {
       notify.success(t('profileUpdated', 'Profile updated successfully'))
       onClose()
     },
-    onError: () => {
-      notify.error(t('profileUpdateFailed', 'Failed to update profile. Please try again.'))
+    onError: (err: unknown) => {
+      notify.error(parseApiError(err, t('profileUpdateFailed', 'Failed to update profile. Please try again.')))
     },
   })
 

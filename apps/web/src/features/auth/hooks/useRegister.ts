@@ -1,16 +1,12 @@
 import { useMutation } from '@tanstack/react-query'
-import { AxiosError } from 'axios'
 import { useTranslation } from 'react-i18next'
 import { authApi, type RegisterDto } from '@grandxl/api-client'
-import type { ApiError } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../store/auth.store'
 import { notify } from '../../../utils/toast'
 
 export function getRegisterError(err: unknown): string {
-  if (err instanceof AxiosError) {
-    return (err.response?.data as ApiError | undefined)?.message ?? 'Registration failed'
-  }
-  return 'Registration failed'
+  return parseApiError(err, 'Registration failed')
 }
 
 export function useRegister() {

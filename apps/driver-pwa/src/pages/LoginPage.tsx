@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Bike, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { authApi } from '@grandxl/api-client'
+import { parseApiError } from '@grandxl/utils'
 import { ROUTES } from '../router/routes'
 
 const schema = z.object({
@@ -39,8 +40,8 @@ export default function LoginPage() {
       await authApi.sendOtp({ phone: values.phone })
       toast.success(t('otp_sent', { phone: values.phone }))
       void navigate(ROUTES.OTP_VERIFY, { state: { phone: values.phone } })
-    } catch {
-      toast.error(t('common:error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('common:error')))
     } finally {
       setLoading(false)
     }

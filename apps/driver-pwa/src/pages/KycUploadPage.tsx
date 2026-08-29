@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { CreditCard, Car, Camera, CheckCircle2, Upload, AlertCircle, ChevronRight, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { uploadsApi, ridersApi } from '@grandxl/api-client'
+import { parseApiError } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
 import { ROUTES } from '../router/routes'
 
@@ -71,8 +72,8 @@ export default function KycUploadPage() {
     try {
       const res = await uploadsApi.uploadRiderDocument(file)
       setSlot(key, { url: res.data.data.url, uploading: false })
-    } catch {
-      setSlot(key, { uploading: false, error: t('upload_failed') })
+    } catch (err) {
+      setSlot(key, { uploading: false, error: parseApiError(err, t('upload_failed')) })
     }
   }
 
@@ -90,8 +91,8 @@ export default function KycUploadPage() {
       setRider(res.data.data)
       toast.success(t('docs_submitted'))
       void navigate(ROUTES.PENDING_VERIFICATION, { replace: true })
-    } catch {
-      toast.error(t('docs_submit_error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('docs_submit_error')))
     } finally {
       setSubmitting(false)
     }

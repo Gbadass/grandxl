@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import { ordersApi, paymentsApi, couponsApi, platformApi, walletApi } from '@grandxl/api-client'
 import { PaymentMethod, OrderStatus } from '@grandxl/types'
 import type { Address, CouponValidationResult } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useCartStore } from '../features/cart/store/cart.store'
 import { useAddresses } from '../features/addresses/hooks/useAddresses'
 import { AddressPickerSheet } from '../features/addresses/components/AddressPickerSheet'
@@ -16,7 +16,6 @@ import { TopUpSheet } from '../features/wallet/components/TopUpSheet'
 import { useLocationStore } from '../store/location.store'
 import { useAuthStore } from '../store/auth.store'
 import { ROUTES } from '../router/routes'
-import { getApiErrorMessage } from '../lib/apiError'
 
 // Fallbacks used only until the platform pricing API responds
 const DEFAULT_SERVICE_FEE_PERCENT = 5
@@ -184,7 +183,7 @@ export default function CheckoutPage() {
       toast.success(t('checkout:couponApplied'))
     } catch (err: unknown) {
       setAppliedCoupon(null)
-      toast.error(getApiErrorMessage(err, t('checkout:invalidCoupon')))
+      toast.error(parseApiError(err, t('checkout:invalidCoupon')))
     } finally {
       setCouponLoading(false)
     }
@@ -374,12 +373,12 @@ export default function CheckoutPage() {
       // like "This address is 6.2 km from the restaurant — outside their 5 km
       // normal range. Please acknowledge and retry." Pull the two numbers out
       // and open the confirm modal instead of just toasting.
-      const msg = getApiErrorMessage(err, '')
+      const msg = parseApiError(err, '')
       const match = /is\s+([\d.]+)\s+km\s+.*outside their\s+([\d.]+)\s+km/i.exec(msg)
       if (match && !opts?.farDeliveryAcknowledged) {
         setFarDeliveryPrompt({ message: msg, distanceKm: match[1] ?? null, radiusKm: match[2] ?? null })
       } else {
-        toast.error(getApiErrorMessage(err, t('common:error')))
+        toast.error(parseApiError(err, t('common:error')))
       }
       // On any error, unlock so user can try again
       isSubmittingRef.current = false

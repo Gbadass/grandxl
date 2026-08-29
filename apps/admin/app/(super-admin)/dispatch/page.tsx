@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { adminOrdersApi, analyticsApi, type ReassignCandidate } from '@grandxl/api-client'
 import { OrderStatus, UserRole } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -347,8 +347,7 @@ function ReassignRiderModal({ order, onClose, onSuccess }: {
       .then((res) => { if (!cancelled) setCandidates(res.data.data) })
       .catch((err: unknown) => {
         if (cancelled) return
-        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-        setLoadError(typeof msg === 'string' ? msg : 'Could not load rider list')
+        setLoadError(parseApiError(err, 'Could not load rider list'))
       })
     return () => { cancelled = true }
   }, [order._id])
@@ -362,10 +361,7 @@ function ReassignRiderModal({ order, onClose, onSuccess }: {
       toast.success('Rider reassigned')
       onSuccess()
     },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(typeof msg === 'string' ? msg : 'Reassign failed')
-    },
+    onError: (err: unknown) => toast.error(parseApiError(err, 'Reassign failed')),
   })
 
   const vehicleIcon = (v: string) => v === 'car' ? Car : Bike

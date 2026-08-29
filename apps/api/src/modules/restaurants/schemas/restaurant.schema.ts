@@ -247,3 +247,7 @@ RestaurantSchema.index({ rating: -1 })
 
 // Full-text search (Part 3 — used by SearchModule)
 RestaurantSchema.index({ name: 'text', description: 'text', cuisine: 'text' })
+// Plain b-tree on name: admin order-ops search does $regex on restaurant.name
+// after $lookup. Regex doesn't hit the text index above; without a b-tree, a
+// name search full-scans the restaurants collection per matched order.
+RestaurantSchema.index({ name: 1 })

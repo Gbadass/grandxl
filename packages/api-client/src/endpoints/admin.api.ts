@@ -11,7 +11,7 @@ import type {
   Coupon,
   BankDetails,
 } from '@grandxl/types'
-import type { RestaurantApprovalStatus, OrderStatus, UserRole } from '@grandxl/types'
+import type { RestaurantApprovalStatus, OrderStatus, PaymentStatus, UserRole } from '@grandxl/types'
 
 // ── Admin — Restaurants ──────────────────────────────────────────────────────
 
@@ -147,17 +147,35 @@ export const adminRidersApi = {
 // ── Admin — Orders ───────────────────────────────────────────────────────────
 
 export interface AdminOrderQueryDto {
-  status?: OrderStatus
-  page?: number
-  limit?: number
+  status?:        OrderStatus
+  paymentStatus?: PaymentStatus
+  search?:        string
+  page?:          number
+  limit?:         number
+}
+
+// Enriched row returned by GET /admin/orders and GET /admin/orders/:id — the
+// aggregation joins customer, restaurant, and rider so consumers can render
+// name/phone without follow-up fetches. Everything on the base Order plus
+// these three.
+//
+// **PROJECTION WARNING**: `customer.email` is only populated by the DETAIL
+// endpoint (GET /admin/orders/:id). The LIST endpoint (GET /admin/orders)
+// intentionally drops it for PII data-minimization. If you're consuming a list
+// row, don't read `.customer?.email` — it will always be undefined even for
+// customers who have an email on file.
+export interface AdminOrderRow extends Order {
+  customer:   { _id: string; firstName: string; lastName: string; phone: string | null; email?: string } | null
+  restaurant: { _id: string; name: string; ownerId?: string } | null
+  rider:      { _id: string; firstName: string; lastName: string; phone: string | null } | null
 }
 
 export const adminOrdersApi = {
   list: (params?: AdminOrderQueryDto) =>
-    getClient().get<PaginatedResponse<Order>>('/admin/orders', { params }),
+    getClient().get<PaginatedResponse<AdminOrderRow>>('/admin/orders', { params }),
 
   getById: (id: string) =>
-    getClient().get<ApiResponse<Order>>(`/admin/orders/${id}`),
+    getClient().get<ApiResponse<AdminOrderRow>>(`/admin/orders/${id}`),
 
   clearAll: () =>
     getClient().delete<ApiResponse<{ cleared: number }>>('/admin/orders/all'),
@@ -186,6 +204,37 @@ export interface ReassignCandidate {
   vehicleType:  string
   vehiclePlate: string | null
   distanceKm:   number | null
+}
+
+// ── Admin — Audit logs ──────────────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  _id:         string
+  actorId:     string
+  actorEmail?: string
+  action:      string
+  targetType:  string
+  targetId?:   string
+  metadata?:   Record<string, unknown>
+  ipAddress?:  string
+  userAgent?:  string
+  createdAt:   string
+}
+
+export interface AuditLogQueryDto {
+  actorId?:    string
+  targetType?: string
+  targetId?:   string
+  action?:     string
+  from?:       string
+  to?:         string
+  page?:       number
+  limit?:      number
+}
+
+export const adminAuditApi = {
+  list: (params?: AuditLogQueryDto) =>
+    getClient().get<PaginatedResponse<AuditLogEntry>>('/admin/audit-logs', { params }),
 }
 
 // ── Admin — Reviews ──────────────────────────────────────────────────────────

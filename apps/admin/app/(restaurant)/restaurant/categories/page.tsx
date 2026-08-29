@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { myRestaurantApi, foodCategoriesApi } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import type { FoodCategory } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { PageHeader } from '../../../../src/components/ui/PageHeader'
 import { ConfirmDialog } from '../../../../src/components/ui/ConfirmDialog'
@@ -66,7 +67,7 @@ export default function FoodCategoriesPage() {
       setImageUrl('')
       setShowForm(false)
     },
-    onError: () => toast.error('Failed to create category'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to create category')),
   })
 
   const updateMutation = useMutation({
@@ -80,14 +81,14 @@ export default function FoodCategoriesPage() {
       qc.invalidateQueries({ queryKey: ['food-categories'] })
       setEditTarget(null)
     },
-    onError: () => toast.error('Failed to update category'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to update category')),
   })
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       foodCategoriesApi.update(id, { isActive }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['food-categories'] }),
-    onError: () => toast.error('Failed to toggle category'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to toggle category')),
   })
 
   const deleteMutation = useMutation({
@@ -97,7 +98,7 @@ export default function FoodCategoriesPage() {
       qc.invalidateQueries({ queryKey: ['food-categories'] })
       setDeleteTarget(null)
     },
-    onError: () => toast.error('Failed to delete category'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to delete category')),
   })
 
   const startEdit = (cat: FoodCategory) => {

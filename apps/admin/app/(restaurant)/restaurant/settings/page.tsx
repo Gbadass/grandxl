@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { myRestaurantApi, uploadsApi, type UpdateRestaurantDto } from '@grandxl/api-client'
 import { UserRole } from '@grandxl/types'
 import type { OpeningHours, BankDetails } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import {
   User, Image as ImageIcon, MapPin, Truck, Clock, CreditCard,
@@ -263,8 +264,8 @@ export default function RestaurantSettingsPage() {
       setCoverImageUrl(res.data.data.url)
       markDirty()
       toast.success('Cover image uploaded')
-    } catch {
-      toast.error('Upload failed — must be JPG, PNG or WebP under 5 MB.')
+    } catch (e) {
+      toast.error(parseApiError(e, 'Upload failed — must be JPG, PNG or WebP under 5 MB.'))
     } finally {
       setCoverUploading(false)
       e.target.value = ''
@@ -280,8 +281,8 @@ export default function RestaurantSettingsPage() {
       setLogoUrl(res.data.data.url)
       markDirty()
       toast.success('Logo uploaded')
-    } catch {
-      toast.error('Upload failed — must be JPG, PNG or WebP under 5 MB.')
+    } catch (e) {
+      toast.error(parseApiError(e, 'Upload failed — must be JPG, PNG or WebP under 5 MB.'))
     } finally {
       setLogoUploading(false)
       e.target.value = ''
@@ -317,8 +318,8 @@ export default function RestaurantSettingsPage() {
       }
       markDirty()
       toast.success(`${toUpload.length} photo${toUpload.length === 1 ? '' : 's'} added — save to publish`)
-    } catch {
-      toast.error('Upload failed — files must be JPG, PNG or WebP under 5 MB.')
+    } catch (e) {
+      toast.error(parseApiError(e, 'Upload failed — files must be JPG, PNG or WebP under 5 MB.'))
     } finally {
       setGalleryUploading(false)
     }
@@ -437,7 +438,7 @@ export default function RestaurantSettingsPage() {
       setDirty(false)
       void qc.invalidateQueries({ queryKey: ['my-restaurants'] })
     },
-    onError: () => toast.error('Save failed — please try again'),
+    onError: (e) => toast.error(parseApiError(e, 'Save failed — please try again')),
   })
 
   // ── Loading skeleton ─────────────────────────────────────────────────────

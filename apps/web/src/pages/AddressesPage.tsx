@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, MapPin, Home, Briefcase, Star, Trash2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Address } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAddresses, useDeleteAddress, useSetDefaultAddress } from '../features/addresses/hooks/useAddresses'
 import { AddressPickerSheet } from '../features/addresses/components/AddressPickerSheet'
 
@@ -137,7 +138,7 @@ export default function AddressesPage() {
   function handleSetDefault(id: string) {
     setDefault(id, {
       onSuccess: () => toast.success(t('defaultUpdated')),
-      onError: () => toast.error(t('defaultUpdateError')),
+      onError: (err: unknown) => toast.error(parseApiError(err, t('defaultUpdateError'))),
     })
   }
 

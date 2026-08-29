@@ -6,6 +6,7 @@ import { Bike, Car, AlertCircle, ChevronRight, LogOut } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ridersApi, authApi } from '@grandxl/api-client'
 import { VehicleType } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
 import { useAuthStore } from '../store/auth.store'
 import { loadRiderToken, saveRiderToken, clearRiderToken } from '../lib/riderAuth'
@@ -77,8 +78,8 @@ export default function RegisterRiderPage() {
 
       toast.success(t('register_success'))
       void navigate(ROUTES.KYC_UPLOAD, { replace: true })
-    } catch {
-      toast.error(t('register_error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('register_error')))
     } finally {
       setLoading(false)
     }

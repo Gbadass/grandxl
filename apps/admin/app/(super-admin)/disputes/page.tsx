@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { disputesApi } from '@grandxl/api-client'
 import type { Dispute, DisputeStatus } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import '../../../src/lib/axios'
 
@@ -170,12 +171,7 @@ export default function AdminDisputesPage() {
       setReviewState(null)
       void qc.invalidateQueries({ queryKey: ['admin', 'disputes'] })
     },
-    onError: (err: unknown) => {
-      const msg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        'Could not resolve dispute'
-      toast.error(msg)
-    },
+    onError: (err: unknown) => toast.error(parseApiError(err, 'Could not resolve dispute')),
   })
 
   function openReview(dispute: Dispute) {

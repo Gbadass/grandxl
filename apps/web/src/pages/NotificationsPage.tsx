@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { NotificationType } from '@grandxl/types'
 import { notificationsApi, usersApi } from '@grandxl/api-client'
 import type { Notification } from '@grandxl/api-client'
+import { parseApiError } from '@grandxl/utils'
 
 // ── Relative time helper ───────────────────────────────────────────────────────
 
@@ -178,8 +179,8 @@ export default function NotificationsPage() {
       void queryClient.invalidateQueries({ queryKey: ['notifications'] })
       toast.success(t('markAllRead'))
     },
-    onError: () => {
-      toast.error(t('common:error', 'Something went wrong'))
+    onError: (err: unknown) => {
+      toast.error(parseApiError(err, t('common:error', 'Something went wrong')))
     },
   })
 
@@ -225,8 +226,8 @@ export default function NotificationsPage() {
 
       await usersApi.saveWebPushSubscription({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } })
       toast.success(t('pushEnabled'))
-    } catch {
-      toast.error(t('pushError'))
+    } catch (err: unknown) {
+      toast.error(parseApiError(err, t('pushError')))
     } finally {
       setEnablingPush(false)
     }

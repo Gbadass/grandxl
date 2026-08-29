@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
 import { walletApi } from '@grandxl/api-client'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 
 const PRESET_AMOUNTS_KOBO = [50_000, 100_000, 200_000, 500_000] // ₦500, ₦1000, ₦2000, ₦5000
 const MIN_AMOUNT_KOBO = 100 // ₦1
@@ -56,8 +56,8 @@ export function TopUpSheet({ onClose, suggestedKobo }: TopUpSheetProps) {
       const authUrl = res.data.data.authorizationUrl
       window.location.href = authUrl
     },
-    onError: () => {
-      toast.error(t('wallet.topUpError', 'Could not initiate top-up. Please try again.'))
+    onError: (err: unknown) => {
+      toast.error(parseApiError(err, t('wallet.topUpError', 'Could not initiate top-up. Please try again.')))
     },
   })
 

@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { myRestaurantApi, ordersApi } from '@grandxl/api-client'
 import { OrderStatus, RestaurantApprovalStatus, UserRole } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { StatusBadge } from '../../../../src/components/ui/StatusBadge'
 import { socket } from '../../../../src/lib/socket'
@@ -259,7 +259,7 @@ export default function RestaurantDashboardPage() {
       toast.success(isOpen ? 'Restaurant is now open' : 'Restaurant is now closed')
       void qc.invalidateQueries({ queryKey: ['my-restaurants'] })
     },
-    onError: () => toast.error('Failed to update status'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to update status')),
   })
 
   const submitReviewMutation = useMutation({
@@ -268,7 +268,7 @@ export default function RestaurantDashboardPage() {
       toast.success('Submitted for review')
       void qc.invalidateQueries({ queryKey: ['my-restaurants'] })
     },
-    onError: () => toast.error('Submission failed'),
+    onError: (e) => toast.error(parseApiError(e, 'Submission failed')),
   })
 
   const acceptMutation = useMutation({
@@ -279,7 +279,7 @@ export default function RestaurantDashboardPage() {
       void qc.invalidateQueries({ queryKey: ['my-orders', restaurantId, 'pending'] })
       void qc.invalidateQueries({ queryKey: ['my-orders', restaurantId, 'active'] })
     },
-    onError: () => toast.error('Failed to accept order'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to accept order')),
   })
 
   const rejectMutation = useMutation({
@@ -292,7 +292,7 @@ export default function RestaurantDashboardPage() {
       toast.success('Order rejected')
       void qc.invalidateQueries({ queryKey: ['my-orders', restaurantId, 'pending'] })
     },
-    onError: () => toast.error('Failed to reject order'),
+    onError: (e) => toast.error(parseApiError(e, 'Failed to reject order')),
   })
 
   const pendingList = (pendingOrdersData?.data?.data?.data ?? []) as Order[]

@@ -7,9 +7,12 @@ import {
   Body,
   Param,
   Query,
+  Req,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common'
+import type { Request } from 'express'
+import { AuditService } from '../audit/audit.service'
 import {
   ApiTags,
   ApiBearerAuth,
@@ -26,14 +29,17 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { Idempotent } from '../../common/decorators/idempotent.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
-import { UserRole } from '@grandxl/types'
+import { UserRole, OrderStatus } from '@grandxl/types'
 import type { JwtPayload } from '@grandxl/types'
 
 @ApiTags('Orders')
 @ApiBearerAuth()
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly audit:         AuditService,
+  ) {}
 
   // ── Customer — place and view their orders ───────────────────────
 
@@ -113,7 +119,30 @@ export class OrdersController {
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateOrderStatusDto,
+    @Req() req: Request,
   ) {
+    // Super-admin transitions (Force pickup / delivered / cancel from the ops
+    // console) route through this shared endpoint. Log the INTENT before the
+    // service call so that failed attempts (invalid transition, 409 concurrent
+    // edit) still leave a record — the audit trail exists to answer "who tried
+    // to do what", not just "what succeeded".
+    // Customer/restaurant/rider role transitions are NOT logged here; those
+    // are normal business events and would flood the audit collection.
+    const isAdmin = user.roles.includes(UserRole.SUPER_ADMIN)
+    if (isAdmin) {
+      void this.audit.log({
+        actorId:    user.sub,
+        ipAddress:  (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip,
+        userAgent:  req.headers['user-agent'],
+        action:     dto.status === OrderStatus.CANCELLED ? 'orders.admin_cancel' : 'orders.admin_status_change',
+        targetType: 'order',
+        targetId:   id,
+        metadata:   {
+          to:           dto.status,
+          cancelReason: dto.cancelReason ?? null,
+        },
+      })
+    }
     return this.ordersService.updateStatus(id, dto, user)
   }
 

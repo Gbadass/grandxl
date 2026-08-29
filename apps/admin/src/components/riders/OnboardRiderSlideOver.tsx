@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { adminRidersApi, adminUsersApi } from '@grandxl/api-client'
 import type { PaginatedResponse, Rider, User } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 
 type VehicleType = 'motorcycle' | 'bicycle' | 'car'
 
@@ -163,7 +164,7 @@ export function OnboardRiderSlideOver({
       void qc.invalidateQueries({ queryKey: ['admin', 'riders'] })
       onClose()
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to onboard rider'),
+    onError: (e: unknown) => toast.error(parseApiError(e, e instanceof Error && e.message ? e.message : 'Failed to onboard rider')),
   })
 
   const canSubmit =

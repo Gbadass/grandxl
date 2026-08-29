@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { Bell, MapPin, StickyNote, Check, X, Volume2 } from 'lucide-react'
 import { stopLoopAlarm, primeAudio, isAudioUnlocked, startLoopAlarm } from '../lib/alertSound'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { ordersApi } from '@grandxl/api-client'
 import { OrderStatus } from '@grandxl/types'
 import type { Order } from '@grandxl/types'
@@ -118,10 +118,7 @@ export function RestaurantOrderModal({ order, onClose }: Props) {
       dismiss()
       router.push(`/restaurant/orders/${order._id}`)
     },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg ?? 'Could not accept — try again.')
-    },
+    onError: (err: unknown) => toast.error(parseApiError(err, 'Could not accept — try again.')),
   })
 
   const rejectMutation = useMutation({
@@ -134,7 +131,7 @@ export function RestaurantOrderModal({ order, onClose }: Props) {
       toast.success('Order rejected.')
       dismiss()
     },
-    onError: () => toast.error('Could not reject — try again.'),
+    onError: (e) => toast.error(parseApiError(e, 'Could not reject — try again.')),
   })
 
   const isPending = confirmMutation.isPending || rejectMutation.isPending

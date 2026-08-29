@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { Check, Loader2, X } from 'lucide-react'
 import { UserRole } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../src/store/auth.store'
 import { adminPayoutsApi } from '@grandxl/api-client'
 import type { PayoutRequest, PayoutRequestForAdmin, PayoutEntityType } from '@grandxl/api-client'
@@ -165,8 +165,7 @@ export default function PayoutsPage() {
       void queryClient.invalidateQueries({ queryKey: ['admin-payouts'] })
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(typeof msg === 'string' ? msg : 'Batch approve failed')
+      toast.error(parseApiError(e, 'Batch approve failed'))
       setBatchConfirmOpen(false)
     },
   })

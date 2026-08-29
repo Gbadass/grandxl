@@ -9,9 +9,24 @@ interface AxiosLike {
   message?: string
 }
 
-export function parseApiError(error: unknown): string {
+// Extract a human-readable error message from an Axios / fetch failure.
+//
+// Priority (best → worst):
+//   1. Network error — no response ever came back → helpful diagnostic
+//   2. Timeout — request never completed → helpful diagnostic
+//   3. Server responded with a message (string or class-validator array)
+//   4. Server responded with an `errors` array (custom shape)
+//   5. Caller-supplied `fallback` — context-specific ("Failed to assign rider")
+//   6. Generic "Something went wrong" if the caller passed nothing
+//
+// The `fallback` ONLY replaces step 6 — network/timeout/server-message
+// diagnostics are ALWAYS surfaced to the user because they carry more info
+// than any static string a caller could invent.
+export function parseApiError(error: unknown, fallback?: string): string {
+  const generic = fallback ?? 'Something went wrong. Please try again.'
+
   if (error === null || error === undefined) {
-    return 'Something went wrong. Please try again.'
+    return generic
   }
 
   const err = error as AxiosLike
@@ -32,12 +47,12 @@ export function parseApiError(error: unknown): string {
 
     if (typeof data.message === 'string') return data.message
 
-    if (Array.isArray(data.message)) return data.message[0] ?? 'Something went wrong.'
+    if (Array.isArray(data.message)) return data.message[0] ?? generic
 
     if (Array.isArray(data.errors) && data.errors.length > 0) {
-      return data.errors[0] ?? 'Something went wrong.'
+      return data.errors[0] ?? generic
     }
   }
 
-  return 'Something went wrong. Please try again.'
+  return generic
 }

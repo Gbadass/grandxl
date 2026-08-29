@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { ridersApi } from '@grandxl/api-client'
 import type { Order } from '@grandxl/types'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
 import { useAuthStore } from '../store/auth.store'
 import { primeAudio, isAudioUnlocked } from '../lib/alertSound'
@@ -33,8 +33,8 @@ function OnlineMegaToggle() {
       setOnline(!isOnline)
       void qc.invalidateQueries({ queryKey: ['available-jobs'] })
       toast.success(isOnline ? t('offline_toast') : t('online_toast'))
-    } catch {
-      toast.error(t('status_error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('status_error')))
     } finally {
       setToggling(false)
     }
@@ -171,8 +171,8 @@ const JobCard = React.forwardRef<HTMLDivElement, { order: Order; onAccepted: (o:
       onAccepted(order)
       toast.success(t('job_accepted'))
     },
-    onError: () => {
-      toast.error(t('job_taken'))
+    onError: (err: unknown) => {
+      toast.error(parseApiError(err, t('job_taken')))
       removePendingJob(order._id)
     },
     onSettled: () => setActing(null),

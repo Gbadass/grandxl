@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { adminRestaurantsApi } from '@grandxl/api-client'
 import { RestaurantApprovalStatus, UserRole } from '@grandxl/types'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../../../../src/store/auth.store'
 import { PageHeader } from '../../../../src/components/ui/PageHeader'
 import { StatusBadge } from '../../../../src/components/ui/StatusBadge'
@@ -53,7 +54,7 @@ export default function RestaurantDetailPage() {
       setAction(null)
       setReason('')
     },
-    onError: () => toast.error('Action failed — please try again'),
+    onError: (e) => toast.error(parseApiError(e, 'Action failed — please try again')),
   })
 
   if (isInitializing || isLoading) {

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { adminRefundsApi } from '@grandxl/api-client'
 import type { RefundRequest, RefundStatus } from '@grandxl/api-client'
+import { parseApiError } from '@grandxl/utils'
 import { PageHeader } from '../../../src/components/ui/PageHeader'
 import { ConfirmDialog } from '../../../src/components/ui/ConfirmDialog'
 import '../../../src/lib/axios'
@@ -65,11 +66,7 @@ export default function AdminRefundsPage() {
       setDecisionState(null)
       qc.invalidateQueries({ queryKey: ['admin', 'refunds'] })
     },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-        ?? 'Decision failed'
-      toast.error(msg)
-    },
+    onError: (err: unknown) => toast.error(parseApiError(err, 'Decision failed')),
   })
 
   return (

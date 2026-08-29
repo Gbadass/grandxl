@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { adminUsersApi, adminSupportApi, type AdminCreateUserDto } from '@grandxl/api-client'
-import { formatMoney } from '@grandxl/utils'
+import { formatMoney, parseApiError } from '@grandxl/utils'
 import { UserRole } from '@grandxl/types'
 import type { User } from '@grandxl/types'
 import { useAuthStore } from '../../../src/store/auth.store'
@@ -389,13 +389,7 @@ export default function UsersPage() {
       setConfirm(null)
       setSelectedUser(null)
     },
-    onError: (err: unknown) => {
-      const msg =
-        err instanceof Error && 'response' in err
-          ? ((err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Action failed. Please try again.')
-          : 'Action failed. Please try again.'
-      toast.error(msg)
-    },
+    onError: (err: unknown) => toast.error(parseApiError(err, 'Action failed. Please try again.')),
   })
 
   const createMutation = useMutation({
@@ -407,13 +401,7 @@ export default function UsersPage() {
       setCreateForm({ firstName: '', lastName: '', phone: '', email: '', password: '', roles: [UserRole.CUSTOMER], country: 'NG' })
       setCreateError('')
     },
-    onError: (err: unknown) => {
-      const msg =
-        err instanceof Error && 'response' in err
-          ? ((err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Failed to create user.')
-          : 'Failed to create user.'
-      setCreateError(msg)
-    },
+    onError: (err: unknown) => setCreateError(parseApiError(err, 'Failed to create user.')),
   })
 
   function handleCreateSubmit(e: React.FormEvent) {
@@ -959,10 +947,7 @@ function EmergencyCreditModal({ user, onClose, onDone }: {
       toast.success(`Credited ${formatMoney(res.data.data.creditedKobo, 'NGN')} to ${user.firstName || 'user'}'s wallet`)
       onDone()
     },
-    onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(typeof msg === 'string' ? msg : 'Emergency credit failed')
-    },
+    onError: (e: unknown) => toast.error(parseApiError(e, 'Emergency credit failed')),
   })
 
   return (

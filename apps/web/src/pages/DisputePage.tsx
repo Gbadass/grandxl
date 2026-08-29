@@ -6,6 +6,7 @@ import { ChevronLeft, CheckCircle2, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { disputesApi } from '@grandxl/api-client'
 import type { DisputeType } from '@grandxl/api-client'
+import { parseApiError } from '@grandxl/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,8 +50,8 @@ export default function DisputePage() {
       setTimeout(() => {
         void navigate(-1)
       }, 3000)
-    } catch {
-      toast.error(t('dispute.submitError', 'Could not submit your report. Please try again.'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('dispute.submitError', 'Could not submit your report. Please try again.')))
     } finally {
       setSubmitting(false)
     }

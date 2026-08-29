@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, ShieldCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { authApi } from '@grandxl/api-client'
+import { parseApiError } from '@grandxl/utils'
 import { useAuthStore } from '../store/auth.store'
 import { saveRiderToken } from '../lib/riderAuth'
 import { ROUTES } from '../router/routes'
@@ -80,11 +81,11 @@ export default function OtpVerifyPage() {
         toast.success(t('verified_welcome'))
         void navigate(ROUTES.HOME, { replace: true })
       }
-    } catch {
+    } catch (err) {
       setIsError(true)
       setOtp(Array(OTP_LENGTH).fill(''))
       inputRefs.current[0]?.focus()
-      toast.error(t('invalid_code'))
+      toast.error(parseApiError(err, t('invalid_code')))
     } finally {
       setLoading(false)
     }
@@ -96,8 +97,8 @@ export default function OtpVerifyPage() {
     try {
       await authApi.sendOtp({ phone })
       toast.success(t('otp_sent', { phone }))
-    } catch {
-      toast.error(t('common:error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('common:error')))
     }
   }
 

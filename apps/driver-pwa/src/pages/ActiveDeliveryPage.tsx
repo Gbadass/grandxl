@@ -11,7 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ordersApi, ridersApi, chatApi, uploadsApi } from '@grandxl/api-client'
 import type { ChatMessage, CustomerContact } from '@grandxl/api-client'
 import { OrderStatus, PaymentMethod } from '@grandxl/types'
-import { formatMoney, isWithinRadius } from '@grandxl/utils'
+import { formatMoney, isWithinRadius, parseApiError } from '@grandxl/utils'
 import { useRiderStore } from '../store/rider.store'
 import { useAuthStore } from '../store/auth.store'
 import { ROUTES } from '../router/routes'
@@ -493,8 +493,8 @@ export default function ActiveDeliveryPage() {
       const res = await ordersApi.updateStatus(order!._id, { status: OrderStatus.PICKED_UP })
       setActiveOrder(res.data.data)
       toast.success(t('picked_up_success'))
-    } catch {
-      toast.error(t('update_error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('update_error')))
     } finally {
       setActing(false)
     }
@@ -533,8 +533,8 @@ export default function ActiveDeliveryPage() {
       setActiveOrder(null)
       toast.success(t('delivered_success'))
       void navigate(ROUTES.HOME, { replace: true })
-    } catch {
-      toast.error(t('update_error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('update_error')))
     } finally {
       setActing(false)
     }
@@ -552,8 +552,8 @@ export default function ActiveDeliveryPage() {
     try {
       const res = await uploadsApi.uploadDeliveryProof(file)
       setProofUrl(res.data.data.url)
-    } catch {
-      toast.error('Proof upload failed. Try again.')
+    } catch (err) {
+      toast.error(parseApiError(err, 'Proof upload failed. Try again.'))
       setProofPreview(null)
     } finally {
       setUploadingProof(false)
@@ -579,8 +579,8 @@ export default function ActiveDeliveryPage() {
       setProofUrl(null)
       toast.success(t('delivered_success'))
       void navigate(ROUTES.HOME, { replace: true })
-    } catch {
-      toast.error(t('update_error'))
+    } catch (err) {
+      toast.error(parseApiError(err, t('update_error')))
     } finally {
       setActing(false)
     }

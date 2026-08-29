@@ -47,10 +47,10 @@ export class AdminOrdersController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get any order by ID (admin)' })
-  @ApiOkResponse({ description: 'Order details' })
+  @ApiOperation({ summary: 'Get any order by ID (admin, enriched with customer/restaurant/rider)' })
+  @ApiOkResponse({ description: 'Order details with joined participant data' })
   async getOne(@Param('id', ParseObjectIdPipe) id: string) {
-    return this.ordersService.getOrderById(id)
+    return this.ordersService.getAdminOrderById(id)
   }
 
   @Post(':id/redispatch')
