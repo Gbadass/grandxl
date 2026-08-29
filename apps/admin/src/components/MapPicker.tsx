@@ -85,6 +85,22 @@ function CenterTracker({ onMove }: { onMove: (lat: number, lng: number) => void 
   return null
 }
 
+// Force Leaflet to recompute container size after mount. When MapContainer
+// initialises inside an animated sheet/modal or a Next.js dynamic-import
+// loading boundary, the map measures 0×0 before the container settles and
+// never requests tiles — user sees a blank area with a working pin. Multiple
+// deferred invalidateSize calls cover the range of settle timings.
+function InvalidateSizeOnMount() {
+  const map = useMap()
+  useEffect(() => {
+    const timers = [80, 300, 700].map((ms) =>
+      setTimeout(() => map.invalidateSize(), ms),
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [map])
+  return null
+}
+
 export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: Props) {
   const startLat = initialLat ?? NIGERIA_CENTER.lat
   const startLng = initialLng ?? NIGERIA_CENTER.lng
@@ -197,6 +213,7 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
           <RecenterOnPropChange lat={initialLat} lng={initialLng} lastEmittedRef={lastEmittedRef} />
         )}
         <CenterTracker onMove={handleMove} />
+        <InvalidateSizeOnMount />
       </MapContainer>
     )
   }

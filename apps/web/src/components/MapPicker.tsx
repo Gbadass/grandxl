@@ -76,6 +76,23 @@ function CenterTracker({ onMove }: { onMove: (lat: number, lng: number) => void 
   return null
 }
 
+// Force Leaflet to recompute its container size after mount. When MapContainer
+// initialises inside an animated sheet/modal (Framer Motion's enter animation
+// starts at y:100% or scale:0.96), the map measures 0×0 before the sheet has
+// settled and never requests tiles — the user sees a blank grey area with a
+// working pin. Multiple deferred invalidateSize calls cover the range of
+// sheet-open timings without needing to observe the animation directly.
+function InvalidateSizeOnMount() {
+  const map = useMap()
+  useEffect(() => {
+    const timers = [80, 300, 700].map((ms) =>
+      setTimeout(() => map.invalidateSize(), ms),
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [map])
+  return null
+}
+
 export function MapPicker({ initialLat, initialLng, onChange, heightPx = 320 }: Props) {
   const startLat = initialLat ?? NIGERIA_CENTER.lat
   const startLng = initialLng ?? NIGERIA_CENTER.lng
@@ -167,6 +184,7 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 320 }: 
           <RecenterOnPropChange lat={initialLat} lng={initialLng} lastEmittedRef={lastEmittedRef} />
         )}
         <CenterTracker onMove={handleMove} />
+        <InvalidateSizeOnMount />
       </MapContainer>
     )
   }
