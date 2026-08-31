@@ -66,7 +66,10 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL}
         VITE_SENTRY_DSN_WEB: ${VITE_SENTRY_DSN_WEB}
-        # VITE_GOOGLE_MAPS_KEY dropped — maps now proxy through the API.
+        # Client-side Maps JavaScript SDK key. Restrict to Maps JavaScript
+        # API + grandxl.com referrers in Google Cloud Console. If missing,
+        # picker falls back to Carto tiles.
+        VITE_GOOGLE_MAPS_JS_KEY: ${VITE_GOOGLE_MAPS_JS_KEY}
     container_name: grandxl-web
     restart: always
     networks:
@@ -78,7 +81,9 @@ services:
       dockerfile: apps/admin/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        # NEXT_PUBLIC_GOOGLE_MAPS_KEY dropped — maps proxy through the API.
+        # Same as web — restrict to Maps JavaScript API + admin.grandxl.com
+        # referrers. If missing, picker falls back to Carto tiles.
+        NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY}
     container_name: grandxl-admin
     restart: always
     networks:

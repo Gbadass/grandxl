@@ -19,6 +19,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Loader2, Map as MapIcon, Satellite, Maximize2, Check, X } from 'lucide-react'
 import { mapsApi } from '@grandxl/api-client'
+import { GoogleTileLayer, hasGoogleMapsKey } from './GoogleTileLayer'
 
 // Fix Leaflet's default icon paths (same fix as DispatchMap)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -198,21 +199,34 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
         className="h-full w-full"
       >
         {basemap === 'street' ? (
-          // Carto's Fastly-backed CDN — global POPs including Africa. OSM's
-          // own tile.openstreetmap.org routes through EU servers that time
-          // out from Nigerian networks. Same OSM DATA, better delivery.
-          <TileLayer
-            attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png"
-            subdomains={['a', 'b', 'c', 'd']}
-            maxZoom={20}
-          />
+          hasGoogleMapsKey ? (
+            // Google Maps SDK tiles — POI labels, building outlines, road
+            // classifications. The Bolt/Uber look.
+            <GoogleTileLayer type="roadmap" />
+          ) : (
+            // Fallback: Carto's Fastly CDN (global POPs including Africa).
+            // OSM's own tile.openstreetmap.org is EU-only and times out
+            // from Nigerian networks — Carto serves the same OSM DATA over
+            // a working CDN.
+            <TileLayer
+              attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png"
+              subdomains={['a', 'b', 'c', 'd']}
+              maxZoom={20}
+            />
+          )
         ) : (
-          <TileLayer
-            attribution='&copy; <a href="https://www.esri.com/">Esri</a> World Imagery'
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={19}
-          />
+          hasGoogleMapsKey ? (
+            // Google Hybrid = satellite imagery + road labels overlaid.
+            // Better for rooftop-precision pin drops than pure satellite.
+            <GoogleTileLayer type="hybrid" />
+          ) : (
+            <TileLayer
+              attribution='&copy; <a href="https://www.esri.com/">Esri</a> World Imagery'
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={19}
+            />
+          )
         )}
         {initialLat != null && initialLng != null && (
           <RecenterOnPropChange lat={initialLat} lng={initialLng} lastEmittedRef={lastEmittedRef} />

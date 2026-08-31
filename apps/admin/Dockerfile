@@ -6,9 +6,14 @@ RUN corepack enable && corepack prepare pnpm@10.34.1 --activate
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
-# Google Maps key intentionally NOT bundled. All map/geocoding calls now
-# route through the API's /maps/* endpoints (Deploy B) — the key stays
-# server-side in GOOGLE_MAPS_API_KEY on the api container.
+# Geocoding stays server-side (GOOGLE_MAPS_API_KEY on the api container).
+# The Maps JavaScript SDK requires a client-side key by design; protect it
+# with HTTP-referrer + API-scope restrictions in Google Cloud Console.
+# Restrict to Maps JavaScript API only — no Geocoding — and to your
+# admin.grandxl.com / dev host referrers.
+# If unset, the picker falls back to Carto tiles.
+ARG NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY
+ENV NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY packages/ ./packages/

@@ -22,9 +22,14 @@ ARG VITE_API_URL
 ARG VITE_SENTRY_DSN_WEB
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SENTRY_DSN_WEB=$VITE_SENTRY_DSN_WEB
-# Google Maps key intentionally NOT bundled. All map/geocoding calls now
-# route through the API's /maps/* endpoints (Deploy B) — the key stays
-# server-side in GOOGLE_MAPS_API_KEY on the api container.
+# Geocoding stays server-side (GOOGLE_MAPS_API_KEY on the api container).
+# The Maps JavaScript SDK requires a client-side key by design; protect it
+# with HTTP-referrer + API-scope restrictions in Google Cloud Console.
+# Restrict to Maps JavaScript API only — no Geocoding — and to your
+# grandxl.com / rider.grandxl.com / dev host referrers.
+# If unset, the picker falls back to Carto tiles.
+ARG VITE_GOOGLE_MAPS_JS_KEY
+ENV VITE_GOOGLE_MAPS_JS_KEY=$VITE_GOOGLE_MAPS_JS_KEY
 RUN pnpm --filter @grandxl/web build
 
 FROM nginx:alpine AS runner

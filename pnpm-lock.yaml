@@ -54,6 +54,9 @@ importers:
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
+      leaflet.gridlayer.googlemutant:
+        specifier: ^0.16.0
+        version: 0.16.0
       lucide-react:
         specifier: ^0.469.0
         version: 0.469.0(react@18.3.1)
@@ -634,6 +637,9 @@ importers:
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
+      leaflet.gridlayer.googlemutant:
+        specifier: ^0.16.0
+        version: 0.16.0
       lucide-react:
         specifier: ^1.31.0
         version: 1.31.0(react@18.3.1)
@@ -6784,6 +6790,9 @@ packages:
   language-tags@1.0.9:
     resolution: {integrity: sha512-MbjN408fEndfiQXbFQ1vnd+1NoLDsnQW41410oQBXiyXDMYH5z505juWa4KUE1LqxRC7DgOgZDbKLxHIwm27hA==}
     engines: {node: '>=0.10'}
+
+  leaflet.gridlayer.googlemutant@0.16.0:
+    resolution: {integrity: sha512-wN8DxR5zplhZA6a5998AOluCL97H5lkr1yCLOT7siaQyc+hT6E8kcGqjAuSsEUSoaf/U3H25x8Avkp9OpgJpng==}
 
   leaflet@1.9.4:
     resolution: {integrity: sha512-nxS1ynzJOmOlHp+iL3FyWqK89GtNL8U8rvlMOsQdTTssxZwCXh8N2NB3GDQOL+YR3XnWyZAxwQixURb+FA74PA==}
@@ -16592,6 +16601,8 @@ snapshots:
   language-tags@1.0.9:
     dependencies:
       language-subtag-registry: 0.3.23
+
+  leaflet.gridlayer.googlemutant@0.16.0: {}
 
   leaflet@1.9.4: {}
 

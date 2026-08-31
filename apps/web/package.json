@@ -29,6 +29,7 @@
     "framer-motion": "^12.40.0",
     "i18next": "^24.2.2",
     "leaflet": "^1.9.4",
+    "leaflet.gridlayer.googlemutant": "^0.16.0",
     "lucide-react": "^1.31.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -44,7 +45,6 @@
   },
   "devDependencies": {
     "@grandxl/config": "workspace:*",
-    "workbox-precaching": "^7.4.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
@@ -59,6 +59,7 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
     "vite": "^5.4.11",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "workbox-precaching": "^7.4.1"
   }
 }
