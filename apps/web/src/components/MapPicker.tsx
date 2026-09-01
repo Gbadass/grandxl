@@ -130,7 +130,8 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 320 }: 
         const formatted = res.data.data.result?.formatted_address ?? null
         setAddress(formatted)
         onChange({ lat, lng, address: formatted })
-      } catch {
+      } catch (err) {
+        console.error('[MapPicker] reverse-geocode failed:', err)
         setAddress(null)
       } finally {
         setGeocoding(false)

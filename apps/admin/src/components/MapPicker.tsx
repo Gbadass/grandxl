@@ -150,7 +150,8 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
         // or display it. The lat/lng is unchanged from the initial fire — no
         // need to update lastEmittedRef.
         onChange({ lat, lng, address: formatted })
-      } catch {
+      } catch (err) {
+        console.error('[MapPicker] reverse-geocode failed:', err)
         setAddress(null)
       } finally {
         setGeocoding(false)
