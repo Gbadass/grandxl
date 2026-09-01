@@ -279,6 +279,8 @@ export interface CreateCouponDto {
   maxDiscount: number
   usageLimit: number
   perUserLimit: number
+  // Optional — empty/omitted means the coupon applies to all restaurants.
+  applicableRestaurants?: string[]
   startDate: string
   endDate: string
 }
