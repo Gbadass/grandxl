@@ -974,8 +974,19 @@ export default function RestaurantSettingsPage() {
                 <MapPicker
                   initialLat={address.lat}
                   initialLng={address.lng}
-                  onChange={({ lat, lng, address: addrLabel }) => {
-                    setAddress((a) => ({ ...a, lat, lng, geocoded: true }))
+                  onChange={({ lat, lng, address: addrLabel, components }) => {
+                    setAddress((a) => ({
+                      ...a,
+                      lat,
+                      lng,
+                      geocoded: true,
+                      // Only overwrite form fields when Google actually gave
+                      // us a value — preserves user input if the pin lands
+                      // somewhere with no street/city/state indexed.
+                      street: components?.street ?? a.street,
+                      city:   components?.city   ?? a.city,
+                      state:  components?.state  ?? a.state,
+                    }))
                     if (addrLabel) setGeocodedLabel(addrLabel)
                     setGeocodeStatus('found')
                     markDirty()

@@ -30,12 +30,43 @@ L.Icon.Default.mergeOptions({
   shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
+// Parsed subset of Google's address_components — what the parent form actually
+// needs to display. Only fields Google returned show up; the rest stay
+// undefined so the parent can `?? previous` and preserve prior user input.
+interface AddressComponents {
+  street?: string
+  city?: string
+  state?: string
+}
+
 interface Props {
   // Initial pin position. If null, defaults to Nigeria center — user MUST drag.
   initialLat: number | null
   initialLng: number | null
-  onChange: (payload: { lat: number; lng: number; address?: string | null }) => void
+  onChange: (payload: {
+    lat: number
+    lng: number
+    address?: string | null
+    components?: AddressComponents
+  }) => void
   heightPx?: number
+}
+
+// Extract street / city / state from a Google reverse-geocode result. Google
+// returns a flat array where each entry lists its `types` — we pick the first
+// entry that matches the semantic role we want.
+function parseAddressComponents(
+  components: Array<{ long_name: string; short_name: string; types: string[] }>,
+): AddressComponents {
+  const find = (type: string) => components.find((c) => c.types.includes(type))?.long_name
+  const streetNumber = find('street_number')
+  const route = find('route')
+  const street = route ? (streetNumber ? `${streetNumber} ${route}` : route) : undefined
+  // Nigerian addresses: `locality` = major city (Makurdi); `admin_area_level_2`
+  // is the LGA — fall through when Google skips locality (rare in urban NG).
+  const city = find('locality') ?? find('administrative_area_level_2')
+  const state = find('administrative_area_level_1')
+  return { street, city, state }
 }
 
 // Fallback center: rough centroid of Nigeria — used only when caller has no
@@ -144,12 +175,16 @@ export function MapPicker({ initialLat, initialLng, onChange, heightPx = 360 }: 
         // Bearer token (server-side /maps/reverse requires auth to protect
         // our Google API key from anonymous scraping).
         const res       = await mapsApi.reverse(lat, lng)
-        const formatted = res.data.data.result?.formatted_address ?? null
+        const result    = res.data.data.result
+        const formatted = result?.formatted_address ?? null
+        const components = result?.address_components
+          ? parseAddressComponents(result.address_components)
+          : undefined
         setAddress(formatted)
-        // Second onChange with the resolved address so the caller can persist
-        // or display it. The lat/lng is unchanged from the initial fire — no
-        // need to update lastEmittedRef.
-        onChange({ lat, lng, address: formatted })
+        // Second onChange with the resolved address + parsed components so
+        // the caller can populate their form fields (Street / City / State).
+        // lat/lng unchanged from the initial fire — no need to update lastEmittedRef.
+        onChange({ lat, lng, address: formatted, components })
       } catch (err) {
         console.error('[MapPicker] reverse-geocode failed:', err)
         setAddress(null)
