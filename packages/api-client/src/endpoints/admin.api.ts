@@ -369,6 +369,48 @@ export const adminDeliveryZonesApi = {
     getClient().delete<ApiResponse<{ deleted: boolean }>>(`/admin/delivery-zones/${id}`),
 }
 
+// ── Admin — Surge Pricing (S13-12) ───────────────────────────────────────────
+
+export interface SurgeRule {
+  _id:          string
+  name:         string
+  multiplier:   number
+  daysOfWeek:   number[]  // 0 = Sunday, 6 = Saturday (Africa/Lagos local time)
+  startMinutes: number    // minutes since midnight, e.g. 18:00 = 1080
+  endMinutes:   number
+  isActive:     boolean
+  createdAt:    Date
+  updatedAt:    Date
+}
+
+export interface CreateSurgeRuleRequest {
+  name:         string
+  multiplier:   number    // 1.0–5.0
+  daysOfWeek:   number[]  // one or more of 0..6
+  startMinutes: number    // 0..1440
+  endMinutes:   number    // 0..1440
+  isActive?:    boolean
+}
+
+export type UpdateSurgeRuleRequest = Partial<CreateSurgeRuleRequest>
+
+export const adminSurgePricingApi = {
+  list: () =>
+    getClient().get<ApiResponse<SurgeRule[]>>('/admin/surge-pricing'),
+
+  currentMultiplier: () =>
+    getClient().get<ApiResponse<{ multiplier: number }>>('/admin/surge-pricing/current-multiplier'),
+
+  create: (dto: CreateSurgeRuleRequest) =>
+    getClient().post<ApiResponse<SurgeRule>>('/admin/surge-pricing', dto),
+
+  update: (id: string, dto: UpdateSurgeRuleRequest) =>
+    getClient().patch<ApiResponse<SurgeRule>>(`/admin/surge-pricing/${id}`, dto),
+
+  delete: (id: string) =>
+    getClient().delete<ApiResponse<{ deleted: boolean }>>(`/admin/surge-pricing/${id}`),
+}
+
 // ── Admin — Fraud (S13-10) ───────────────────────────────────────────────────
 
 export interface FlaggedUsersQuery {
