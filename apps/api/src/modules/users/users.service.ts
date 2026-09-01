@@ -351,14 +351,56 @@ export class UsersService implements OnModuleInit {
     return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
-  async banUser(id: string): Promise<void> {
+  async banUser(id: string, reason: string, actorId: string): Promise<void> {
     const user = await this.findByIdOrThrow(id)
-    await this.userModel.updateOne({ _id: user._id }, { isActive: false })
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        isActive:  false,
+        banReason: reason,
+        bannedAt:  new Date(),
+        bannedBy:  new Types.ObjectId(actorId),
+      },
+    )
   }
 
   async unbanUser(id: string): Promise<void> {
     const user = await this.findByIdOrThrow(id)
-    await this.userModel.updateOne({ _id: user._id }, { isActive: true })
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        isActive:  true,
+        banReason: null,
+        bannedAt:  null,
+        bannedBy:  null,
+      },
+    )
+  }
+
+  // Paginated list of currently-banned customers (isActive=false, not deleted).
+  // Used by S13-13 blocklist page. Sort by most-recent ban so triage sees the
+  // freshest actions on top. Includes bannedBy populated with actor first/last
+  // name so the UI can show "Blocked by <name>" without a second lookup.
+  async listBannedUsers(page: number, limit: number, search?: string) {
+    const filter: Record<string, unknown> = { isActive: false, deletedAt: null }
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(escaped, 'i')
+      filter.$or = [{ firstName: re }, { lastName: re }, { email: re }, { phone: re }]
+    }
+    const skip = (page - 1) * limit
+    const [data, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .select('-passwordHash')
+        .populate('bannedBy', 'firstName lastName')
+        .sort({ bannedAt: -1, updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.userModel.countDocuments(filter),
+    ])
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   // ── Auth helpers (called by AuthService) ────────────────────────

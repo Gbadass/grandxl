@@ -42,6 +42,12 @@ export interface User {
   consentDate: Date | null
   lastLoginAt: Date | null
   deletedAt: Date | null
+  // Ban context — populated only when isActive=false. `bannedBy` is populated
+  // with actor first/last name on the blocklist endpoint, plain ObjectId
+  // elsewhere.
+  banReason?: string | null
+  bannedAt?: Date | null
+  bannedBy?: string | { _id: string; firstName?: string; lastName?: string } | null
   // Auto-populated by FraudService when suspicious activity is detected.
   // Optional in the type because most callers don't select it, but the API
   // always returns it as an array (never undefined) — the schema default is [].

@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
   { href: '/fraud',       label: 'Fraud',       icon: 'fraud'       },
   { href: '/zones',       label: 'Delivery Zones', icon: 'zones'    },
   { href: '/surge-pricing', label: 'Surge Pricing', icon: 'surge'   },
+  { href: '/blocklist',   label: 'Blocklist',   icon: 'blocklist'   },
   { href: '/settings',    label: 'Settings',    icon: 'settings'    },
 ]
 

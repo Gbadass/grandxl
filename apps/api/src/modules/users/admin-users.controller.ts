@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -38,6 +39,12 @@ interface AdminCreateUserDto {
   password: string
   roles: UserRole[]
   country?: string
+}
+
+// Ban must carry a reason so the blocklist page can show *why* the account was
+// blocked. Server enforces min length so admins can't sneak past by typing "a".
+interface BanUserDto {
+  reason: string
 }
 
 @ApiTags('Admin — Users')
@@ -106,10 +113,24 @@ export class AdminUsersController {
   async banUser(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: BanUserDto,
     @Req() req: Request,
   ) {
-    await this.usersService.banUser(id)
-    void this.audit.log({ ...this.auditMeta(req, user), action: 'user.ban', targetType: 'user', targetId: id })
+    const reason = dto?.reason?.trim() ?? ''
+    if (reason.length < 3) {
+      throw new BadRequestException('Ban reason is required (min 3 characters)')
+    }
+    if (reason.length > 500) {
+      throw new BadRequestException('Ban reason too long (max 500 characters)')
+    }
+    await this.usersService.banUser(id, reason, user.sub)
+    void this.audit.log({
+      ...this.auditMeta(req, user),
+      action:     'user.ban',
+      targetType: 'user',
+      targetId:   id,
+      metadata:   { reason },
+    })
     return { banned: true }
   }
 

@@ -319,8 +319,8 @@ export const adminUsersApi = {
   create: (dto: AdminCreateUserDto) =>
     getClient().post<ApiResponse<User>>('/admin/users', dto),
 
-  ban: (id: string) =>
-    getClient().patch<ApiResponse<{ banned: boolean }>>(`/admin/users/${id}/ban`),
+  ban: (id: string, reason: string) =>
+    getClient().patch<ApiResponse<{ banned: boolean }>>(`/admin/users/${id}/ban`, { reason }),
 
   unban: (id: string) =>
     getClient().patch<ApiResponse<{ banned: boolean }>>(`/admin/users/${id}/unban`),
@@ -335,6 +335,22 @@ export const adminUsersApi = {
     getClient().patch<ApiResponse<{ cleared: boolean; code: string }>>(
       `/admin/users/${id}/risk-flags/${encodeURIComponent(code)}/clear`,
     ),
+}
+
+// ── Admin — Blocklist (S13-13) ───────────────────────────────────────────────
+
+export interface BlocklistQuery {
+  page?:   number
+  limit?:  number
+  search?: string
+}
+
+export const adminBlocklistApi = {
+  listCustomers: (params?: BlocklistQuery) =>
+    getClient().get<PaginatedResponse<User>>('/admin/blocklist/customers', { params }),
+
+  listRiders: (params?: BlocklistQuery) =>
+    getClient().get<PaginatedResponse<Rider>>('/admin/blocklist/riders', { params }),
 }
 
 // ── Admin — Delivery Zones (S13-11) ──────────────────────────────────────────

@@ -9,7 +9,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
-import { Model, Types, type MongooseError } from 'mongoose'
+import { Model, Types, type MongooseError, type PipelineStage } from 'mongoose'
 import * as bcrypt from 'bcryptjs'
 import { RiderDocument } from './schemas/rider.schema'
 import { RiderOnlineSessionDocument } from './schemas/rider-online-session.schema'
@@ -595,5 +595,76 @@ export class RidersService {
       data,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     }
+  }
+
+  // S13-13: currently-blocked riders — suspended OR terminated. Populates
+  // userId for name/contact display in the blocklist UI. Ordered by whichever
+  // action is more recent (terminatedAt beats older suspensions).
+  async listBlockedRiders(page = 1, limit = 20, search?: string) {
+    const filter: Record<string, unknown> = {
+      $or: [{ isSuspended: true }, { terminatedAt: { $ne: null } }],
+    }
+    // Search matches the linked user's name/phone/email; done via a $lookup
+    // in aggregation because populate can't be filtered.
+    const skip = (page - 1) * limit
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(escaped, 'i')
+      const pipeline: PipelineStage[] = [
+        { $match: filter },
+        {
+          $lookup: {
+            from:         'users',
+            localField:   'userId',
+            foreignField: '_id',
+            as:           'user',
+          },
+        },
+        { $unwind: '$user' },
+        {
+          $match: {
+            $or: [
+              { 'user.firstName': re },
+              { 'user.lastName':  re },
+              { 'user.email':     re },
+              { 'user.phone':     re },
+            ],
+          },
+        },
+        // Reshape user field back to what populate would produce so the client
+        // gets a consistent shape between search-on and search-off.
+        {
+          $addFields: {
+            userId: {
+              _id:       '$user._id',
+              firstName: '$user.firstName',
+              lastName:  '$user.lastName',
+              phone:     '$user.phone',
+              email:     '$user.email',
+              avatar:    '$user.avatar',
+            },
+          },
+        },
+        { $project: { user: 0 } },
+        { $sort: { terminatedAt: -1, updatedAt: -1 } },
+      ]
+      const [data, totalDocs] = await Promise.all([
+        this.riderModel.aggregate([...pipeline, { $skip: skip }, { $limit: limit }] as PipelineStage[]),
+        this.riderModel.aggregate([...pipeline, { $count: 'n' }] as PipelineStage[]),
+      ])
+      const total = totalDocs[0]?.n ?? 0
+      return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+    }
+    const [data, total] = await Promise.all([
+      this.riderModel
+        .find(filter)
+        .sort({ terminatedAt: -1, updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('userId', 'firstName lastName phone email avatar')
+        .lean(),
+      this.riderModel.countDocuments(filter),
+    ])
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
   }
 }

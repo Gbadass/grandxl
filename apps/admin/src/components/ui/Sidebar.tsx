@@ -154,6 +154,14 @@ export const NAV_ICONS: Record<string, ReactNode> = {
       </svg>
     </NavIcon>
   ),
+  blocklist: (
+    <NavIcon>
+      {/* Heroicons no-symbol outline — blocklist */}
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="h-[18px] w-[18px]">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+      </svg>
+    </NavIcon>
+  ),
 }
 
 interface Props {

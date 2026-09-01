@@ -403,9 +403,14 @@ export default function UsersPage() {
 
   const total = data?.data?.data?.meta?.total ?? 0
 
+  // Ban reason input — required by the server (S13-13). Kept as its own piece
+  // of state so the ConfirmDialog child re-renders without cycling the whole
+  // confirm object.
+  const [banReason, setBanReason] = useState('')
+
   const actionMutation = useMutation({
-    mutationFn: ({ userId, action }: { userId: string; action: 'ban' | 'unban' | 'delete' }): Promise<unknown> => {
-      if (action === 'ban') return adminUsersApi.ban(userId)
+    mutationFn: ({ userId, action, reason }: { userId: string; action: 'ban' | 'unban' | 'delete'; reason?: string }): Promise<unknown> => {
+      if (action === 'ban') return adminUsersApi.ban(userId, reason ?? '')
       if (action === 'unban') return adminUsersApi.unban(userId)
       return adminUsersApi.delete(userId)
     },
@@ -418,6 +423,7 @@ export default function UsersPage() {
       void qc.invalidateQueries({ queryKey: ['admin', 'users'] })
       setConfirm(null)
       setSelectedUser(null)
+      setBanReason('')
     },
     onError: (err: unknown) => toast.error(parseApiError(err, 'Action failed. Please try again.')),
   })
@@ -624,9 +630,34 @@ export default function UsersPage() {
         }
         confirmVariant="danger"
         loading={actionMutation.isPending}
-        onConfirm={() => confirm && actionMutation.mutate({ userId: confirm.user._id, action: confirm.action })}
-        onCancel={() => setConfirm(null)}
-      />
+        confirmDisabled={confirm?.action === 'ban' && banReason.trim().length < 3}
+        onConfirm={() => confirm && actionMutation.mutate({
+          userId: confirm.user._id,
+          action: confirm.action,
+          reason: confirm.action === 'ban' ? banReason.trim() : undefined,
+        })}
+        onCancel={() => { setConfirm(null); setBanReason('') }}
+      >
+        {confirm?.action === 'ban' && (
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              Reason (required)
+            </label>
+            <textarea
+              value={banReason}
+              onChange={(e) => setBanReason(e.target.value)}
+              placeholder="e.g. Repeat refund abuse — 4 chargebacks in 30 days"
+              maxLength={500}
+              rows={3}
+              className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:border-gray-400 focus:outline-none"
+              autoFocus
+            />
+            <p className="mt-1 text-[10px] text-gray-500">
+              Shown to reviewers on the Blocklist page. Min 3 characters.
+            </p>
+          </div>
+        )}
+      </ConfirmDialog>
 
       {/* Create User Modal */}
       {showCreate && (

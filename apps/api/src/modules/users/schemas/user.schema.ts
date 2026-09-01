@@ -66,6 +66,18 @@ export class UserDocument extends Document {
   @Prop({ default: true })
   isActive!: boolean
 
+  // Ban context — captured when isActive flips from true → false. Cleared on
+  // unban. Populated only for user-triggered account blocks (not for
+  // soft-delete, which sets deletedAt separately).
+  @Prop({ type: String, default: null })
+  banReason!: string | null
+
+  @Prop({ type: Date, default: null })
+  bannedAt!: Date | null
+
+  @Prop({ type: Types.ObjectId, ref: 'UserDocument', default: null })
+  bannedBy!: Types.ObjectId | null
+
   @Prop({ type: String, default: null })
   avatar!: string | null
 

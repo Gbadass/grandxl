@@ -19,7 +19,9 @@ import { NotificationsModule } from '../notifications/notifications.module'
       { name: RiderOnlineSessionDocument.name, schema: RiderOnlineSessionSchema },
     ]),
     forwardRef(() => OrdersModule),
-    UsersModule,
+    // S13-13: UsersModule now imports RidersModule via forwardRef (for the
+    // blocklist controller) so we mirror the forwardRef here to break the cycle.
+    forwardRef(() => UsersModule),
     AuthModule,
     EmailModule,
     NotificationsModule,
