@@ -154,4 +154,25 @@ export class AdminUsersController {
     void this.audit.log({ ...this.auditMeta(req, user), action: 'user.risk_flags_clear', targetType: 'user', targetId: id })
     return { cleared: true }
   }
+
+  @Patch(':id/risk-flags/:code/clear')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Clear a single risk flag by code' })
+  @ApiOkResponse({ description: 'Flag cleared' })
+  async clearRiskFlag(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Param('code') code: string,
+    @Req() req: Request,
+  ) {
+    await this.fraud.clearFlag(id, code)
+    void this.audit.log({
+      ...this.auditMeta(req, user),
+      action: 'user.risk_flag_clear',
+      targetType: 'user',
+      targetId: id,
+      metadata: { code },
+    })
+    return { cleared: true, code }
+  }
 }

@@ -16,6 +16,8 @@ const NAV: NavItem[] = [
   { href: '/payouts',     label: 'Payouts',     icon: 'payouts'     },
   { href: '/analytics',   label: 'Analytics',   icon: 'analytics'   },
   { href: '/broadcasts',  label: 'Broadcasts',  icon: 'promotions'  },
+  { href: '/fraud',       label: 'Fraud',       icon: 'fraud'       },
+  { href: '/zones',       label: 'Delivery Zones', icon: 'zones'    },
   { href: '/settings',    label: 'Settings',    icon: 'settings'    },
 ]
 

@@ -315,6 +315,42 @@ export class UsersService implements OnModuleInit {
     return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
+  // Fraud dashboard (S13-10): paginated list of users with at least one risk
+  // flag, sorted by most recent flag first. Optional `code` filter narrows to a
+  // specific rule (e.g. 'payment_failures_24h'). Search matches name/email/phone
+  // like listUsers so ops can jump straight to a known user.
+  async listFlaggedUsers(page: number, limit: number, code?: string, search?: string) {
+    const filter: Record<string, unknown> = {
+      deletedAt: null,
+      // $exists + $ne to catch schemas where the field is absent on old docs.
+      riskFlags: { $exists: true, $ne: [] },
+    }
+    if (code) {
+      filter['riskFlags.code'] = code
+    }
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(escaped, 'i')
+      filter.$or = [{ firstName: re }, { lastName: re }, { email: re }, { phone: re }]
+    }
+    const skip = (page - 1) * limit
+    const [data, total] = await Promise.all([
+      // Sort by most recent flag createdAt — we compute per-doc via aggregation
+      // for cheap ordering without a schema change. Small page sizes → fine.
+      this.userModel
+        .aggregate([
+          { $match: filter },
+          { $addFields: { latestFlagAt: { $max: '$riskFlags.createdAt' } } },
+          { $sort: { latestFlagAt: -1 } },
+          { $skip: skip },
+          { $limit: limit },
+          { $project: { passwordHash: 0 } },
+        ]),
+      this.userModel.countDocuments(filter),
+    ])
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
+  }
+
   async banUser(id: string): Promise<void> {
     const user = await this.findByIdOrThrow(id)
     await this.userModel.updateOne({ _id: user._id }, { isActive: false })

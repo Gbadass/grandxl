@@ -173,6 +173,36 @@ function UserDetailPanel({
             </dl>
           </div>
 
+          {/* Risk flags — surfaced here (in addition to /fraud) so admins reviewing
+              a user for any reason see the fraud signal immediately. Only rendered
+              when there's something to show. */}
+          {(user.riskFlags?.length ?? 0) > 0 && (
+            <div className="border-t border-gray-100 px-6 py-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-amber-700">
+                  Risk flags ({user.riskFlags!.length})
+                </h4>
+                <a
+                  href="/fraud"
+                  className="text-[11px] font-semibold text-gray-500 hover:text-gray-900"
+                >
+                  Open in fraud →
+                </a>
+              </div>
+              <div className="space-y-2">
+                {user.riskFlags!.map((flag) => (
+                  <div
+                    key={flag.code}
+                    className="rounded-xl border border-amber-100 bg-amber-50/50 p-3"
+                  >
+                    <p className="text-xs font-semibold text-amber-800">{flag.reason}</p>
+                    <p className="mt-0.5 font-mono text-[10px] text-amber-600">{flag.code}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Addresses */}
           {user.addresses.length > 0 && (
             <div className="border-t border-gray-100 px-6 py-5">

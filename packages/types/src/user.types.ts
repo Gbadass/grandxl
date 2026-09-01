@@ -16,6 +16,12 @@ export interface Address {
   instructions: string | null
 }
 
+export interface RiskFlag {
+  code: string       // machine-readable identifier, e.g. 'payment_failures_24h'
+  reason: string     // human-readable justification shown to admins
+  createdAt: Date
+}
+
 export interface User {
   _id: string
   firstName: string
@@ -36,6 +42,10 @@ export interface User {
   consentDate: Date | null
   lastLoginAt: Date | null
   deletedAt: Date | null
+  // Auto-populated by FraudService when suspicious activity is detected.
+  // Optional in the type because most callers don't select it, but the API
+  // always returns it as an array (never undefined) — the schema default is [].
+  riskFlags?: RiskFlag[]
   createdAt: Date
   updatedAt: Date
 }

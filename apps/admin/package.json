@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@geoman-io/leaflet-geoman-free": "^2.20.0",
     "@grandxl/api-client": "workspace:*",
     "@grandxl/types": "workspace:*",
     "@grandxl/ui": "workspace:*",

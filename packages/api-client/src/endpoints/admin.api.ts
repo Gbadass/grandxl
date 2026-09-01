@@ -10,6 +10,7 @@ import type {
   PlatformConfig,
   Coupon,
   BankDetails,
+  DeliveryZone,
 } from '@grandxl/types'
 import type { RestaurantApprovalStatus, OrderStatus, PaymentStatus, UserRole } from '@grandxl/types'
 
@@ -326,6 +327,60 @@ export const adminUsersApi = {
 
   delete: (id: string) =>
     getClient().delete<ApiResponse<{ deleted: boolean }>>(`/admin/users/${id}`),
+
+  clearAllRiskFlags: (id: string) =>
+    getClient().patch<ApiResponse<{ cleared: boolean }>>(`/admin/users/${id}/risk-flags/clear`),
+
+  clearRiskFlag: (id: string, code: string) =>
+    getClient().patch<ApiResponse<{ cleared: boolean; code: string }>>(
+      `/admin/users/${id}/risk-flags/${encodeURIComponent(code)}/clear`,
+    ),
+}
+
+// ── Admin — Delivery Zones (S13-11) ──────────────────────────────────────────
+
+export interface CreateDeliveryZoneRequest {
+  name:                   string
+  city?:                  string
+  coordinates:            [number, number][]  // [lng, lat] pairs, first === last
+  deliveryFeeMultiplier?: number
+  isActive?:              boolean
+}
+
+export interface UpdateDeliveryZoneRequest {
+  name?:                  string
+  city?:                  string
+  coordinates?:           [number, number][]
+  deliveryFeeMultiplier?: number
+  isActive?:              boolean
+}
+
+export const adminDeliveryZonesApi = {
+  list: () =>
+    getClient().get<ApiResponse<DeliveryZone[]>>('/admin/delivery-zones'),
+
+  create: (dto: CreateDeliveryZoneRequest) =>
+    getClient().post<ApiResponse<DeliveryZone>>('/admin/delivery-zones', dto),
+
+  update: (id: string, dto: UpdateDeliveryZoneRequest) =>
+    getClient().patch<ApiResponse<DeliveryZone>>(`/admin/delivery-zones/${id}`, dto),
+
+  delete: (id: string) =>
+    getClient().delete<ApiResponse<{ deleted: boolean }>>(`/admin/delivery-zones/${id}`),
+}
+
+// ── Admin — Fraud (S13-10) ───────────────────────────────────────────────────
+
+export interface FlaggedUsersQuery {
+  page?:   number
+  limit?:  number
+  code?:   string  // filter to a specific rule, e.g. 'payment_failures_24h'
+  search?: string  // name/email/phone substring, case-insensitive
+}
+
+export const adminFraudApi = {
+  listFlagged: (params?: FlaggedUsersQuery) =>
+    getClient().get<PaginatedResponse<User>>('/admin/fraud/flagged-users', { params }),
 }
 
 // ── Admin — Support (S13-5): force refund + emergency credit ─────────────────
