@@ -51,10 +51,17 @@ export function AppRouter() {
       <OfflineBanner />
       <Suspense fallback={<PageSkeleton />}>
         <Routes>
-          {/* Auth pages — no shell, public-only */}
+          {/* Login + Register are reachable even when signed in — they render
+              a "You're signed in as X" banner with a Continue / Sign out
+              option. Fixes the dead-end where a stale session (shared browser,
+              old refresh cookie) redirected new visitors home and blocked them
+              from creating an account. */}
+          <Route path={ROUTES.LOGIN}    element={wrap(<LoginPage />)} />
+          <Route path={ROUTES.REGISTER} element={wrap(<RegisterPage />)} />
+
+          {/* Password recovery + mid-flow OTP verify remain public-only —
+              they're not useful to an already-authenticated session. */}
           <Route element={<PublicOnlyRoute />}>
-            <Route path={ROUTES.LOGIN}           element={wrap(<LoginPage />)} />
-            <Route path={ROUTES.REGISTER}        element={wrap(<RegisterPage />)} />
             <Route path={ROUTES.FORGOT_PASSWORD} element={wrap(<ForgotPasswordPage />)} />
             <Route path={ROUTES.RESET_PASSWORD}  element={wrap(<ResetPasswordPage />)} />
             <Route path={ROUTES.VERIFY_OTP}      element={wrap(<VerifyOtpPage />)} />

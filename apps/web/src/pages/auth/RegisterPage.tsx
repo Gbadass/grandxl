@@ -9,6 +9,7 @@ import { useRegister, getRegisterError } from '../../features/auth/hooks/useRegi
 import { AuthLayout } from '../../features/auth/components/AuthLayout'
 import { FormField } from '../../features/auth/components/FormField'
 import { PasswordStrength } from '../../features/auth/components/PasswordStrength'
+import { SignedInBanner } from '../../features/auth/components/SignedInBanner'
 import { ROUTES } from '../../router/routes'
 
 const formSchema = z.object({
@@ -62,6 +63,8 @@ export default function RegisterPage() {
 
   return (
     <AuthLayout title={t('register.title')} subtitle={t('register.subtitle')}>
+      <SignedInBanner />
+
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
         {/* Name row */}
         <motion.div custom={0} variants={item} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3">

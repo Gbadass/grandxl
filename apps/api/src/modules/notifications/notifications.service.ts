@@ -277,7 +277,7 @@ export class NotificationsService {
   async onAdminActionOnRestaurant(
     ownerId: string,
     restaurantName: string,
-    action: 'approved' | 'rejected' | 'suspended' | 'reinstated' | 'terminated' | 'info_requested',
+    action: 'approved' | 'rejected' | 'suspended' | 'reinstated' | 'terminated' | 'info_requested' | 'ownership_granted',
     detail?: string,
   ): Promise<void> {
     const messages: Record<typeof action, { title: string; body: string }> = {
@@ -287,6 +287,7 @@ export class NotificationsService {
       reinstated:    { title: 'Restaurant reinstated', body: `${restaurantName} has been reinstated and is live again.` },
       terminated:    { title: 'Restaurant terminated', body: `${restaurantName} has been permanently removed from GrandXL.` },
       info_requested:{ title: 'Information requested', body: `More details needed for ${restaurantName}: ${detail ?? 'Check your dashboard.'}` },
+      ownership_granted: { title: 'Restaurant assigned to you', body: `You are now the owner of ${restaurantName}. Log in to manage its menu, orders and payouts.` },
     }
     const msg = messages[action]
     void this.send(ownerId, NotificationType.ADMIN_ACTION, msg.title, msg.body, {

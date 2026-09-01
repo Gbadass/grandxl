@@ -233,20 +233,21 @@ function Step1Form({
       </div>
 
       <FieldInput
-        label="Email address"
-        type="email"
-        value={account.email}
-        onChange={onChange('email')}
-        placeholder="you@restaurant.com"
-      />
-
-      <FieldInput
         label="Phone number"
         type="tel"
         value={account.phone}
         onChange={onChange('phone')}
         placeholder="+2348012345678"
         hint="Include country code, e.g. +234 for Nigeria"
+      />
+
+      <FieldInput
+        label="Email address (optional)"
+        type="email"
+        value={account.email}
+        onChange={onChange('email')}
+        placeholder="you@restaurant.com"
+        hint="Add an email to receive payout summaries and order alerts"
       />
 
       <FieldInput
@@ -972,8 +973,12 @@ export default function RegisterPage() {
 
   function validateStep1(): string | null {
     if (!account.firstName.trim() || !account.lastName.trim()) return 'Please enter your full name.'
-    if (!account.email.trim()) return 'Email address is required.'
     if (!account.phone.trim()) return 'Phone number is required.'
+    // Email is optional (backend accepts phone-only accounts) but if provided
+    // must be a valid address so login lookup + payout emails don't silently
+    // fail later.
+    const emailTrim = account.email.trim()
+    if (emailTrim && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) return 'Please enter a valid email address, or leave it blank.'
     if (account.password.length < 8) return 'Password must be at least 8 characters.'
     if (!/[A-Z]/.test(account.password)) return 'Password must contain at least one uppercase letter.'
     if (!/[0-9]/.test(account.password)) return 'Password must contain at least one number.'
@@ -1079,7 +1084,9 @@ export default function RegisterPage() {
         const authRes = await authApi.register({
           firstName: account.firstName.trim(),
           lastName: account.lastName.trim(),
-          email: account.email.trim(),
+          // Omit email entirely when blank so backend @IsOptional short-circuits
+          // instead of failing @IsEmail on an empty string.
+          email: account.email.trim() || undefined,
           phone: account.phone.trim(),
           password: account.password,
           role: UserRole.RESTAURANT_OWNER,

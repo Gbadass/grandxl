@@ -34,6 +34,13 @@ export interface AdminLoginDto {
   password: string
 }
 
+// Partner portal accepts either email or phone — restaurant owners can register
+// with phone only (email is optional per RegisterDto).
+export interface PortalLoginDto {
+  emailOrPhone: string
+  password: string
+}
+
 export interface SendOtpDto {
   phone: string
 }
@@ -66,7 +73,7 @@ export const authApi = {
   adminLogin: (dto: AdminLoginDto) =>
     getClient().post<ApiResponse<AuthResponse>>('/auth/admin/login', dto),
 
-  portalLogin: (dto: AdminLoginDto) =>
+  portalLogin: (dto: PortalLoginDto) =>
     getClient().post<ApiResponse<AuthResponse>>('/auth/portal/login', dto),
 
   logout: () =>

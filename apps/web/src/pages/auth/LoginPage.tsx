@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { useLogin } from '../../features/auth/hooks/useLogin'
 import { AuthLayout } from '../../features/auth/components/AuthLayout'
 import { FormField } from '../../features/auth/components/FormField'
+import { SignedInBanner } from '../../features/auth/components/SignedInBanner'
 import { ROUTES } from '../../router/routes'
 
 const schema = z.object({
@@ -46,6 +47,8 @@ export default function LoginPage() {
 
   return (
     <AuthLayout title={t('login.title')} subtitle={t('login.subtitle')}>
+      <SignedInBanner />
+
       {/* Phone / Email segmented toggle */}
       <motion.div
         custom={0} variants={item} initial="hidden" animate="visible"

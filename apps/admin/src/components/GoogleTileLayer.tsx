@@ -20,7 +20,11 @@
 import { useEffect } from 'react'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
-import 'leaflet.gridlayer.googlemutant'
+// v0.16 is pure ESM. The package's `browser` field points at an old IIFE build
+// that assumes `window.L` exists — webpack picks that and hands us undefined.
+// Deep-import the .mjs source to force the ES module build in both webpack (Next)
+// and Vite (Web). The class is a GridLayer subclass — `new`-able directly.
+import GoogleMutant from 'leaflet.gridlayer.googlemutant/src/Leaflet.GoogleMutant.mjs'
 
 const KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY as string | undefined
 
@@ -54,6 +58,30 @@ interface Props {
   type?: 'roadmap' | 'satellite' | 'hybrid' | 'terrain'
 }
 
+// Runtime fallback: if the Google SDK script is rejected (bad referrer, API
+// not enabled, invalid key, billing issue), attach a Carto tile layer directly
+// to the Leaflet map so the picker isn't left blank. The Carto URL depends on
+// the requested `type` — roadmap → voyager, satellite/hybrid → arcgis imagery.
+function attachCartoFallback(map: L.Map, type: Props['type']): L.Layer {
+  if (type === 'satellite' || type === 'hybrid') {
+    return L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { attribution: '&copy; Esri World Imagery', maxZoom: 19 },
+    ).addTo(map)
+  }
+  return L.tileLayer(
+    // Path is /rastertiles/voyager/ — Carto silently retired the shorter
+    // /voyager/ endpoint (returns 404 for everything, including 0/0/0).
+    // {r} restores retina @2x tiles for crisp maps on high-DPI displays.
+    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    {
+      attribution: '&copy; CARTO &copy; OpenStreetMap',
+      subdomains: ['a', 'b', 'c', 'd'],
+      maxZoom: 20,
+    },
+  ).addTo(map)
+}
+
 export function GoogleTileLayer({ type = 'roadmap' }: Props) {
   const map = useMap()
 
@@ -65,10 +93,13 @@ export function GoogleTileLayer({ type = 'roadmap' }: Props) {
     void loadGoogleMapsSdk(KEY)
       .then(() => {
         if (cancelled) return
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        layer = (L.gridLayer as any).googleMutant({ type }).addTo(map)
+        layer = new GoogleMutant({ type }).addTo(map)
       })
-      .catch(() => { /* Fallback to Carto handled by the parent conditional. */ })
+      .catch((err) => {
+        if (cancelled) return
+        console.error('[GoogleTileLayer] Google tiles failed, falling back to Carto:', err)
+        layer = attachCartoFallback(map, type)
+      })
 
     return () => {
       cancelled = true

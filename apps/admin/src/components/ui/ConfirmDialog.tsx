@@ -9,6 +9,7 @@ interface Props {
   confirmLabel?: string
   confirmVariant?: 'danger' | 'primary'
   loading?: boolean
+  confirmDisabled?: boolean
   onConfirm: () => void
   onCancel: () => void
   children?: ReactNode
@@ -21,6 +22,7 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   confirmVariant = 'primary',
   loading,
+  confirmDisabled,
   onConfirm,
   onCancel,
   children,
@@ -64,8 +66,8 @@ export function ConfirmDialog({
           </button>
           <button
             onClick={onConfirm}
-            disabled={loading}
-            className={`rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition-all disabled:opacity-50 ${
+            disabled={loading || confirmDisabled}
+            className={`rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               confirmVariant === 'danger'
                 ? 'bg-red-600 hover:bg-red-700 shadow-red-100'
                 : 'bg-orange-600 hover:bg-orange-700 shadow-orange-200'

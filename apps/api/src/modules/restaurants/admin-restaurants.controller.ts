@@ -20,7 +20,7 @@ import {
 } from '@nestjs/swagger'
 import type { Request } from 'express'
 import { RestaurantsService } from './restaurants.service'
-import { RejectRestaurantDto, SuspendRestaurantDto, RequestMoreInfoDto, AdminOnboardRestaurantDto, TerminateRestaurantDto } from './dto/admin-action.dto'
+import { RejectRestaurantDto, SuspendRestaurantDto, RequestMoreInfoDto, AdminOnboardRestaurantDto, TerminateRestaurantDto, TransferOwnershipDto } from './dto/admin-action.dto'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
@@ -166,5 +166,36 @@ export class AdminRestaurantsController {
     const result = await this.restaurantsService.terminate(id, dto.reason, user.sub)
     void this.audit.log({ ...this.auditMeta(req, user), action: 'restaurant.terminate', targetType: 'restaurant', targetId: id, metadata: { reason: dto.reason } })
     return result
+  }
+
+  @Patch(':id/transfer-ownership')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reassign a restaurant to a different existing user (identified by phone or email). Adds RESTAURANT_OWNER role to the new owner if missing.',
+  })
+  @ApiOkResponse({ description: 'Ownership transferred' })
+  async transferOwnership(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: TransferOwnershipDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.restaurantsService.transferOwnership(id, dto.newOwnerIdentifier)
+    void this.audit.log({
+      ...this.auditMeta(req, user),
+      // Split action name so audit search can distinguish real transfers from
+      // role-only repairs (self-transfer where ownerId was already correct).
+      action: result.ownerChanged ? 'restaurant.transfer_ownership' : 'restaurant.grant_owner_role',
+      targetType: 'restaurant',
+      targetId: id,
+      metadata: {
+        previousOwnerId: result.previousOwnerId,
+        newOwnerId: result.newOwnerId,
+        identifier: dto.newOwnerIdentifier,
+        roleGranted: result.roleGranted,
+        ownerChanged: result.ownerChanged,
+      },
+    })
+    return result.restaurant
   }
 }

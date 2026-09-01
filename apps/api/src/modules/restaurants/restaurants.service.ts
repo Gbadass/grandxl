@@ -696,6 +696,91 @@ export class RestaurantsService {
     return updated
   }
 
+  // ── Admin — transfer ownership ──────────────────────────────────
+  //
+  // Reassigns Restaurant.ownerId to another existing GrandXL user, identified
+  // by phone (E.164) or email. Adds RESTAURANT_OWNER to the new owner if
+  // missing. The previous owner keeps the role (they may own other restaurants
+  // — safer to leave role assignment intact and let a separate admin action
+  // strip it if truly stranded).
+  //
+  // Use case: a restaurant's contact phone was tied to the wrong user during
+  // onboarding, or a business changes hands and the login credential should
+  // move to the new proprietor. Super-admin only — the audit trail records
+  // who moved it and from-whom-to-whom.
+  async transferOwnership(
+    restaurantId: string,
+    newOwnerIdentifier: string,
+  ): Promise<{
+    restaurant: RestaurantDocument
+    previousOwnerId: string
+    newOwnerId: string
+    roleGranted: boolean
+    ownerChanged: boolean
+  }> {
+    const restaurant = await this.findByIdRaw(restaurantId)
+    const previousOwnerId = restaurant.ownerId.toString()
+
+    const raw = newOwnerIdentifier.trim()
+    const isEmail = raw.includes('@')
+    const newOwner = isEmail
+      ? await this.usersService.findByEmail(raw.toLowerCase())
+      : await this.usersService.findByPhone(raw)
+
+    if (!newOwner) {
+      throw new NotFoundException(`No GrandXL account found for "${raw}"`)
+    }
+
+    const newOwnerId = newOwner._id.toString()
+    const isSelfTransfer = newOwnerId === previousOwnerId
+    const hasOwnerRole = newOwner.roles.includes(UserRole.RESTAURANT_OWNER)
+
+    // Genuine no-op: same user AND role already granted. Guard against
+    // pointless DB writes + spurious "ownership_granted" notifications.
+    if (isSelfTransfer && hasOwnerRole) {
+      throw new BadRequestException(
+        'No change needed — this user is already the current owner and has the Restaurant Owner role.',
+      )
+    }
+
+    // Reassign ownerId only when it actually changes. Self-transfer path is
+    // used to heal role drift (user is the owner but never got the role,
+    // e.g. legacy/seed data pre-dating the adminOnboard role-grant step).
+    let updated: RestaurantDocument | null = restaurant
+    if (!isSelfTransfer) {
+      updated = await this.restaurantModel
+        .findByIdAndUpdate(
+          restaurantId,
+          { $set: { ownerId: newOwner._id } },
+          { new: true },
+        )
+        .exec()
+      if (!updated) throw new NotFoundException('Restaurant not found')
+    }
+
+    let roleGranted = false
+    if (!hasOwnerRole) {
+      await this.usersService.addRole(newOwnerId, UserRole.RESTAURANT_OWNER)
+      roleGranted = true
+    }
+
+    // Only notify on actual ownership change — role-only repairs don't need a
+    // push to the user (they already believed themselves to be the owner).
+    if (!isSelfTransfer) {
+      void this.notifications.onAdminActionOnRestaurant(
+        newOwnerId, updated.name, 'ownership_granted',
+      ).catch(() => undefined)
+    }
+
+    return {
+      restaurant: updated,
+      previousOwnerId,
+      newOwnerId,
+      roleGranted,
+      ownerChanged: !isSelfTransfer,
+    }
+  }
+
   // ── Sprint 12 (S12-6): earnings pipeline ────────────────────────────
   //
   // Mirrors RidersService.onDeliveryComplete / settleEarnings. Restaurant earns

@@ -15,7 +15,7 @@ export default function AdminLoginPage() {
   const router  = useRouter()
   const setAuth = useAuthStore((s) => s.setAuth)
 
-  const [email,       setEmail]       = useState('')
+  const [identifier,  setIdentifier]  = useState('')
   const [password,    setPassword]    = useState('')
   const [showPass,    setShowPass]    = useState(false)
   const [error,       setError]       = useState('')
@@ -25,13 +25,13 @@ export default function AdminLoginPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter your email and password.')
+    if (!identifier.trim() || !password.trim()) {
+      setError('Please enter your email or phone and password.')
       return
     }
     setLoading(true)
     try {
-      const res = await authApi.portalLogin({ email: email.trim().toLowerCase(), password })
+      const res = await authApi.portalLogin({ emailOrPhone: identifier.trim(), password })
       const { accessToken, user } = res.data.data
       setAuth(user, accessToken)
 
@@ -51,7 +51,7 @@ export default function AdminLoginPage() {
           setError('Unable to reach the server. Please check your connection or try again shortly.')
         } else {
           const data = err.response.data as ApiError | undefined
-          setError(data?.message ?? 'Invalid email or password.')
+          setError(data?.message ?? 'Invalid credentials.')
         }
       } else {
         setError('Something went wrong. Try again.')
@@ -258,17 +258,17 @@ export default function AdminLoginPage() {
 
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
 
-              {/* Email */}
+              {/* Email or phone — restaurant partners can register with either */}
               <div>
                 <label className="mb-2 block text-sm font-semibold text-gray-700">
-                  Email address
+                  Email or phone
                 </label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  autoComplete="email"
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="you@example.com or +2348012345678"
+                  autoComplete="username"
                   autoFocus
                   className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-5 py-4 text-base text-gray-900 placeholder-gray-400 outline-none transition-all focus:border-orange-400 focus:bg-white focus:ring-4 focus:ring-orange-100"
                 />

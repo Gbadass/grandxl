@@ -1,12 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger'
-import { IsEmail, IsString, IsNotEmpty, MinLength } from 'class-validator'
+import { IsString, IsNotEmpty, MinLength } from 'class-validator'
 import { Transform } from 'class-transformer'
 
 export class PortalLoginDto {
-  @ApiProperty({ example: 'user@example.com' })
-  @IsEmail()
-  @Transform(({ value }: { value: string }) => value?.toLowerCase().trim())
-  email!: string
+  @ApiProperty({ example: 'user@example.com or +2348012345678' })
+  @IsString()
+  @IsNotEmpty()
+  @Transform(({ value }: { value: string }) => value?.trim())
+  emailOrPhone!: string
 
   @ApiProperty()
   @IsString()

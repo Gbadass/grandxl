@@ -47,6 +47,17 @@ export class TerminateRestaurantDto {
   reason!: string
 }
 
+export class TransferOwnershipDto {
+  @ApiProperty({
+    example: '+2348012345678 or amaka@restaurant.com',
+    description: 'Phone (E.164) or email of the user who should become the new owner. Must already exist in GrandXL.',
+  })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  newOwnerIdentifier!: string
+}
+
 class OnboardAddressDto {
   @ApiProperty({ example: '15 Adeola Odeku Street' })
   @IsString() @MinLength(1) @MaxLength(200)

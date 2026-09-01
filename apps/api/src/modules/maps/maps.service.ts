@@ -17,6 +17,30 @@ interface AutocompletePrediction {
   place_id: string
 }
 
+// Google Plus Code alphabet — https://en.wikipedia.org/wiki/Open_Location_Code.
+// Matches a leading "XXXX+XX," (4–8 chars, '+', 2–3 chars) at the start of a
+// formatted_address, which is how Google represents "no street address here".
+const PLUS_CODE_PREFIX = /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}(?:,\s*|$)/i
+
+function hasPlusCodePrefix(address: string): boolean {
+  return PLUS_CODE_PREFIX.test(address)
+}
+
+function stripPlusCodePrefix(address: string): string {
+  return address.replace(PLUS_CODE_PREFIX, '')
+}
+
+// Equirectangular approximation — accurate to <1m at the sub-hundred-metre
+// scales we care about (Places-Nearby validation), and avoids importing a
+// full haversine util for one comparison.
+function approxDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const R = 6371000
+  const x = toRad(lng2 - lng1) * Math.cos(toRad((lat1 + lat2) / 2))
+  const y = toRad(lat2 - lat1)
+  return Math.sqrt(x * x + y * y) * R
+}
+
 @Injectable()
 export class MapsService {
   private readonly logger = new Logger(MapsService.name)
@@ -53,9 +77,62 @@ export class MapsService {
       }
       return null
     }
-    // Google returns results sorted specific-first for a lat/lng — take the
-    // most specific (typically street_address).
-    return data.results[0]!
+    const result = data.results[0]!
+    const formatted = result.formatted_address ?? ''
+
+    // Google's reverse-geocode returns a Plus Code as the "address" when no
+    // street address is registered for these coords — extremely common across
+    // informal-street areas in Nigeria (e.g., "PG7J+Q4Q, High Level, Makurdi").
+    // Plus Codes are opaque to end users, so we swap in the nearest business
+    // name via Places whenever the pin is on/near a known establishment.
+    if (formatted && hasPlusCodePrefix(formatted)) {
+      const cleaned = stripPlusCodePrefix(formatted)
+      const poi = await this.placesNearestEstablishment(lat, lng).catch(() => null)
+      // 40m cap: further than that and we start attaching a *neighbouring*
+      // building's name to the pin, which is worse than the plain address.
+      result.formatted_address = poi && poi.distanceM <= 40
+        ? `${poi.name}, ${cleaned}`
+        : cleaned
+    }
+    return result
+  }
+
+  // Nearest business/POI to a lat/lng via Places Nearby Search, ranked by
+  // distance. Returns null when Google has no establishments indexed nearby.
+  private async placesNearestEstablishment(
+    lat: string,
+    lng: string,
+  ): Promise<{ name: string; distanceM: number } | null> {
+    const url =
+      `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+      `?location=${encodeURIComponent(lat)},${encodeURIComponent(lng)}` +
+      `&rankby=distance` +
+      `&type=establishment` +
+      `&language=en` +
+      `&key=${this.key()}`
+
+    const res = await fetch(url)
+    const data = await res.json() as {
+      status: string
+      results?: Array<{
+        name?: string
+        geometry?: { location?: { lat: number; lng: number } }
+      }>
+      error_message?: string
+    }
+    if (data.status !== 'OK' || !data.results?.length) {
+      if (data.status !== 'ZERO_RESULTS') {
+        this.logger.warn(`Google places-nearby ${data.status}: ${data.error_message ?? ''}`)
+      }
+      return null
+    }
+    const top = data.results[0]!
+    const loc = top.geometry?.location
+    if (!top.name || !loc) return null
+    return {
+      name: top.name,
+      distanceM: approxDistanceMeters(Number(lat), Number(lng), loc.lat, loc.lng),
+    }
   }
 
   async placesAutocomplete(q: string): Promise<AutocompletePrediction[]> {

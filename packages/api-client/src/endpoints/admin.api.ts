@@ -33,6 +33,10 @@ export interface TerminateRestaurantDto {
   reason: string
 }
 
+export interface TransferOwnershipDto {
+  newOwnerIdentifier: string
+}
+
 export interface RequestMoreInfoDto {
   message: string
 }
@@ -89,6 +93,9 @@ export const adminRestaurantsApi = {
 
   terminate: (id: string, dto: TerminateRestaurantDto) =>
     getClient().patch<ApiResponse<Restaurant>>(`/admin/restaurants/${id}/terminate`, dto),
+
+  transferOwnership: (id: string, dto: TransferOwnershipDto) =>
+    getClient().patch<ApiResponse<Restaurant>>(`/admin/restaurants/${id}/transfer-ownership`, dto),
 }
 
 // ── Admin — Riders ───────────────────────────────────────────────────────────

@@ -667,8 +667,15 @@ export class AuthService {
   }
 
   async portalLogin(dto: PortalLoginDto): Promise<AuthResponse> {
-    const lockedKey = `${REDIS_ADMIN_LOGIN_LOCKED_PREFIX}${dto.email}`
-    const attemptsKey = `${REDIS_ADMIN_LOGIN_ATTEMPTS_PREFIX}${dto.email}`
+    // Restaurant owners may register with phone only (email optional per RegisterDto),
+    // so accept either identifier. Detect by presence of "@" — anything else is
+    // normalised to E.164 for phone lookup.
+    const raw = dto.emailOrPhone.trim()
+    const isEmail = raw.includes('@')
+    const identifier = isEmail ? raw.toLowerCase() : this.normalisePhone(raw)
+
+    const lockedKey = `${REDIS_ADMIN_LOGIN_LOCKED_PREFIX}${identifier}`
+    const attemptsKey = `${REDIS_ADMIN_LOGIN_ATTEMPTS_PREFIX}${identifier}`
 
     const locked = await this.redis.get(lockedKey)
     if (locked) {
@@ -678,7 +685,9 @@ export class AuthService {
       )
     }
 
-    const user = await this.usersService.findByEmail(dto.email)
+    const user = isEmail
+      ? await this.usersService.findByEmail(identifier)
+      : await this.usersService.findByPhone(identifier)
     const isValidUser =
       user &&
       user.isActive &&
@@ -724,6 +733,16 @@ export class AuthService {
   }
 
   // ── Private helpers ─────────────────────────────────────────────
+
+  // Normalise Nigerian phone input to E.164 for schema lookup. Mirrors the
+  // Transform on RegisterDto.phone so a user who registered with "08012345678"
+  // can log in with either "08012345678" or "+2348012345678".
+  private normalisePhone(value: string): string {
+    if (!value) return value
+    if (value.startsWith('+')) return value
+    if (value.startsWith('0') && value.length === 11) return `+234${value.slice(1)}`
+    return value
+  }
 
   // familyId ties all rotations in one login session together.
   // Pass an existing familyId on refresh to continue the session; omit on new login.
