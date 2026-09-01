@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator'
+import { IsInt, IsOptional, IsString, IsUrl, MaxLength, Min, MinLength } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 
 // Sprint 13 (S13-5): admin-initiated wallet credits.
@@ -43,4 +43,30 @@ export class EmergencyCreditDto {
   @MinLength(3)
   @MaxLength(300)
   reason!: string
+}
+
+// S13-14: targeted 1-1 push from a support agent to a customer. Distinct from
+// broadcast (which fans out by role) — this is for "we're calling you about
+// order X" or "your refund is on the way, we'll follow up".
+export class ContactCustomerDto {
+  @ApiProperty({ example: '507f1f77bcf86cd799439011' })
+  @IsString()
+  userId!: string
+
+  @ApiProperty({ example: 'About your recent order', minLength: 3, maxLength: 120 })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  title!: string
+
+  @ApiProperty({ example: 'Hi Gerald, we noticed your last order was delivered late. Please reply here and we\'ll credit you.', minLength: 3, maxLength: 1000 })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(1000)
+  body!: string
+
+  @ApiPropertyOptional({ example: 'https://grandxl.com/support/ticket/123', description: 'Optional deep link the notification tap opens' })
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  actionUrl?: string
 }

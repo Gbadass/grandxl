@@ -1,11 +1,12 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common'
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse } from '@nestjs/swagger'
 import type { Request } from 'express'
 import { AdminSupportService } from './admin-support.service'
-import { ForceRefundDto, EmergencyCreditDto } from './dto/support.dto'
+import { ForceRefundDto, EmergencyCreditDto, ContactCustomerDto } from './dto/support.dto'
 import { AuditService } from '../audit/audit.service'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
+import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe'
 import { UserRole } from '@grandxl/types'
 import type { JwtPayload } from '@grandxl/types'
 
@@ -71,6 +72,47 @@ export class AdminSupportController {
       targetType: 'user',
       targetId:   dto.userId,
       metadata:   { amountKobo: dto.amountKobo, reason: dto.reason },
+    })
+    return result
+  }
+
+  // ── S13-14 ─────────────────────────────────────────────────────────
+
+  @Get('customer-lookup')
+  @ApiOperation({ summary: 'Search customers by phone/email/name (+ order shortId)' })
+  @ApiOkResponse({ description: 'Array of matching customer summaries' })
+  async customerLookup(@Query('q') q?: string) {
+    return this.support.lookupCustomers(q ?? '', 10)
+  }
+
+  @Get('customer/:id/overview')
+  @ApiOperation({ summary: 'One-round-trip overview: profile + wallet + recent orders/disputes/refunds' })
+  @ApiOkResponse({ description: 'Customer overview payload' })
+  async customerOverview(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.support.getCustomerOverview(id)
+  }
+
+  @Post('contact-customer')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send a targeted 1-1 push notification to a customer' })
+  @ApiOkResponse({ description: '{ delivered: boolean }' })
+  async contactCustomer(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ContactCustomerDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.support.contactCustomer({
+      userId:    dto.userId,
+      title:     dto.title,
+      body:      dto.body,
+      actionUrl: dto.actionUrl,
+    })
+    void this.audit.log({
+      ...this.auditMeta(req, user),
+      action:     'support.contact_customer',
+      targetType: 'user',
+      targetId:   dto.userId,
+      metadata:   { title: dto.title, delivered: result.delivered, hasActionUrl: !!dto.actionUrl },
     })
     return result
   }

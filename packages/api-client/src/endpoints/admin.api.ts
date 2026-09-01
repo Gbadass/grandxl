@@ -467,12 +467,75 @@ export interface EmergencyCreditResult {
   balanceAfter:  number
 }
 
+// S13-14
+export interface CustomerLookupResult {
+  _id:         string
+  firstName:   string
+  lastName:    string
+  phone:       string | null
+  email:       string | null
+  isActive:    boolean
+  matchedVia?: 'order'
+}
+
+export interface CustomerOverview {
+  user: {
+    _id:        string
+    firstName:  string
+    lastName:   string
+    phone:      string | null
+    email:      string | null
+    isActive:   boolean
+    isVerified: boolean
+    createdAt:  Date
+    banReason:  string | null
+    bannedAt:   Date | null
+  }
+  wallet: { balance: number; currency: string }
+  orders: Array<{
+    _id:          string
+    orderNumber:  string
+    status:       string
+    total:        number
+    createdAt:    Date
+    restaurantId: string
+  }>
+  disputes: Array<{
+    _id:       string
+    status:    string
+    type:      string
+    createdAt: Date
+  }>
+  refunds: Array<{
+    _id:        string
+    status:     string
+    amountKobo: number
+    createdAt:  Date
+  }>
+}
+
+export interface ContactCustomerRequest {
+  userId:     string
+  title:      string
+  body:       string
+  actionUrl?: string
+}
+
 export const adminSupportApi = {
   forceRefund: (dto: ForceRefundRequest) =>
     getClient().post<ApiResponse<ForceRefundResult>>('/admin/support/force-refund', dto),
 
   emergencyCredit: (dto: EmergencyCreditRequest) =>
     getClient().post<ApiResponse<EmergencyCreditResult>>('/admin/support/emergency-credit', dto),
+
+  customerLookup: (q: string) =>
+    getClient().get<ApiResponse<CustomerLookupResult[]>>('/admin/support/customer-lookup', { params: { q } }),
+
+  customerOverview: (userId: string) =>
+    getClient().get<ApiResponse<CustomerOverview>>(`/admin/support/customer/${userId}/overview`),
+
+  contactCustomer: (dto: ContactCustomerRequest) =>
+    getClient().post<ApiResponse<{ delivered: boolean }>>('/admin/support/contact-customer', dto),
 }
 
 // ── Admin — Broadcasts (S13-8) ───────────────────────────────────────────────
