@@ -120,7 +120,12 @@ export default function RestaurantPayoutsPage() {
     enabled:  !!restaurantId,
     staleTime: 30_000,
   })
-  const orders: Order[] = (ordersRes?.data?.data as Order[] | undefined) ?? []
+  // getOrders returns PaginatedResponse<Order> — envelope shape is
+  // { success, data: { data: Order[], meta } } so navigation is `.data.data.data`
+  // (axios.data → envelope.data → paginated.data). The old two-level nav +
+  // `as Order[]` cast type-checked but crashed at runtime when the real payload
+  // arrived: `filter is not a function` on the `{ data, meta }` object.
+  const orders: Order[] = ordersRes?.data?.data?.data ?? []
 
   // Per-order earnings breakdown for the "Order-by-order" table. Uses the same
   // net-to-restaurant model as the Finance page (S12-5): subtotal − discount.
