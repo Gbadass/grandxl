@@ -239,6 +239,9 @@ export default function PayoutsPage() {
     {
       key: 'entity',
       header: 'Type',
+      sortable: true,
+      sortValue: (p) => (p.entityType ?? 'rider'),
+      exportValue: (p) => p.entityType ?? 'rider',
       render: (p) => {
         const type = (p.entityType ?? 'rider') as PayoutEntityType
         return (
@@ -251,6 +254,9 @@ export default function PayoutsPage() {
     {
       key: 'counterparty',
       header: 'Counterparty / Bank',
+      sortable: true,
+      sortValue: (p) => p.entityName ?? p.accountName ?? '',
+      exportValue: (p) => `${p.entityName ?? p.accountName ?? ''} (${p.bankName} · ${p.accountNumber})`,
       render: (p) => (
         <div>
           <p className="font-medium text-gray-900 text-sm">{p.entityName ?? p.accountName}</p>
@@ -262,6 +268,10 @@ export default function PayoutsPage() {
     {
       key: 'amount',
       header: 'Amount',
+      sortable: true,
+      sortValue: (p) => p.amountKobo,
+      // Export in naira (÷100) so downstream Excel/accounting sees the human unit.
+      exportValue: (p) => (p.amountKobo / 100).toFixed(2),
       render: (p) => (
         <span className="font-bold tabular-nums text-gray-900 text-sm">
           {formatMoney(p.amountKobo, 'NGN')}
@@ -271,6 +281,9 @@ export default function PayoutsPage() {
     {
       key: 'status',
       header: 'Status',
+      sortable: true,
+      sortValue: (p) => p.status,
+      exportValue: (p) => p.status,
       render: (p) => (
         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${STATUS_STYLES[p.status] ?? 'bg-gray-100 text-gray-600'}`}>
           {p.status}
@@ -280,6 +293,9 @@ export default function PayoutsPage() {
     {
       key: 'date',
       header: 'Requested',
+      sortable: true,
+      sortValue: (p) => new Date(p.createdAt),
+      exportValue: (p) => new Date(p.createdAt).toISOString(),
       render: (p) => (
         <span className="text-xs text-gray-500 whitespace-nowrap">
           {formatDate(p.createdAt)}
@@ -289,6 +305,7 @@ export default function PayoutsPage() {
     {
       key: 'ref',
       header: 'Transfer Ref',
+      exportValue: (p) => p.transferReference ?? '',
       render: (p) => (
         p.transferReference ? (
           <span className="text-xs font-mono text-gray-500">{p.transferReference}</span>
@@ -300,6 +317,7 @@ export default function PayoutsPage() {
     {
       key: 'note',
       header: 'Note',
+      exportValue: (p) => p.decisionNote ?? '',
       render: (p) => (
         p.decisionNote ? (
           <span className="text-xs text-gray-500 max-w-[160px] truncate block">{p.decisionNote}</span>
@@ -435,6 +453,9 @@ export default function PayoutsPage() {
         limit={20}
         onPageChange={setPage}
         emptyMessage="No payout requests found"
+        // S13-16: sort + CSV export for finance/reconciliation exports.
+        exportable
+        exportFilename={`payouts-${tab}-${entityTab}`}
       />
 
       {/* Reject modal */}

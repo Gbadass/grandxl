@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common'
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger'
-import { UsersService } from './users.service'
+import { UsersService } from '../users/users.service'
 import { RidersService } from '../riders/riders.service'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { UserRole } from '@grandxl/types'

@@ -91,6 +91,9 @@ export default function SuperAdminOrdersPage() {
     {
       key:    'number',
       header: 'Order',
+      sortable: true,
+      sortValue: (o) => o.orderNumber,
+      exportValue: (o) => o.orderNumber,
       render: (o) => (
         <div className="flex flex-col">
           <span className="font-mono text-xs font-semibold text-gray-900">{o.orderNumber}</span>
@@ -101,6 +104,9 @@ export default function SuperAdminOrdersPage() {
     {
       key:    'customer',
       header: 'Customer',
+      sortable: true,
+      sortValue: (o) => o.customer ? `${o.customer.lastName} ${o.customer.firstName}` : '',
+      exportValue: (o) => o.customer ? `${o.customer.firstName} ${o.customer.lastName} (${o.customer.phone ?? '—'})` : '',
       render: (o) => (
         <div className="flex items-start gap-2">
           <UserIcon size={12} className="mt-1 shrink-0 text-gray-400" />
@@ -118,6 +124,9 @@ export default function SuperAdminOrdersPage() {
     {
       key:    'restaurant',
       header: 'Restaurant',
+      sortable: true,
+      sortValue: (o) => o.restaurant?.name ?? '',
+      exportValue: (o) => o.restaurant?.name ?? '',
       render: (o) => (
         <div className="flex items-center gap-2">
           <Store size={12} className="shrink-0 text-gray-400" />
@@ -128,6 +137,9 @@ export default function SuperAdminOrdersPage() {
     {
       key:    'status',
       header: 'Status',
+      sortable: true,
+      sortValue: (o) => o.status,
+      exportValue: (o) => o.status,
       render: (o) => (
         <div className="flex flex-col items-start gap-0.5">
           <StatusBadge label={o.status} orderStatus={o.status} />
@@ -142,6 +154,9 @@ export default function SuperAdminOrdersPage() {
     {
       key:    'payment',
       header: 'Payment',
+      sortable: true,
+      sortValue: (o) => `${o.payment.status} ${o.payment.method}`,
+      exportValue: (o) => `${o.payment.status}/${o.payment.method}`,
       render: (o) => (
         <div className="flex flex-col items-start gap-0.5">
           <StatusBadge label={o.payment.status} paymentStatus={o.payment.status} />
@@ -152,6 +167,9 @@ export default function SuperAdminOrdersPage() {
     {
       key:    'rider',
       header: 'Rider',
+      sortable: true,
+      sortValue: (o) => o.rider ? `${o.rider.lastName} ${o.rider.firstName}` : '',
+      exportValue: (o) => o.rider ? `${o.rider.firstName} ${o.rider.lastName}` : '',
       render: (o) => (
         <div className="flex items-center gap-2">
           <Bike size={12} className="shrink-0 text-gray-400" />
@@ -168,6 +186,10 @@ export default function SuperAdminOrdersPage() {
     {
       key:    'total',
       header: 'Total',
+      sortable: true,
+      sortValue: (o) => o.pricing.total,
+      // Export in naira (÷100) for accounting-friendly units.
+      exportValue: (o) => (o.pricing.total / 100).toFixed(2),
       render: (o) => (
         <span className="font-semibold tabular-nums text-gray-900">{formatMoney(o.pricing.total, o.currency)}</span>
       ),
@@ -274,6 +296,9 @@ export default function SuperAdminOrdersPage() {
           onPageChange={setPage}
           onRowClick={(o) => router.push(`/orders/${o._id}`)}
           emptyMessage={search ? `No orders match "${search}"` : 'No orders found'}
+          // S13-16: sort headers + CSV export.
+          exportable
+          exportFilename={`orders-${status ?? 'all'}-${paymentStatus ?? 'all'}`}
         />
       </motion.div>
 
