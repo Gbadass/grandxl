@@ -10,5 +10,9 @@
   "optional": "Optional",
   "itemAdded": "Added to cart",
   "note": "Special instructions",
-  "notePlaceholder": "E.g. no onions, extra sauce..."
+  "notePlaceholder": "E.g. no onions, extra sauce...",
+  "switchRestaurantTitle": "Start a new order?",
+  "switchRestaurantBody": "Your cart has items from another restaurant. Starting a new order will empty your current cart.",
+  "switchRestaurantConfirm": "Start new order",
+  "switchRestaurantCancel": "Keep current cart"
 }

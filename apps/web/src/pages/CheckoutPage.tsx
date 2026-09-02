@@ -97,9 +97,18 @@ export default function CheckoutPage() {
   const [couponCode, setCouponCode] = useState('')
   const [appliedCoupon, setAppliedCoupon] = useState<CouponValidationResult | null>(null)
   const [couponLoading, setCouponLoading] = useState(false)
+  // S14-3: monotonic request counter to discard stale coupon-validation responses.
+  // The race we fix: user hits "Apply" on Restaurant A → validation request goes
+  // out → user backs out, switches cart to Restaurant B → the effect below
+  // clears state → the in-flight A-coupon response arrives and reapplies A's
+  // coupon on B's checkout (visibly wrong discount, order rejected server-side).
+  // Every apply and every restaurant change bumps the seq; responses that don't
+  // match the current seq are dropped on the floor.
+  const couponRequestSeq = useRef(0)
 
   // Clear coupon when the restaurant changes (e.g. cart is swapped)
   useEffect(() => {
+    couponRequestSeq.current += 1
     setCouponCode('')
     setAppliedCoupon(null)
   }, [restaurantId])
@@ -172,6 +181,10 @@ export default function CheckoutPage() {
       toast.error(t('checkout:couponNoRestaurant'))
       return
     }
+    // S14-3: capture the seq + restaurant at the start; discard the response
+    // if either has moved on by the time it lands.
+    const seq = ++couponRequestSeq.current
+    const requestedRestaurantId = restaurantId
     setCouponLoading(true)
     try {
       const res = await couponsApi.validate({
@@ -179,13 +192,18 @@ export default function CheckoutPage() {
         restaurantId,
         subtotalKobo: subtotal,
       })
+      if (seq !== couponRequestSeq.current || requestedRestaurantId !== restaurantId) {
+        // Stale response — restaurant switched, or a newer apply is in flight.
+        return
+      }
       setAppliedCoupon(res.data.data)
       toast.success(t('checkout:couponApplied'))
     } catch (err: unknown) {
+      if (seq !== couponRequestSeq.current || requestedRestaurantId !== restaurantId) return
       setAppliedCoupon(null)
       toast.error(parseApiError(err, t('checkout:invalidCoupon')))
     } finally {
-      setCouponLoading(false)
+      if (seq === couponRequestSeq.current) setCouponLoading(false)
     }
   }
 

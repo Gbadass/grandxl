@@ -833,14 +833,21 @@ export default function OrderTrackingPage() {
   // ETA countdown: ticks down from estimatedTime in minutes
   const [etaSecondsLeft, setEtaSecondsLeft] = useState<number | null>(null)
 
-  // Initialise ETA countdown from order.estimatedTime when it becomes available
+  // Initialise ETA countdown from order.estimatedTime when it becomes available.
+  // S14-1: also reset when order.riderId flips (null → assigned or reassigned).
+  // Before this dep was added, rider assignment silently kept ticking from the
+  // original pre-assignment estimate, so a customer whose order was assigned
+  // after a 30-min wait saw "0 min away" while the rider was still en route to
+  // the restaurant. If the server also bumped `estimatedTime` on assignment,
+  // that would fire the reset too — but many status_update paths don't, and
+  // the socket handler below only resets when `data.eta` is explicitly sent.
   useEffect(() => {
     if (!order?.estimatedTime || order.status === OrderStatus.DELIVERED) {
       setEtaSecondsLeft(null)
       return
     }
     setEtaSecondsLeft(order.estimatedTime * 60)
-  }, [order?.estimatedTime, order?.status])
+  }, [order?.estimatedTime, order?.status, order?.riderId])
 
   // Tick the ETA down every second
   useEffect(() => {

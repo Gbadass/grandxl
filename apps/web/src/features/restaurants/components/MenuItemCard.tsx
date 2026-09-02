@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import type { MenuItem } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useCartStore } from '../../cart/store/cart.store'
+import { ConfirmSheet } from '../../../components/molecules/ConfirmSheet'
 
 interface Props {
   item: MenuItem
@@ -31,20 +32,14 @@ function nameToGradient(name: string) {
 export function MenuItemCard({ item, restaurantId, currency }: Props) {
   const { t } = useTranslation('menu')
   const [added, setAdded] = useState(false)
+  const [switchConfirmOpen, setSwitchConfirmOpen] = useState(false)
   const { addItem, wouldClearCart } = useCartStore()
 
   if (!item.isAvailable) return null
 
-  function handleAdd() {
-    if (added) return
-
-    if (wouldClearCart(restaurantId)) {
-      const confirmed = window.confirm(
-        'Your cart has items from another restaurant. Starting a new order will clear it. Continue?',
-      )
-      if (!confirmed) return
-    }
-
+  // The actual add — kept separate so we can call it directly OR after the
+  // "switching restaurants" confirm sheet resolves.
+  function commitAdd() {
     addItem({
       menuItemId: item._id,
       restaurantId,
@@ -60,6 +55,18 @@ export function MenuItemCard({ item, restaurantId, currency }: Props) {
     toast.success(t('itemAdded'), { duration: 1200 })
     setAdded(true)
     setTimeout(() => setAdded(false), 1500)
+  }
+
+  function handleAdd() {
+    if (added) return
+    // S14-2: was `window.confirm(...)` — replaced with a themed ConfirmSheet
+    // so the destructive "clear your cart" decision goes through an accessible,
+    // on-brand, i18n-aware sheet instead of the browser's native modal.
+    if (wouldClearCart(restaurantId)) {
+      setSwitchConfirmOpen(true)
+      return
+    }
+    commitAdd()
   }
 
   return (
@@ -128,6 +135,17 @@ export function MenuItemCard({ item, restaurantId, currency }: Props) {
           </div>
         )}
       </div>
+
+      <ConfirmSheet
+        open={switchConfirmOpen}
+        title={t('switchRestaurantTitle')}
+        description={t('switchRestaurantBody')}
+        confirmLabel={t('switchRestaurantConfirm')}
+        cancelLabel={t('switchRestaurantCancel')}
+        variant="danger"
+        onConfirm={() => { setSwitchConfirmOpen(false); commitAdd() }}
+        onCancel={() => setSwitchConfirmOpen(false)}
+      />
     </div>
   )
 }
