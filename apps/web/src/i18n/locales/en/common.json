@@ -33,6 +33,11 @@
     "subtitle": "We're sorry — the app ran into an unexpected error.",
     "reload": "Reload app"
   },
+  "socket": {
+    "reconnecting": "Reconnecting…",
+    "offline": "You're offline. Live updates are paused.",
+    "backOnline": "Back online"
+  },
   "nav": {
     "home": "Home",
     "browse": "Browse",

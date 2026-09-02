@@ -21,6 +21,7 @@ import { queryClient } from './lib/queryClient'
 import { RootErrorBoundary } from './components/errors/RootErrorBoundary'
 import { AuthProvider } from './features/auth/AuthProvider'
 import { AppRouter } from './router/AppRouter'
+import { SocketStatusBanner } from './components/molecules/SocketStatusBanner'
 
 // Initialize i18n
 import './i18n'
@@ -37,6 +38,7 @@ createRoot(root).render(
     <RootErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
+          <SocketStatusBanner />
           <AppRouter />
           <Toaster
             position="top-center"

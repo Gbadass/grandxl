@@ -151,13 +151,71 @@ function FitBounds({ coords }: { coords: [number, number][] }) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
+// S14-6: Skeleton now mirrors the real tracking page layout so the transition
+// from loading → loaded doesn't reflow the page or feel like a swap. Order and
+// rounded-3xl shapes match: header nav → ETA banner → status hero (with
+// progress steps) → address card → rider card with map placeholder → order
+// summary. Staggered fade-in via CSS animation-delay for a light shimmer feel.
 function TrackingSkeleton() {
   return (
-    <div className="animate-pulse max-w-2xl mx-auto px-4 pt-6 space-y-4">
-      <div className="h-6 bg-gray-200 rounded w-1/3" />
-      <div className="h-44 bg-gray-100 rounded-3xl" />
-      <div className="h-52 bg-gray-100 rounded-3xl" />
-      <div className="h-28 bg-gray-100 rounded-3xl" />
+    <div className="max-w-2xl mx-auto px-4 pt-6 pb-24">
+      {/* Header nav row (back button + order number label) */}
+      <div className="flex items-center gap-3 mb-4 animate-pulse">
+        <div className="h-9 w-9 rounded-full bg-gray-100" />
+        <div className="h-4 bg-gray-100 rounded w-24" />
+      </div>
+
+      <div className="space-y-3">
+        {/* ETA countdown banner */}
+        <div className="h-24 bg-gray-100 rounded-3xl animate-pulse" />
+
+        {/* Status hero with steps */}
+        <div className="bg-gray-50 rounded-3xl p-6 animate-pulse">
+          <div className="flex items-center justify-center flex-col gap-3">
+            <div className="h-16 w-16 rounded-full bg-gray-100" />
+            <div className="h-5 bg-gray-100 rounded w-40" />
+            <div className="h-3 bg-gray-100 rounded w-56" />
+          </div>
+          {/* Progress step dots row */}
+          <div className="mt-6 flex items-center justify-between">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex-1 flex items-center">
+                <div className="h-3 w-3 rounded-full bg-gray-200" />
+                {i < 4 && <div className="flex-1 h-0.5 bg-gray-100 mx-1" />}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Address card */}
+        <div className="bg-gray-50 rounded-3xl p-4 animate-pulse space-y-2">
+          <div className="h-3 bg-gray-100 rounded w-20" />
+          <div className="h-4 bg-gray-100 rounded w-3/4" />
+          <div className="h-3 bg-gray-100 rounded w-1/2" />
+        </div>
+
+        {/* Rider card + map placeholder */}
+        <div className="bg-gray-50 rounded-3xl overflow-hidden animate-pulse">
+          <div className="p-4 flex items-center gap-3">
+            <div className="h-12 w-12 rounded-full bg-gray-100 shrink-0" />
+            <div className="flex-1 space-y-1.5">
+              <div className="h-2.5 bg-gray-100 rounded w-16" />
+              <div className="h-4 bg-gray-100 rounded w-32" />
+              <div className="h-2 bg-gray-100 rounded w-20" />
+            </div>
+            <div className="h-11 w-11 rounded-full bg-gray-100 shrink-0" />
+          </div>
+          <div className="h-52 bg-gray-100" />
+        </div>
+
+        {/* Order summary */}
+        <div className="bg-gray-50 rounded-3xl p-4 animate-pulse space-y-2">
+          <div className="h-3 bg-gray-100 rounded w-24" />
+          <div className="h-3 bg-gray-100 rounded w-full" />
+          <div className="h-3 bg-gray-100 rounded w-5/6" />
+          <div className="h-3 bg-gray-100 rounded w-4/6" />
+        </div>
+      </div>
     </div>
   )
 }
@@ -415,7 +473,14 @@ function DeliveryAddressCard({ order }: { order: Order }) {
   )
 }
 
+// S14-5: RiderCard (with live GPS map) renders whenever a rider is assigned
+// and the order is still in-flight. Previously CONFIRMED was excluded — riders
+// who accepted a job before the restaurant confirmed had their location hidden
+// from the customer, making the "waiting for confirmation" phase silent. Now
+// the customer can watch the rider approaching the restaurant even during
+// the CONFIRMED window (which can last several minutes on Nigerian ack flow).
 const RIDER_ACTIVE_STATUSES = new Set<string>([
+  OrderStatus.CONFIRMED,
   OrderStatus.PREPARING,
   OrderStatus.READY,
   OrderStatus.PICKED_UP,
@@ -1147,7 +1212,9 @@ export default function OrderTrackingPage() {
         <DeliveryAddressCard order={order} />
       </div>
 
-      {/* Rider card with live map — appears when picked up */}
+      {/* Rider card with live map — appears whenever a rider is assigned
+          (CONFIRMED / PREPARING / READY / PICKED_UP). S14-5 expanded from
+          PICKED_UP-only so customers see the rider approaching earlier. */}
       <div className="mt-3">
         <RiderCard order={order} riderCoords={riderCoords} />
       </div>
