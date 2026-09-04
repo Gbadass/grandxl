@@ -107,6 +107,11 @@ export class UserDocument extends Document {
   @Prop({ type: Types.ObjectId, default: null })
   defaultAddressId!: Types.ObjectId | null
 
+  // S14-10: menu-item favorites — mirrors the restaurant-favorites pattern.
+  // Same "small array, typical <100 items" reasoning.
+  @Prop({ type: [Types.ObjectId], ref: 'MenuItemDocument', default: [] })
+  favoriteMenuItemIds!: Types.ObjectId[]
+
   // Restaurant favorites — small array (typical user favourites <20 restaurants).
   // If size becomes a concern we move to a separate collection.
   @Prop({ type: [Types.ObjectId], ref: 'RestaurantDocument', default: [] })

@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
-import { Plus, Check, Clock } from 'lucide-react'
+import { Plus, Check, Clock, Heart } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { MenuItem } from '@grandxl/types'
 import { formatMoney } from '@grandxl/utils'
 import { useCartStore } from '../../cart/store/cart.store'
 import { ConfirmSheet } from '../../../components/molecules/ConfirmSheet'
+import { useFavoriteMenuItems } from '../hooks/useFavoriteMenuItems'
 
 interface Props {
   item: MenuItem
@@ -34,6 +35,8 @@ export function MenuItemCard({ item, restaurantId, currency }: Props) {
   const [added, setAdded] = useState(false)
   const [switchConfirmOpen, setSwitchConfirmOpen] = useState(false)
   const { addItem, wouldClearCart } = useCartStore()
+  const { isFavorite, toggle: toggleFavorite, canFavorite } = useFavoriteMenuItems()
+  const fav = isFavorite(item._id)
 
   if (!item.isAvailable) return null
 
@@ -118,8 +121,8 @@ export function MenuItemCard({ item, restaurantId, currency }: Props) {
         </div>
       </div>
 
-      {/* Image — show gradient placeholder when no photo */}
-      <div className="shrink-0 w-20 h-20 rounded-xl overflow-hidden">
+      {/* Image + S14-10 favorite heart overlay */}
+      <div className="relative shrink-0 w-20 h-20 rounded-xl overflow-hidden">
         {item.image ? (
           <img
             src={item.image}
@@ -133,6 +136,31 @@ export function MenuItemCard({ item, restaurantId, currency }: Props) {
               {item.name[0]?.toUpperCase()}
             </span>
           </div>
+        )}
+        {canFavorite && (
+          <motion.button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); toggleFavorite(item._id) }}
+            whileTap={{ scale: 0.85 }}
+            transition={{ duration: 0.08 }}
+            className="absolute top-1 right-1 h-7 w-7 rounded-full bg-white/85 backdrop-blur-sm flex items-center justify-center shadow-sm cursor-pointer hover:bg-white"
+            aria-label={fav ? t('unfavoriteAria') : t('favoriteAria')}
+            aria-pressed={fav}
+            style={{ touchAction: 'manipulation' }}
+          >
+            <motion.span
+              key={fav ? 'on' : 'off'}
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+            >
+              <Heart
+                size={14}
+                strokeWidth={2.3}
+                className={fav ? 'text-red-500 fill-red-500' : 'text-gray-500'}
+              />
+            </motion.span>
+          </motion.button>
         )}
       </div>
 

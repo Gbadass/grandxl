@@ -29,6 +29,7 @@ import { useRestaurant, useRestaurantMenu } from '../features/restaurants/hooks/
 import { MenuItemCard } from '../features/restaurants/components/MenuItemCard'
 import { formatMoney, findSpecialHoursForDay } from '@grandxl/utils'
 import { minutesUntilClose } from '../features/restaurants/lib/closingSoon'
+import { itemMatchesFilters, type DietaryFilter } from '../features/restaurants/lib/dietary'
 
 function HeroSkeleton() {
   return (
@@ -63,9 +64,25 @@ export default function RestaurantPage() {
 
   const restaurant = restaurantRes
   const categories: MenuCategory[] = menuRes?.categories ?? []
-  const items: MenuItem[] = menuRes?.items ?? []
+  const rawItems: MenuItem[] = menuRes?.items ?? []
+
+  // S14-9: dietary filters (derived from allergens). Empty set = no filter.
+  const [dietaryFilters, setDietaryFilters] = useState<Set<DietaryFilter>>(new Set())
+  const items = dietaryFilters.size === 0
+    ? rawItems
+    : rawItems.filter((i) => itemMatchesFilters(i, dietaryFilters))
+
   const featured: MenuItem[] = items.filter((i) => i.isPopular)
   const gallery: string[]      = restaurant?.gallery ?? []
+
+  function toggleDietary(f: DietaryFilter) {
+    setDietaryFilters((prev) => {
+      const next = new Set(prev)
+      if (next.has(f)) next.delete(f)
+      else next.add(f)
+      return next
+    })
+  }
 
   // S14-8: "closes in N min" warning. Refreshes every minute via a ticking
   // clock state so the banner updates from "in 30 min" → "in 5 min" as the
@@ -268,8 +285,54 @@ export default function RestaurantPage() {
         </div>
       )}
 
+      {/* S14-9: dietary filter chips. Derived from allergens on menu items,
+          so "Gluten-free" hides items whose allergens include gluten/wheat.
+          Chips reset all-off by default; scrolls horizontally on narrow screens. */}
+      <div className="border-b border-gray-100 px-4 py-2.5">
+        <div className="flex items-center gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mr-1">
+            {t('dietary.label')}
+          </span>
+          {(['gluten_free', 'dairy_free', 'nut_free'] as DietaryFilter[]).map((f) => {
+            const active = dietaryFilters.has(f)
+            return (
+              <motion.button
+                key={f}
+                type="button"
+                onClick={() => toggleDietary(f)}
+                whileTap={{ scale: 0.96 }}
+                transition={{ duration: 0.08 }}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors ${
+                  active
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                style={{ touchAction: 'manipulation' }}
+                aria-pressed={active}
+              >
+                {t(`dietary.${f}`)}
+              </motion.button>
+            )
+          })}
+          {dietaryFilters.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setDietaryFilters(new Set())}
+              className="shrink-0 ml-1 text-xs text-gray-400 hover:text-gray-700 cursor-pointer"
+            >
+              {t('dietary.clear')}
+            </button>
+          )}
+        </div>
+        {dietaryFilters.size > 0 && items.length === 0 && (
+          <p className="mt-2 text-xs text-gray-500">
+            {t('dietary.noMatches')}
+          </p>
+        )}
+      </div>
+
       {/* Category sticky tabs */}
-      {(categories.length > 1 || featured.length > 0) && (
+      {(categories.length > 1 || featured.length > 0) && items.length > 0 && (
         <div className="sticky top-0 z-30 bg-white border-b border-gray-100 overflow-x-auto [&::-webkit-scrollbar]:hidden">
           <div className="flex gap-0 px-4">
             {/* Sprint 12 (S12-8): Featured tab appears first when the restaurant

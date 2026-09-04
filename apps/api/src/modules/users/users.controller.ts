@@ -144,6 +144,34 @@ export class UsersController {
     await this.usersService.removeFavorite(user.sub, restaurantId)
   }
 
+  // ── S14-10: menu-item favorites ─────────────────────────────────
+
+  @Get('me/favorite-items')
+  @ApiOperation({ summary: 'List my favorited menu item IDs' })
+  async listFavoriteItems(@CurrentUser() user: JwtPayload) {
+    return this.usersService.listFavoriteMenuItemIds(user.sub)
+  }
+
+  @Post('me/favorite-items/:menuItemId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Favorite a menu item' })
+  async addFavoriteItem(
+    @CurrentUser() user: JwtPayload,
+    @Param('menuItemId', ParseObjectIdPipe) menuItemId: string,
+  ) {
+    await this.usersService.addFavoriteMenuItem(user.sub, menuItemId)
+  }
+
+  @Delete('me/favorite-items/:menuItemId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Unfavorite a menu item' })
+  async removeFavoriteItem(
+    @CurrentUser() user: JwtPayload,
+    @Param('menuItemId', ParseObjectIdPipe) menuItemId: string,
+  ) {
+    await this.usersService.removeFavoriteMenuItem(user.sub, menuItemId)
+  }
+
   // ── Push tokens ──────────────────────────────────────────────────
 
   @Patch('me/push-token')

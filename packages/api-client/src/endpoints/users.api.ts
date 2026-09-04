@@ -60,6 +60,16 @@ export const usersApi = {
   removeFavorite: (restaurantId: string) =>
     getClient().delete<ApiResponse<null>>(`/users/me/favorites/${restaurantId}`),
 
+  // S14-10: menu-item favorites (mirrors restaurant favorites)
+  listFavoriteItems: () =>
+    getClient().get<ApiResponse<string[]>>('/users/me/favorite-items'),
+
+  addFavoriteItem: (menuItemId: string) =>
+    getClient().post<ApiResponse<null>>(`/users/me/favorite-items/${menuItemId}`),
+
+  removeFavoriteItem: (menuItemId: string) =>
+    getClient().delete<ApiResponse<null>>(`/users/me/favorite-items/${menuItemId}`),
+
   exportData: () =>
     getClient().get<ApiResponse<User>>('/users/me/data-export'),
 

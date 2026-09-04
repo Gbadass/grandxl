@@ -11,6 +11,14 @@
   "closed": "Closed",
   "open": "Open",
   "closingSoon": "Closes in {{minutes}} min — order soon",
+  "dietary": {
+    "label": "Filters",
+    "gluten_free": "Gluten-free",
+    "dairy_free": "Dairy-free",
+    "nut_free": "Nut-free",
+    "clear": "Clear",
+    "noMatches": "No items match your dietary filters. Try clearing or picking a different combination."
+  },
   "deliveryFee": "Delivery fee",
   "minOrder": "Min. order",
   "estimatedTime": "{{minutes}} mins",

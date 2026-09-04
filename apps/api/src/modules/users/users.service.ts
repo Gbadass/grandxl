@@ -481,6 +481,30 @@ export class UsersService implements OnModuleInit {
     return (user?.favoriteRestaurantIds ?? []).map((id) => id.toString())
   }
 
+  // ── S14-10: menu-item favorites (mirrors restaurant favorites) ────────
+
+  async addFavoriteMenuItem(userId: string, menuItemId: string): Promise<void> {
+    await this.userModel.updateOne(
+      { _id: new Types.ObjectId(userId) },
+      { $addToSet: { favoriteMenuItemIds: new Types.ObjectId(menuItemId) } },
+    )
+  }
+
+  async removeFavoriteMenuItem(userId: string, menuItemId: string): Promise<void> {
+    await this.userModel.updateOne(
+      { _id: new Types.ObjectId(userId) },
+      { $pull: { favoriteMenuItemIds: new Types.ObjectId(menuItemId) } },
+    )
+  }
+
+  async listFavoriteMenuItemIds(userId: string): Promise<string[]> {
+    const user = await this.userModel
+      .findById(userId, { favoriteMenuItemIds: 1 })
+      .lean()
+      .exec() as { favoriteMenuItemIds?: Types.ObjectId[] } | null
+    return (user?.favoriteMenuItemIds ?? []).map((id) => id.toString())
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────
 
   async toSafeUser(user: UserDocument): Promise<Omit<UserDocument, 'passwordHash'>> {
