@@ -11,14 +11,17 @@ import { useCartStore } from '../features/cart/store/cart.store'
 
 // ── Status display maps ────────────────────────────────────────────────────────
 
+// S14-15: badge text bumped to -800 tones for WCAG AA 4.5:1 contrast on the
+// -100 backgrounds. Previously red-600 on red-100 was ~3.6:1 (FAIL). The -800
+// tones read as slightly darker but still colour-coded correctly.
 const STATUS_COLOR: Record<OrderStatus, string> = {
-  [OrderStatus.PENDING]:   'bg-yellow-100 text-yellow-700',
-  [OrderStatus.CONFIRMED]: 'bg-blue-100 text-blue-700',
-  [OrderStatus.PREPARING]: 'bg-orange-100 text-orange-700',
-  [OrderStatus.READY]:     'bg-purple-100 text-purple-700',
-  [OrderStatus.PICKED_UP]: 'bg-indigo-100 text-indigo-700',
-  [OrderStatus.DELIVERED]: 'bg-green-100 text-green-700',
-  [OrderStatus.CANCELLED]: 'bg-red-100 text-red-600',
+  [OrderStatus.PENDING]:   'bg-yellow-100 text-yellow-800',
+  [OrderStatus.CONFIRMED]: 'bg-blue-100 text-blue-800',
+  [OrderStatus.PREPARING]: 'bg-orange-100 text-orange-800',
+  [OrderStatus.READY]:     'bg-purple-100 text-purple-800',
+  [OrderStatus.PICKED_UP]: 'bg-indigo-100 text-indigo-800',
+  [OrderStatus.DELIVERED]: 'bg-green-100 text-green-800',
+  [OrderStatus.CANCELLED]: 'bg-red-100 text-red-800',
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -87,7 +90,7 @@ function ActiveOrderCard({ order, index }: { order: Order; index: number }) {
     >
       <button
         onClick={() => void navigate(`/orders/${order._id}/tracking`)}
-        className="w-full bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-4 text-left cursor-pointer hover:shadow-lg transition-shadow"
+        className="w-full bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-4 text-left cursor-pointer hover:shadow-lg transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-white"
         style={{ touchAction: 'manipulation' }}
       >
         <div className="flex items-start gap-3">
@@ -159,7 +162,7 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
         tabIndex={0}
         onClick={() => void navigate(`/orders/${order._id}/tracking`)}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') void navigate(`/orders/${order._id}/tracking`) }}
-        className="w-full bg-white rounded-2xl shadow-sm p-4 text-left cursor-pointer hover:shadow-md transition-shadow"
+        className="w-full bg-white rounded-2xl shadow-sm p-4 text-left cursor-pointer hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-gray-50"
         style={{ touchAction: 'manipulation' }}
       >
         <div className="flex items-start gap-3">

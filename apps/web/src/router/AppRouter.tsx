@@ -22,6 +22,7 @@ const CheckoutPage        = lazy(() => import('../pages/CheckoutPage'))
 const OrdersPage          = lazy(() => import('../pages/OrdersPage'))
 const OrderTrackingPage   = lazy(() => import('../pages/OrderTrackingPage'))
 const OrderReceiptPage    = lazy(() => import('../pages/OrderReceiptPage'))
+const HelpPage            = lazy(() => import('../pages/HelpPage'))
 const ChatPage            = lazy(() => import('../pages/ChatPage'))
 const ProfilePage         = lazy(() => import('../pages/ProfilePage'))
 const WalletPage          = lazy(() => import('../pages/WalletPage'))
@@ -79,6 +80,9 @@ export function AppRouter() {
 
             {/* Profile — always reachable, handles guest state internally */}
             <Route path={ROUTES.PROFILE} element={wrap(<ProfilePage />)} />
+            {/* S14-12: Help center is public — signed-out users with login
+                or account questions need to reach it too. */}
+            <Route path={ROUTES.HELP}    element={wrap(<HelpPage />)} />
 
             {/* Protected app pages */}
             <Route element={<ProtectedRoute />}>

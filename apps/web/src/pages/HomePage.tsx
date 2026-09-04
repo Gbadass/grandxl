@@ -13,6 +13,7 @@ import { useRestaurants, useFoodCategories } from '../features/restaurants/hooks
 import { RestaurantCard } from '../features/restaurants/components/RestaurantCard'
 import { RestaurantCardHorizontal } from '../features/restaurants/components/RestaurantCardHorizontal'
 import { LocationPickerSheet } from '../components/organisms/LocationPickerSheet'
+import { PwaInstallCard } from '../components/molecules/PwaInstallCard'
 import { useLocationStore } from '../store/location.store'
 import { ROUTES } from '../router/routes'
 
@@ -273,6 +274,11 @@ export default function HomePage() {
           <span className="text-gray-400 text-sm font-medium">{t('search')}</span>
         </button>
       </div>
+
+      {/* S14-13: PWA install nudge — auto-shows on installable browsers, respects
+          a 7-day dismissal cooldown. Renders nothing on iOS Safari (which
+          doesn't fire beforeinstallprompt). */}
+      <PwaInstallCard />
 
       {/* ── Promo banners ─────────────────────────────────────────── */}
       <motion.div

@@ -509,7 +509,7 @@ export default function ProfilePage() {
         <MenuItem
           icon={HelpCircle}
           label={t('menuHelp')}
-          onClick={() => {}}
+          onClick={() => void navigate(ROUTES.HELP)}
           delay={0.25}
         />
         <Divider />

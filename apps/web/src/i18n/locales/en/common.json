@@ -38,6 +38,13 @@
     "offline": "You're offline. Live updates are paused.",
     "backOnline": "Back online"
   },
+  "pwa": {
+    "title": "Install GrandXL",
+    "subtitle": "One-tap access, faster orders, works offline.",
+    "install": "Install app",
+    "later": "Later",
+    "dismiss": "Not now"
+  },
   "nav": {
     "home": "Home",
     "browse": "Browse",

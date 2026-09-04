@@ -26,4 +26,5 @@ export const ROUTES = {
   SEARCH: '/search',
   ORDER_DISPUTE: (id: string) => `/orders/${id}/dispute`,
   REFERRALS: '/referrals',
+  HELP: '/help',
 } as const
