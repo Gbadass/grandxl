@@ -10,6 +10,7 @@
   },
   "closed": "Closed",
   "open": "Open",
+  "closingSoon": "Closes in {{minutes}} min — order soon",
   "deliveryFee": "Delivery fee",
   "minOrder": "Min. order",
   "estimatedTime": "{{minutes}} mins",

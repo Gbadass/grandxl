@@ -28,6 +28,7 @@ import type { MenuItem, MenuCategory } from '@grandxl/types'
 import { useRestaurant, useRestaurantMenu } from '../features/restaurants/hooks/useRestaurant'
 import { MenuItemCard } from '../features/restaurants/components/MenuItemCard'
 import { formatMoney, findSpecialHoursForDay } from '@grandxl/utils'
+import { minutesUntilClose } from '../features/restaurants/lib/closingSoon'
 
 function HeroSkeleton() {
   return (
@@ -65,6 +66,19 @@ export default function RestaurantPage() {
   const items: MenuItem[] = menuRes?.items ?? []
   const featured: MenuItem[] = items.filter((i) => i.isPopular)
   const gallery: string[]      = restaurant?.gallery ?? []
+
+  // S14-8: "closes in N min" warning. Refreshes every minute via a ticking
+  // clock state so the banner updates from "in 30 min" → "in 5 min" as the
+  // window closes without needing a full re-fetch.
+  const [nowTick, setNowTick] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const minsToClose = restaurant?.isOpen
+    ? minutesUntilClose(restaurant.openingHours, restaurant.specialHours, nowTick)
+    : null
+  const closingSoon = minsToClose != null && minsToClose <= 30 && minsToClose > 0
   // Sprint 12 (S12-10): today's date-specific override — null when the weekly
   // schedule applies. Rendered as a banner above the menu so customers see it
   // before they start browsing.
@@ -139,6 +153,28 @@ export default function RestaurantPage() {
           </div>
         )}
       </div>
+
+      {/* S14-8: closing-soon warning banner — only shows while restaurant is
+          open AND has 30 min or less until close. Amber for urgency without
+          being alarming. AnimatePresence lets it slide in when the threshold
+          crosses (e.g. clock ticks past 30 min-remaining). */}
+      <AnimatePresence>
+        {closingSoon && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+            role="alert"
+          >
+            <div className="flex items-center justify-center gap-2 bg-amber-50 border-y border-amber-200 px-4 py-2.5 text-xs font-semibold text-amber-800">
+              <Clock size={14} strokeWidth={2.3} />
+              {t('closingSoon', { minutes: minsToClose })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Restaurant info */}
       <div className="px-4 py-4 border-b border-gray-100">

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, MapPin, CreditCard, Wallet, Banknote, ChevronRight, Plus, Gift, Navigation, Tag, Calendar, X, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ordersApi, paymentsApi, couponsApi, platformApi, walletApi } from '@grandxl/api-client'
+import { ordersApi, paymentsApi, couponsApi, platformApi, walletApi, restaurantsApi } from '@grandxl/api-client'
 import { PaymentMethod, OrderStatus } from '@grandxl/types'
 import type { Address, CouponValidationResult } from '@grandxl/types'
 import { formatMoney, parseApiError } from '@grandxl/utils'
@@ -167,8 +167,80 @@ export default function CheckoutPage() {
   const walletCoversOrder = walletBalance >= total
   const walletMethodBlocked = paymentMethod === PaymentMethod.WALLET && !walletCoversOrder
 
-  // Minimum datetime for scheduled delivery: 1 hour from now
-  const minScheduledFor = new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)
+  // S14-7: scheduled-order guardrails.
+  // Lead time: min 1h from now (kitchen prep). Max: 7 days out (prevents
+  // "schedule for next month" which is not a real product need and stresses
+  // the settlement + rider-dispatch systems). Both bounds are wired into the
+  // datetime-local input via min/max, so the browser blocks out-of-range picks.
+  const nowMs = Date.now()
+  const minScheduledFor = new Date(nowMs + 60 * 60 * 1000).toISOString().slice(0, 16)
+  const maxScheduledFor = new Date(nowMs + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+
+  // Fetch the restaurant so we can validate the scheduled time against its
+  // openingHours + specialHours. Kept enabled=Boolean(restaurantId) so an
+  // unauthenticated / empty-cart render doesn't fire the query.
+  const { data: restaurantForSchedule } = useQuery({
+    queryKey: ['restaurant-for-checkout', restaurantId],
+    queryFn: () => restaurantsApi.getById(restaurantId!).then((r) => r.data.data),
+    enabled: Boolean(restaurantId),
+    staleTime: 5 * 60 * 1000, // hours don't change mid-checkout
+  })
+
+  // Validate a chosen scheduled-for datetime against restaurant hours.
+  // Returns null when the time is valid, or a translation-friendly reason
+  // string when it isn't.
+  const scheduleValidation = (() => {
+    if (!scheduledFor) return null // no schedule = ASAP, always valid
+    const chosen = new Date(scheduledFor)
+    if (Number.isNaN(chosen.getTime())) return t('checkout:schedInvalid')
+    if (chosen.getTime() < nowMs + 60 * 60 * 1000) return t('checkout:schedTooSoon')
+    if (chosen.getTime() > nowMs + 7 * 24 * 60 * 60 * 1000) return t('checkout:schedTooFar')
+    const r = restaurantForSchedule
+    if (!r) return null // hours not loaded yet — don't gate the submit
+    // Local calendar day + minute-of-day at the chosen time
+    const dayIdx = chosen.getDay() // 0 = Sunday
+    const chosenMinute = chosen.getHours() * 60 + chosen.getMinutes()
+    const dayKey = (['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const)[dayIdx]!
+    // Check special-hours override first
+    const iso = `${chosen.getFullYear()}-${String(chosen.getMonth() + 1).padStart(2, '0')}-${String(chosen.getDate()).padStart(2, '0')}`
+    const special = r.specialHours?.find((s) => s.date === iso)
+    if (special?.isClosed) return t('checkout:schedClosedThatDay')
+    const hours = special?.open && special?.close
+      ? { open: special.open, close: special.close, isOpen: true }
+      : r.openingHours?.[dayKey]
+    if (!hours?.isOpen) return t('checkout:schedClosedThatDay')
+    // Convert 'HH:mm' → minutes-since-midnight
+    const [oh, om] = hours.open.split(':').map(Number)
+    const [ch, cm] = hours.close.split(':').map(Number)
+    const openMin  = (oh ?? 0) * 60 + (om ?? 0)
+    const closeMin = (ch ?? 0) * 60 + (cm ?? 0)
+    // If close is BEFORE open, restaurant closes past midnight — chosen minute
+    // is valid if it's ≥ open OR ≤ close.
+    const inWindow = closeMin < openMin
+      ? (chosenMinute >= openMin || chosenMinute <= closeMin)
+      : (chosenMinute >= openMin && chosenMinute <= closeMin)
+    if (!inWindow) return t('checkout:schedOutsideHours', { open: hours.open, close: hours.close })
+    return null
+  })()
+
+  const scheduleValid = scheduleValidation === null
+
+  // Preset quick-picks — thumb-fast alternatives to the datetime-local input.
+  const schedulePresets: Array<{ label: string; iso: string }> = (() => {
+    const in2h = new Date(nowMs + 2 * 60 * 60 * 1000)
+    const tomorrow = new Date(nowMs); tomorrow.setDate(tomorrow.getDate() + 1)
+    const tomLunch   = new Date(tomorrow); tomLunch.setHours(12, 30, 0, 0)
+    const tomDinner  = new Date(tomorrow); tomDinner.setHours(19, 0, 0, 0)
+    const toLocal = (d: Date) => {
+      const pad = (n: number) => n.toString().padStart(2, '0')
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    }
+    return [
+      { label: t('checkout:schedPresetIn2h'),     iso: toLocal(in2h) },
+      { label: t('checkout:schedPresetTomLunch'), iso: toLocal(tomLunch) },
+      { label: t('checkout:schedPresetTomDinner'),iso: toLocal(tomDinner) },
+    ]
+  })()
 
   // After a cash/wallet order is placed the cart is cleared before navigation completes.
   // Use placedOrderId to skip the empty-cart guard and let the Navigate below handle it.
@@ -225,6 +297,16 @@ export default function CheckoutPage() {
     }
     if (!restaurantId) {
       isSubmittingRef.current = false
+      return
+    }
+
+    // S14-7: block submit if a scheduled time was picked but fails validation
+    // (too soon, too far, or outside restaurant hours). Same message the
+    // banner is showing, surfaced as a toast for keyboard users who submit
+    // via Enter without seeing the banner.
+    if (scheduledFor && !scheduleValid) {
+      isSubmittingRef.current = false
+      toast.error(scheduleValidation ?? t('checkout:schedInvalid'))
       return
     }
 
@@ -669,7 +751,7 @@ export default function CheckoutPage() {
           </div>
         </section>
 
-        {/* Schedule delivery */}
+        {/* Schedule delivery — S14-7: preset chips + max window + hours validation */}
         <section className="mb-4">
           <div className="flex items-center gap-2 mb-2.5">
             <Calendar size={16} className="text-primary" />
@@ -677,19 +759,86 @@ export default function CheckoutPage() {
               {t('checkout:scheduleDelivery')} <span className="text-gray-400 font-normal text-xs">{t('checkout:optional')}</span>
             </h2>
           </div>
-          <div className="bg-white rounded-2xl shadow-sm p-4">
+          <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
+            {/* Preset chips — thumb-fast alternatives to the datetime input */}
+            <div className="flex flex-wrap gap-1.5">
+              {schedulePresets.map((p) => {
+                const active = scheduledFor === p.iso
+                return (
+                  <motion.button
+                    key={p.iso}
+                    type="button"
+                    onClick={() => setScheduledFor(p.iso)}
+                    whileTap={{ scale: 0.96 }}
+                    transition={{ duration: 0.08 }}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    {p.label}
+                  </motion.button>
+                )
+              })}
+            </div>
+
             <input
               type="datetime-local"
               value={scheduledFor}
               onChange={(e) => setScheduledFor(e.target.value)}
               min={minScheduledFor}
-              className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-primary/20 transition"
+              max={maxScheduledFor}
+              className={`w-full px-3 py-2 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 transition ${
+                scheduledFor && !scheduleValid
+                  ? 'bg-red-50 focus:ring-red-200'
+                  : 'bg-gray-50 focus:ring-primary/20'
+              }`}
             />
+
+            {/* Validation banner — appears the moment a scheduled time is set */}
+            {scheduledFor && (
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={scheduleValidation ?? 'valid'}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15 }}
+                  className={`flex items-start gap-2 rounded-xl px-3 py-2 text-xs ${
+                    scheduleValid
+                      ? 'bg-emerald-50 text-emerald-800'
+                      : 'bg-red-50 text-red-800'
+                  }`}
+                >
+                  {scheduleValid ? (
+                    <>
+                      <Calendar size={12} className="mt-0.5 shrink-0" />
+                      <span>
+                        {t('checkout:schedValid', {
+                          date: new Date(scheduledFor).toLocaleString('en-NG', {
+                            weekday: 'short', day: 'numeric', month: 'short',
+                            hour: '2-digit', minute: '2-digit',
+                          }),
+                        })}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                      <span>{scheduleValidation}</span>
+                    </>
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            )}
+
             {scheduledFor && (
               <button
                 type="button"
                 onClick={() => setScheduledFor('')}
-                className="mt-2 text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer flex items-center gap-1"
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer flex items-center gap-1"
               >
                 <X size={11} /> {t('checkout:clearSchedule')}
               </button>

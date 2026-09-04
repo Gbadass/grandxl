@@ -41,5 +41,14 @@
   "invalidCoupon": "Invalid or expired coupon",
   "addAddressFirst": "Please add a delivery address first",
   "addressNeedsLocation": "Your address has no location pin. Open 'Change address', tap 'Use my current location', then save again.",
-  "paymentCancelled": "Payment cancelled — your cart is ready."
+  "paymentCancelled": "Payment cancelled — your cart is ready.",
+  "schedInvalid": "Invalid time selected.",
+  "schedTooSoon": "Scheduled time must be at least 1 hour from now.",
+  "schedTooFar": "Scheduled time can't be more than 7 days out.",
+  "schedClosedThatDay": "Restaurant is closed at that time.",
+  "schedOutsideHours": "Restaurant is only open {{open}} – {{close}} that day.",
+  "schedValid": "Scheduled for {{date}}. We'll start preparing 30 min before.",
+  "schedPresetIn2h": "In 2 hours",
+  "schedPresetTomLunch": "Tomorrow lunch",
+  "schedPresetTomDinner": "Tomorrow dinner"
 }
