@@ -1326,11 +1326,18 @@ export default function OrderTrackingPage() {
             {t('orderAgain')}
           </button>
 
-          {/* Report a problem — only on delivered orders */}
-          <div className="text-center pt-1">
+          {/* Report a problem + S14-11 receipt download — only on delivered orders */}
+          <div className="flex items-center justify-center gap-3 pt-1 text-sm">
+            <Link
+              to={ROUTES.ORDER_RECEIPT(id!)}
+              className="text-gray-500 hover:text-primary transition-colors font-medium"
+            >
+              {t('receipt.download')}
+            </Link>
+            <span className="text-gray-200">·</span>
             <Link
               to={ROUTES.ORDER_DISPUTE(id!)}
-              className="text-sm text-gray-400 hover:text-primary transition-colors"
+              className="text-gray-400 hover:text-primary transition-colors"
             >
               {t('dispute.reportLink')}
             </Link>

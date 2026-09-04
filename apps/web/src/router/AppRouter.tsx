@@ -21,6 +21,7 @@ const CartPage            = lazy(() => import('../pages/CartPage'))
 const CheckoutPage        = lazy(() => import('../pages/CheckoutPage'))
 const OrdersPage          = lazy(() => import('../pages/OrdersPage'))
 const OrderTrackingPage   = lazy(() => import('../pages/OrderTrackingPage'))
+const OrderReceiptPage    = lazy(() => import('../pages/OrderReceiptPage'))
 const ChatPage            = lazy(() => import('../pages/ChatPage'))
 const ProfilePage         = lazy(() => import('../pages/ProfilePage'))
 const WalletPage          = lazy(() => import('../pages/WalletPage'))
@@ -86,6 +87,7 @@ export function AppRouter() {
               <Route path={ROUTES.CHECKOUT}              element={wrap(<CheckoutPage />)} />
               <Route path={ROUTES.ORDERS}                element={wrap(<OrdersPage />)} />
               <Route path="/orders/:id/tracking"         element={wrap(<OrderTrackingPage />)} />
+              <Route path="/orders/:id/receipt"          element={wrap(<OrderReceiptPage />)} />
               <Route path="/orders/:id/chat"             element={wrap(<ChatPage />)} />
               <Route path="/orders/:id/dispute"          element={wrap(<DisputePage />)} />
               <Route path={ROUTES.WALLET}                element={wrap(<WalletPage />)} />

@@ -142,5 +142,26 @@
     "rateStarPlural": "Rate {{count}} stars",
     "ratingRequired": "Please rate the restaurant before submitting",
     "submitError": "Could not submit your review. Please try again."
+  },
+  "receipt": {
+    "download": "Download receipt",
+    "printSave": "Print / Save as PDF",
+    "tagline": "Food delivery receipt",
+    "orderNumber": "Order #",
+    "orderDate": "Placed",
+    "status": "Status",
+    "payment": "Payment",
+    "deliveredTo": "Delivered to",
+    "items": "Items",
+    "item": "Item",
+    "qty": "Qty",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "deliveryFee": "Delivery fee",
+    "serviceFee": "Service fee",
+    "discount": "Discount",
+    "tip": "Rider tip",
+    "grandTotal": "Total",
+    "thanks": "Thank you for ordering with GrandXL."
   }
 }
